@@ -13805,7 +13805,7 @@ var require_fetch = __commonJS({
     function handleFetchDone(response) {
       finalizeAndReportTiming(response, "fetch");
     }
-    function fetch2(input, init = void 0) {
+    function fetch3(input, init = void 0) {
       webidl.argumentLengthCheck(arguments, 1, "globalThis.fetch");
       let p = createDeferredPromise();
       let requestObject;
@@ -14760,7 +14760,7 @@ var require_fetch = __commonJS({
       }
     }
     module2.exports = {
-      fetch: fetch2,
+      fetch: fetch3,
       Fetch,
       fetching,
       finalizeAndReportTiming
@@ -19298,7 +19298,7 @@ var require_undici = __commonJS({
     module2.exports.setGlobalDispatcher = setGlobalDispatcher;
     module2.exports.getGlobalDispatcher = getGlobalDispatcher;
     var fetchImpl = require_fetch().fetch;
-    module2.exports.fetch = async function fetch2(init, options = void 0) {
+    module2.exports.fetch = async function fetch3(init, options = void 0) {
       try {
         return await fetchImpl(init, options);
       } catch (err) {
@@ -63683,6 +63683,12 @@ var require_package_version2 = __commonJS({
 });
 
 // src/action/index.ts
+var action_exports = {};
+__export(action_exports, {
+  githubEnv: () => githubEnv,
+  upsertPrComment: () => upsertPrComment
+});
+module.exports = __toCommonJS(action_exports);
 var import_node_fs6 = require("fs");
 var import_node_path3 = __toESM(require("path"), 1);
 
@@ -100742,8 +100748,8 @@ function isPlainObject2(value) {
 }
 var noop = () => "";
 async function fetchWrapper(requestOptions) {
-  const fetch2 = requestOptions.request?.fetch || globalThis.fetch;
-  if (!fetch2) {
+  const fetch3 = requestOptions.request?.fetch || globalThis.fetch;
+  if (!fetch3) {
     throw new Error(
       "fetch is not set. Please pass a fetch implementation as new Octokit({ request: { fetch }}). Learn more at https://github.com/octokit/octokit.js/#fetch-missing"
     );
@@ -100759,7 +100765,7 @@ async function fetchWrapper(requestOptions) {
   );
   let fetchResponse;
   try {
-    fetchResponse = await fetch2(requestOptions.url, {
+    fetchResponse = await fetch3(requestOptions.url, {
       method: requestOptions.method,
       body: body3,
       redirect: requestOptions.request?.redirect,
@@ -128699,13 +128705,30 @@ function renderDashboard(data) {
     });
   }
 
+  var RENDER_CAP = 500;
+  var showAll = false;
+
+  if (showingEl) {
+    showingEl.style.cursor = 'pointer';
+    showingEl.title = 'Click to toggle the render cap';
+    showingEl.addEventListener('click', function () {
+      showAll = !showAll;
+      renderTable();
+    });
+  }
+  if (clearBtn) clearBtn.hidden = true;
+
   function renderTable() {
     var rows = currentRows();
     var frag = document.createDocumentFragment();
+    var limit = showAll ? rows.length : Math.min(rows.length, RENDER_CAP);
     var j;
-    for (j = 0; j < rows.length; j++) frag.appendChild(rowEl(rows, rows[j], j));
+    for (j = 0; j < limit; j++) frag.appendChild(rowEl(rows, rows[j], j));
     if (tbody) tbody.replaceChildren(frag);
-    if (showingEl) showingEl.textContent = 'Showing ' + rows.length + ' of ' + verdicts.length + ' tests';
+    var hidden = rows.length - limit;
+    var label = 'Showing ' + limit + ' of ' + verdicts.length + ' tests';
+    if (hidden > 0) label += ' (' + hidden + ' hidden for speed — show all)';
+    if (showingEl) showingEl.textContent = label;
     if (clearBtn) clearBtn.hidden = !(state.q || state.cls || state.tag);
     updateSortHeads();
   }
@@ -130129,35 +130152,79 @@ function ingestReports(files, cfg, storeDir, ctx) {
 }
 
 // src/action/index.ts
+function githubEnv() {
+  const [owner = "", repo = ""] = (process.env.GITHUB_REPOSITORY ?? "/").split("/");
+  const sha = process.env.GITHUB_SHA ?? "";
+  const ref = process.env.GITHUB_REF ?? "";
+  const runId = process.env.GITHUB_RUN_ID ?? "";
+  const apiUrl = process.env.GITHUB_API_URL ?? "https://api.github.com";
+  let isPr = false;
+  let prNumber = null;
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (eventPath && (0, import_node_fs6.existsSync)(eventPath)) {
+    try {
+      const payload = JSON.parse((0, import_node_fs6.readFileSync)(eventPath, "utf8"));
+      if (payload.pull_request?.number != null) {
+        isPr = true;
+        prNumber = payload.pull_request.number;
+      }
+    } catch {
+    }
+  }
+  return { owner, repo, sha, ref, runId, isPr, prNumber, apiUrl };
+}
+async function ghRest(apiUrl, token, method, pathName, body3) {
+  const res = await fetch(`${apiUrl}${pathName}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      "X-GitHub-Api-Version": "2022-11-28",
+      "Content-Type": "application/json"
+    },
+    body: body3 === void 0 ? void 0 : JSON.stringify(body3)
+  });
+  let json = null;
+  try {
+    json = await res.json();
+  } catch {
+  }
+  const nextUrl = res.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1] ?? null;
+  return { ok: res.ok, status: res.status, json, nextUrl };
+}
+async function upsertPrComment(token, body3, ctx) {
+  if (!ctx.isPr || ctx.prNumber === null) return;
+  const comments = [];
+  let url3 = `${ctx.apiUrl}/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments?per_page=100`;
+  while (url3) {
+    const res = await fetch(url3, {
+      headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" }
+    });
+    if (!res.ok) {
+      warning(`listing PR comments failed: HTTP ${res.status}`);
+      return;
+    }
+    comments.push(...await res.json());
+    url3 = res.headers.get("link")?.match(/<([^>]+)>;\s*rel="next"/)?.[1] ?? null;
+  }
+  const existing = comments.find((c) => (c.body ?? "").includes(PR_COMMENT_MARKER));
+  if (existing) {
+    await ghRest(ctx.apiUrl, token, "PATCH", `/repos/${ctx.owner}/${ctx.repo}/issues/comments/${existing.id}`, { body: body3 });
+  } else {
+    await ghRest(ctx.apiUrl, token, "POST", `/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments`, { body: body3 });
+  }
+}
 async function expandGlobs(patterns, cwd) {
   const globModule = await Promise.resolve().then(() => (init_glob(), glob_exports));
   const globber = await globModule.create(patterns.join("\n"), { matchDirectories: false });
   const paths = await globber.glob();
   return paths.map((p) => import_node_path3.default.resolve(cwd, p));
 }
-async function upsertPrComment(token, body3) {
-  const pull = context4.payload.pull_request;
-  if (!pull) return;
-  const octokit = getOctokit(token);
-  const { owner, repo } = context4.repo;
-  const issueNumber = pull.number;
-  const comments = await octokit.paginate(octokit.rest.issues.listComments, {
-    owner,
-    repo,
-    issue_number: issueNumber,
-    per_page: 100
-  });
-  const existing = comments.find((c) => (c.body ?? "").includes(PR_COMMENT_MARKER));
-  if (existing) {
-    await octokit.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body: body3 });
-  } else {
-    await octokit.rest.issues.createComment({ owner, repo, issue_number: issueNumber, body: body3 });
-  }
-}
 async function actionMain() {
   const workingDirectory = getInput("working-directory") || ".";
   const cwd = import_node_path3.default.resolve(process.cwd(), workingDirectory);
   process.chdir(cwd);
+  const gh = githubEnv();
   const { config } = loadConfig(cwd);
   const reportsInput = getInput("reports");
   const historyMaxRuns = Number.parseInt(getInput("history-max-runs") || "300", 10);
@@ -130166,7 +130233,7 @@ async function actionMain() {
     reportsInput ? { reports: reportsInput.split(",").map((s) => s.trim()), maxRuns: historyMaxRuns } : { maxRuns: historyMaxRuns }
   );
   const storeDir = import_node_path3.default.resolve(cwd, cfg.storeDir);
-  const primaryKey = `flakefinder-history-${context4.sha}`;
+  const primaryKey = `flakefinder-history-${gh.sha}`;
   const restoreKeys = ["flakefinder-history-"];
   try {
     await restoreCache([storeDir], primaryKey, restoreKeys);
@@ -130197,9 +130264,9 @@ async function actionMain() {
     return;
   }
   const outcome = ingestReports(files, cfg, storeDir, {
-    commitSha: context4.sha,
-    branch: context4.ref.replace("refs/heads/", ""),
-    ciRunId: String(context4.runId)
+    commitSha: gh.sha,
+    branch: gh.ref.replace("refs/heads/", ""),
+    ciRunId: gh.runId
   });
   for (const w of outcome.warnings) warning(w);
   const verdicts = outcome.verdicts;
@@ -130228,16 +130295,12 @@ async function actionMain() {
       { data: "Class", header: true },
       { data: "Score", header: true }
     ],
-    ...verdicts.filter((v) => v.classification.startsWith("flaky-")).sort((a, b) => b.flakeScore - a.flakeScore).slice(0, 20).map((v) => [
-      `${redact(v.suite)} :: ${redact(v.name)}`,
-      v.classification,
-      String(v.flakeScore)
-    ])
+    ...verdicts.filter((v) => v.classification.startsWith("flaky-")).sort((a, b) => b.flakeScore - a.flakeScore).slice(0, 20).map((v) => [`${redact(v.suite)} :: ${redact(v.name)}`, v.classification, String(v.flakeScore)])
   ]).write();
-  if (getBooleanInput("comment") && context4.payload.pull_request) {
+  if (getBooleanInput("comment") && gh.isPr) {
     const token = getInput("github-token");
     try {
-      await upsertPrComment(token, buildPrComment(verdicts, previous));
+      await upsertPrComment(token, buildPrComment(verdicts, previous), gh);
     } catch (err) {
       warning(`PR comment failed (check token permissions): ${err.message}`);
     }
@@ -130282,6 +130345,11 @@ function storeDirFiles(storeDir) {
 }
 actionMain().catch((err) => {
   setFailed(`flakefinder action: ${err.message}`);
+});
+// Annotate the CommonJS export names for ESM import in node:
+0 && (module.exports = {
+  githubEnv,
+  upsertPrComment
 });
 /*! Bundled license information:
 

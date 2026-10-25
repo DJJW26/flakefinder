@@ -1035,13 +1035,30 @@ export function renderDashboard(data: DashboardData): string {
     });
   }
 
+  var RENDER_CAP = 500;
+  var showAll = false;
+
+  if (showingEl) {
+    showingEl.style.cursor = 'pointer';
+    showingEl.title = 'Click to toggle the render cap';
+    showingEl.addEventListener('click', function () {
+      showAll = !showAll;
+      renderTable();
+    });
+  }
+  if (clearBtn) clearBtn.hidden = true;
+
   function renderTable() {
     var rows = currentRows();
     var frag = document.createDocumentFragment();
+    var limit = showAll ? rows.length : Math.min(rows.length, RENDER_CAP);
     var j;
-    for (j = 0; j < rows.length; j++) frag.appendChild(rowEl(rows, rows[j], j));
+    for (j = 0; j < limit; j++) frag.appendChild(rowEl(rows, rows[j], j));
     if (tbody) tbody.replaceChildren(frag);
-    if (showingEl) showingEl.textContent = 'Showing ' + rows.length + ' of ' + verdicts.length + ' tests';
+    var hidden = rows.length - limit;
+    var label = 'Showing ' + limit + ' of ' + verdicts.length + ' tests';
+    if (hidden > 0) label += ' (' + hidden + ' hidden for speed — show all)';
+    if (showingEl) showingEl.textContent = label;
     if (clearBtn) clearBtn.hidden = !(state.q || state.cls || state.tag);
     updateSortHeads();
   }
