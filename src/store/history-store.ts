@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -108,6 +109,54 @@ export class HistoryStore {
     this.formatVersion = STORE_FORMAT_VERSION;
   }
 
+  private get lockPath(): string {
+    return `${this.path}.lock`;
+  }
+
+  /**
+   * Advisory lock around writes (append/prune). Two CI matrix shards writing
+   * multi-KB records can interleave in one append and corrupt a line — the
+   * lock serializes them. Busy-waits in ≤50 ms slices (Atomics.wait) up to 2 s
+   * before giving up with an actionable error; a lock older than 30 s is
+   * treated as abandoned by a dead process and stolen.
+   */
+  private acquireLock(): void {
+    const deadline = Date.now() + 2000;
+    for (;;) {
+      try {
+        writeFileSync(
+          this.lockPath,
+          JSON.stringify({ pid: process.pid, epoch: Date.now() }),
+          { flag: 'wx' },
+        );
+        return;
+      } catch {
+        let ageMs = Infinity;
+        try {
+          const holder = JSON.parse(readFileSync(this.lockPath, 'utf8')) as { epoch?: number };
+          if (typeof holder.epoch === 'number') ageMs = Date.now() - holder.epoch;
+        } catch {
+          // unreadable lock → treat as stale below
+        }
+        if (ageMs > 30_000) {
+          rmSync(this.lockPath, { force: true });
+          continue;
+        }
+        if (Date.now() >= deadline) {
+          throw new Error(
+            `history store is busy (held by another flakefinder process for >2s): ${this.lockPath}. ` +
+              'Run ingest steps serially, or give each CI shard its own storeDir.',
+          );
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      }
+    }
+  }
+
+  private releaseLock(): void {
+    rmSync(this.lockPath, { force: true });
+  }
+
   loadAll(): RunRecord[] {
     this.ensureLoaded();
     return [...this.records];
@@ -120,24 +169,34 @@ export class HistoryStore {
 
   append(run: RunRecord): void {
     this.ensureLoaded();
-    this.ensureHeader();
-    appendFileSync(this.path, `${JSON.stringify(run)}\n`, 'utf8');
-    this.records.push(run);
+    this.acquireLock();
+    try {
+      this.ensureHeader();
+      appendFileSync(this.path, `${JSON.stringify(run)}\n`, 'utf8');
+      this.records.push(run);
+    } finally {
+      this.releaseLock();
+    }
   }
 
   /** Keep only the last `maxRuns` records; rewrite the file atomically. */
   prune(maxRuns: number): void {
     this.ensureLoaded();
     if (this.records.length <= maxRuns) return;
-    this.records = this.records.slice(-maxRuns);
-    const tmp = `${this.path}.tmp`;
-    const header =
-      this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}\n` : '';
-    writeFileSync(
-      tmp,
-      `${header}${this.records.map((r) => JSON.stringify(r)).join('\n')}\n`,
-      'utf8',
-    );
-    renameSync(tmp, this.path);
+    this.acquireLock();
+    try {
+      this.records = this.records.slice(-maxRuns);
+      const tmp = `${this.path}.tmp`;
+      const header =
+        this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}\n` : '';
+      writeFileSync(
+        tmp,
+        `${header}${this.records.map((r) => JSON.stringify(r)).join('\n')}\n`,
+        'utf8',
+      );
+      renameSync(tmp, this.path);
+    } finally {
+      this.releaseLock();
+    }
   }
 }

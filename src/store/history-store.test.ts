@@ -1,4 +1,4 @@
-import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -184,5 +184,43 @@ describe('store robustness (review round)', () => {
     const b = new HistoryStore(path.dirname(a.path));
     b.loadAll();
     expect(b.warnings[0]).toContain('newer than this flakefinder');
+  });
+});
+
+describe('store concurrency lock (C1)', () => {
+  it('serializes appends and releases the lock afterwards', () => {
+    const a = tmpStore();
+    a.append(record('r1', 'pass'));
+    a.append(record('r2', 'pass'));
+    expect(existsSync(`${a.path}.lock`)).toBe(false); // released
+    const b = new HistoryStore(path.dirname(a.path));
+    b.append(record('r3', 'fail')); // not blocked
+    expect(b.loadAll().map((r) => r.runId)).toEqual(['r1', 'r2', 'r3']);
+  });
+
+  it('errors with an actionable message when a fresh lock is held', () => {
+    const a = tmpStore();
+    a.append(record('r1', 'pass'));
+    writeFileSync(`${a.path}.lock`, JSON.stringify({ pid: 999999, epoch: Date.now() }), 'utf8');
+    let msg = '';
+    try {
+      a.append(record('r2', 'pass'));
+    } catch (err) {
+      msg = (err as Error).message;
+    }
+    expect(msg).toContain('history store is busy');
+    expect(msg).toContain('serially, or give each CI shard');
+    // the failed append must NOT have been written
+    expect(a.runs().map((r) => r.runId)).toEqual(['r1']);
+  });
+
+  it('steals a stale lock older than 30s (abandoned by a dead process)', () => {
+    const a = tmpStore();
+    a.append(record('r1', 'pass'));
+    const stale = Date.now() - 31_000;
+    writeFileSync(`${a.path}.lock`, JSON.stringify({ pid: 123, epoch: stale }), 'utf8');
+    a.append(record('r2', 'pass'));
+    expect(a.runs().map((r) => r.runId)).toEqual(['r1', 'r2']);
+    expect(existsSync(`${a.path}.lock`)).toBe(false);
   });
 });
