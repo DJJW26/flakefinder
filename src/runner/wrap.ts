@@ -69,42 +69,39 @@ function snapshotReports(
 
 /** Tokens that only a shell can interpret (redirects, pipes, command chaining). */
 function needsShell(command: string[]): boolean {
-  return command.some((t) => /[<>|&]/.test(t) || t === '&&' || t === '||');
+  return command.some((t) => /[<>|&]/.test(t));
+}
+
+/** A token that IS a shell operator (must stay unquoted in shell mode). */
+function isShellOperator(token: string): boolean {
+  return /^[<>|&\d]+$/.test(token);
 }
 
 /**
  * Insert runner args (flag/value pairs) into the command: package-manager
  * wrappers get a `--` separator first, and shell operators split the command
  * into segments — the args must join the RUNNER's segment (the first one),
- * not the last shell word. Value positions (odd indices) are returned for
- * shell-mode quoting.
+ * not the last shell word. Injection matches whole operator tokens only, so
+ * an argument VALUE like `w1&&w2` is never mistaken for a segment boundary.
  */
-function insertRunnerArgs(
-  command: string[],
-  args: string[],
-): { cmd: string[]; quoteIdx: number[] } {
-  if (args.length === 0) return { cmd: [...command], quoteIdx: [] };
+function insertRunnerArgs(command: string[], args: string[]): string[] {
+  if (args.length === 0) return [...command];
   const separator = isPackageManagerWrapper(command) ? ['--'] : [];
-  const opIdx = command.findIndex((t) => /[<>|&]/.test(t));
+  const opIdx = command.findIndex((t) => isShellOperator(t));
   const insertAt = opIdx === -1 ? command.length : opIdx;
-  const base = insertAt + separator.length;
-  const quoteIdx = args.map((_arg, i) => (i % 2 === 1 ? base + i : -1)).filter((i) => i >= 0);
-  return {
-    cmd: [...command.slice(0, insertAt), ...separator, ...args, ...command.slice(insertAt)],
-    quoteIdx,
-  };
+  return [...command.slice(0, insertAt), ...separator, ...args, ...command.slice(insertAt)];
 }
 
 /**
  * Spawn the test command. Prefer NO shell (argv passes verbatim — no quoting
- * hazards for quarantine patterns with spaces); fall back to shell mode when
- * the command contains shell operators OR the spawn is refused (Windows
- * blocks .cmd shims like npm/yarn without a shell — EINVAL since the
- * CVE-2024-27980 fix). In shell mode our injected values (quoteIdx) are
- * shell-quoted; user tokens keep their shell semantics.
+ * hazards); fall back to shell mode when the command contains shell operators
+ * OR the spawn is refused (Windows blocks .cmd shims like npm/yarn without a
+ * shell — EINVAL since the CVE-2024-27980 fix). In shell mode every token is
+ * shell-quoted EXCEPT operator tokens — so user values with metacharacters
+ * (e.g. `w1&&w2`) and injected regex patterns (with `^!()`) survive cmd.exe.
  */
-function spawnCommand(command: string[], cwd: string, quoteIdx: number[] = []): Promise<number> {
-  const shellArgv = command.map((t, i) => (quoteIdx.includes(i) ? shellQuote(t) : t));
+function spawnCommand(command: string[], cwd: string): Promise<number> {
+  const shellArgv = command.map((t) => (isShellOperator(t) ? t : shellQuote(t)));
   return new Promise((resolve) => {
     const done = (code: number): void => {
       resolve(code);
@@ -144,8 +141,6 @@ function spawnCommand(command: string[], cwd: string, quoteIdx: number[] = []): 
         done(code ?? 1);
       });
     };
-    // shell mode must use the quoted argv — unquoted values lose cmd.exe
-    // metacharacters (e.g. ^ in quarantine patterns)
     const useShell = needsShell(command);
     start(useShell ? shellArgv : command, useShell);
   });
@@ -171,12 +166,14 @@ export async function runLive(
 
   const runner = cfg.runner === 'auto' ? detectRunner(cwd) : cfg.runner;
   let quarantineFlags: string[] = [];
+  let quarantinedNames: string[] = [];
   if (opts.applyQuarantine) {
     if (runner === 'pytest' || runner === 'jest' || runner === 'mocha') {
       const qm = new QuarantineManager(path.resolve(cwd, cfg.quarantineFile));
       const entries = qm.list();
       if (entries.length > 0) {
         quarantineFlags = exclusionArgs(runner, entries);
+        quarantinedNames = entries.map((e) => e.name);
         console.log(
           `flakefinder: quarantine active — excluding ${entries.length} quarantined test(s) via runner flags`,
         );
@@ -200,7 +197,8 @@ export async function runLive(
   const attempts: RunRecord[] = [];
   const usedReportFiles = new Set<string>();
   const exitCodes: number[] = [];
-  let snapshot = snapshotReports(cwd, cfg);  const maxAttempts = Math.max(1, opts.retries + 1);
+  let snapshot = snapshotReports(cwd, cfg);
+  const maxAttempts = Math.max(1, opts.retries + 1);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     // Attempt 1 runs the full suite (with quarantine exclusions). Attempts 2+
@@ -209,27 +207,29 @@ export async function runLive(
     let extraArgs = quarantineFlags;
     let note = '';
     if (attempt > 1 && cfg.retryMode !== 'full') {
-      const failed = failedNamesOf(attempts);
-      const targeted = failedOnlyArgs(runner, failed);
+      const failed = failedNamesOf(attempts).filter((n) => !quarantinedNames.includes(n));
+      const targeted = failedOnlyArgs(runner, failed, quarantinedNames);
       if (targeted) {
         extraArgs = targeted;
         note = `targeted: re-running ${failed.length} failed test(s)`;
+      } else if (failed.length === 0) {
+        note = 'full re-run (no failures recorded)';
       } else {
         if (cfg.retryMode === 'failed') {
           console.warn(
             `flakefinder: no targeted-rerun adapter for runner "${runner}" — falling back to a full re-run`,
           );
         }
-        note = 'full re-run (no targeted adapter or no failures recorded)';
+        note = 'full re-run (no targeted adapter)';
       }
     }
     const built = insertRunnerArgs(command, extraArgs);
     console.log(
       dim(
-        `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ''} → ${built.cmd.join(' ')}`,
+        `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ''} → ${built.join(' ')}`,
       ),
     );
-    const code = await spawnCommand(built.cmd, cwd, built.quoteIdx);
+    const code = await spawnCommand(built, cwd);
     if (code === 127 || code === 9009) {
       console.error(
         `flakefinder: exit ${code} usually means the command was not found — check spelling and PATH`,

@@ -197,9 +197,19 @@ export async function main(argv: string[]): Promise<number> {
           exitCode = 2;
           return;
         }
+        if (opts.retryMode != null && !['auto', 'failed', 'full'].includes(opts.retryMode)) {
+          console.error(
+            `flakefinder: --retry-mode must be auto|failed|full (got "${opts.retryMode}")`,
+          );
+          exitCode = 2;
+          return;
+        }
         const overrides: Partial<FlakefinderConfig> = {};
         if (opts.failOnFlake) overrides.failOnFlakes = true;
         if (retries != null) overrides.liveRetries = retries;
+        if (opts.retryMode != null) {
+          overrides.retryMode = opts.retryMode as FlakefinderConfig['retryMode'];
+        }
         const cfg = resolveCfg(g, overrides);
         const result = await runLive(command, cfg, {
           retries: retries ?? cfg.liveRetries,

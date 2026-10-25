@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.3.0
+
+- **feat: targeted failed-only re-runs (`run --retry-mode auto|failed|full`,
+  default `auto`).** Attempt 1 runs the whole suite; re-runs execute only the
+  failed tests — jest/vitest via `-t`, mocha via `--grep`, go via `-run`,
+  pytest via `--lf`. Retry cost drops from 3×(whole suite) to roughly
+  suite + 2×(failed tests only). Selectors are boundary-anchored (a failure
+  named `update` does not re-run `math re-update`), quarantine exclusions
+  survive into re-runs even on name collisions, and flags join the runner's
+  segment before shell operators. Order-dependent flakes may not reproduce in
+  targeted mode — `full` restores whole-suite retries.
+- **perf: report change detection is stat-first** (size+mtime short-circuit;
+  sha256 only on change) and the history store loads without duplicating the
+  file as a string array. 150k-observation store: `report` ~90 ms, dashboard
+  ~100 ms.
+- **ci: performance smoke** (150k-observation store, budgets asserted) and a
+  **coverage gate** (≥85% lines on engine/parsers/store) run on every push.
+- Hardenings found by adversarial QA on the feature: `--retry-mode` is fully
+  wired (flag → engine, validation exit 2 on bad values); shell-mode spawns
+  quote every non-operator token (user values like `w1&&w2` no longer corrupt
+  the command); operator detection matches whole tokens only; clearer
+  fallback messages distinguish "no adapter" from "no failures recorded".
+
 ## 0.2.1
 
 QA round 2 (independent agent, all findings double-verified):

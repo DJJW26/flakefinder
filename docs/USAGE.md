@@ -132,7 +132,13 @@ not reproduce in a targeted re-run because neighboring tests no longer run
 around them — if you suspect ordering flakiness, use `--retry-mode full`.
 Correctness is unaffected either way: a test only counts as flaky when it
 explicitly *passes* on a re-run, so an empty or partial re-run can never fake
-a rescue.
+a rescue. Two implementation notes: targeted selectors match failed test
+names as space-delimited final segments of the full name (a failure named
+`update` does not drag in `math re-update`), and quarantined tests are
+excluded from re-runs even on name collisions. pytest's `--lf` trusts pytest's
+own last-failed cache — a stale cache from a *manual* pytest run outside
+flakefinder could re-run a quarantined test once; clear it with
+`pytest --cache-clear` if that ever bites.
 
 If quarantined entries exist and the runner supports exclusion, the exclusion
 flags are appended automatically (with a notice); see

@@ -110,3 +110,14 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P8.6 FIX: BOM-prefixed configs; namespace-prefixed JUnit XML
 - ✅ P8.7 Engine edge-case suite promoted to permanent tests; ci reuses computeNewFlakes
 - ✅ P8.8 Release v0.2.1 (217 tests / 20 files, pipeline green)
+
+## Phase 9 — Overnight loop: Phase B → v0.3.0
+
+- ✅ P9.1 B1 targeted failed-only re-runs (adapters, operator-aware insertion, --retry-mode, retryMode config+validation) + 11 tests
+- ✅ P9.2 B2 stat-first report change detection (sha256 only on size+mtime change); B3 walk-once REJECTED (walks catch newly created reports)
+- ✅ P9.3 B4 store load without full-file string-array duplicate
+- ✅ P9.4 B5 perf smoke (scripts/perf-smoke.mjs, 150k obs, CI-wired) + B6 coverage gate (≥85% engine/parsers/store)
+- ✅ P9.5 B1 adversarial QA agent (28 probes): 6 findings (1 CRITICAL, 2 HIGH/MEDIUM×2) — ALL fixed + regression tests:
+  --retry-mode wiring (was dead), quarantine-aware boundary-anchored selectors, whole-token operator detection + quote-all shell model, fallback message split, pytest --lf caveat documented
+- ✅ P9.6 Pipeline: 230 tests / 21 files, tsc, biome, e2e 10/10, perf 90/98 ms
+- ✅ P9.7 Release v0.3.0

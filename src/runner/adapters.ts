@@ -41,16 +41,20 @@ export function failedOnlyArgs(
   switch (runner) {
     case 'jest':
     case 'mocha': {
-      // one positive lookahead for failures; jest -t / mocha --grep match it
-      // against the full test name. A negative lookahead keeps quarantined
-      // tests out of the re-run in the SAME selector (two -t flags would
-      // override each other).
+      // jest -t / mocha --grep match against the FULL test name
+      // ("ancestors title", space-joined). Selectors are boundary-anchored:
+      // a failed TITLE matches only when it is a space-delimited final
+      // segment of the full name — "update" must not re-run "math re-update".
+      // Quarantined names get the same anchoring in a negative lookahead so a
+      // suffix collision ("login ok" vs "ui renders login ok") cannot pull a
+      // quarantined test back into the re-run (two -t flags would override
+      // each other, so include+exclude share one pattern).
       const include = failedNames.map(escapeRegExp).join('|');
       const exclude = [...new Set(quarantinedNames.map(escapeRegExp))];
       const pattern =
         exclude.length > 0
-          ? `(?=.*(?:${include}))(?!.*(?:${exclude.join('|')}))`
-          : `^(?:.*(?:${include}))$`;
+          ? `^(?=(?:.* )?(?:${include})$)(?!(?:.* )?(?:${exclude.join('|')})$)`
+          : `^(?:.* )?(?:${include})$`;
       return runner === 'jest' ? ['-t', pattern] : ['--grep', pattern];
     }
     case 'go': {
@@ -64,7 +68,9 @@ export function failedOnlyArgs(
       // pytest --lf re-runs the last-failed set from attempt 1's own cache —
       // the only per-test selector pytest has that respects node ids.
       // Quarantined tests never entered last-failed: attempt 1 already
-      // deselected them.
+      // deselected them. Caveat: a stale last-failed cache from a manual
+      // pytest run outside flakefinder could re-run a quarantined test (see
+      // USAGE "targeted re-runs").
       return ['--lf'];
     default:
       return null; // generic: no adapter — full re-run
