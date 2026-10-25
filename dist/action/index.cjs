@@ -44908,8 +44908,8 @@ var require_zip_archive_entry = __commonJS({
       }
       this.crc = crc;
     };
-    ZipArchiveEntry.prototype.setExternalAttributes = function(attr2) {
-      this.exattr = attr2 >>> 0;
+    ZipArchiveEntry.prototype.setExternalAttributes = function(attr3) {
+      this.exattr = attr3 >>> 0;
     };
     ZipArchiveEntry.prototype.setExtra = function(extra) {
       this.extra = extra;
@@ -44920,8 +44920,8 @@ var require_zip_archive_entry = __commonJS({
       }
       this.gpb = gpb;
     };
-    ZipArchiveEntry.prototype.setInternalAttributes = function(attr2) {
-      this.inattr = attr2;
+    ZipArchiveEntry.prototype.setInternalAttributes = function(attr3) {
+      this.inattr = attr3;
     };
     ZipArchiveEntry.prototype.setMethod = function(method) {
       if (method < 0) {
@@ -129086,7 +129086,7 @@ ${hasVerdicts ? drawerMarkup : ""}
 }
 
 // src/types.ts
-var FLAKEFINDER_VERSION = "1.0.0";
+var FLAKEFINDER_VERSION = "1.1.0";
 
 // src/report/json.ts
 function renderJson(verdicts, cfg) {
@@ -129857,14 +129857,14 @@ var jestParser = {
         ) : [];
         const suite = ancestors.length > 0 ? ancestors.join(" > ") : filePath;
         const name = typeof assertion.title === "string" && assertion.title.trim() !== "" ? assertion.title : typeof assertion.fullName === "string" && assertion.fullName.trim() !== "" ? assertion.fullName : "(unnamed)";
-        const durationMs = typeof assertion.duration === "number" && Number.isFinite(assertion.duration) ? assertion.duration : null;
+        const durationMs2 = typeof assertion.duration === "number" && Number.isFinite(assertion.duration) ? assertion.duration : null;
         const message = trimTo(toArray(assertion.failureMessages)[0], 2e3);
         const result = {
           testId: makeTestId(suite, name),
           suite,
           name,
           status,
-          durationMs
+          durationMs: durationMs2
         };
         if (message !== void 0) result.message = message;
         results.push(result);
@@ -130076,13 +130076,13 @@ var mochaParser = {
       }
       const finalStatus = status ?? "pass";
       const suite = deriveSuite(entry, title, fullTitle);
-      const durationMs = typeof entry.duration === "number" && Number.isFinite(entry.duration) ? entry.duration : null;
+      const durationMs2 = typeof entry.duration === "number" && Number.isFinite(entry.duration) ? entry.duration : null;
       const result = {
         testId: makeTestId(suite, title),
         suite,
         name: title,
         status: finalStatus,
-        durationMs
+        durationMs: durationMs2
       };
       const err = entry.err;
       if (typeof err === "string") {
@@ -130100,8 +130100,263 @@ var mochaParser = {
   }
 };
 
+// src/parsers/tap.ts
+var ROOT_SUITE = "node:test";
+var MESSAGE_MAX_CHARS2 = 2e3;
+var tapParser = {
+  name: "tap",
+  sniff(content) {
+    const first = stripBom(content).split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "");
+    return first !== void 0 && /^TAP version \d+\s*$/i.test(first);
+  },
+  parse(content, sourcePath) {
+    const results = [];
+    const warnings = [];
+    const body3 = stripBom(content);
+    if (body3.trim() === "") {
+      warnings.push(`tap: ${sourcePath}: file is empty`);
+      return { results, warnings };
+    }
+    const lines = body3.split(/\r?\n/);
+    const ancestors = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const sub = line.match(/^\s*# Subtest: (.+?)\s*$/);
+      if (sub) {
+        ancestors.push(sub[1]);
+        continue;
+      }
+      const assertion = line.match(
+        /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s+#\s*(SKIP|TODO)\b(.*))?$/
+      );
+      if (assertion) {
+        const [, verdict, rawName, directive, directiveText] = assertion;
+        const name = rawName.trim();
+        let yaml = { isSuite: false };
+        if (lines[i + 1]?.trim() === "---") {
+          let j = i + 2;
+          const block = [];
+          while (j < lines.length && lines[j].trim() !== "...") {
+            block.push(lines[j]);
+            j++;
+          }
+          yaml = parseYamlBlock(block, sourcePath, warnings);
+        }
+        const ownDeclaration = ancestors.length > 0 && ancestors[ancestors.length - 1] === name;
+        const isAggregate = ownDeclaration && yaml.isSuite;
+        if (isAggregate) {
+          ancestors.pop();
+          continue;
+        }
+        const chain = ownDeclaration ? ancestors.slice(0, -1) : ancestors;
+        const suite = chain.length > 0 ? chain.join(" > ") : ROOT_SUITE;
+        let status = verdict === "not ok" ? "fail" : "pass";
+        let message = yaml.error;
+        if (directive === "SKIP" || directive === "TODO") {
+          status = "skip";
+          const reason = directiveText?.replace(/^\s*-\s*/, "").trim();
+          if (reason) message = reason;
+        }
+        const result = {
+          testId: makeTestId(suite, name),
+          suite,
+          name,
+          status,
+          durationMs: null
+        };
+        if (message !== void 0 && message !== "")
+          result.message = trimTo(message, MESSAGE_MAX_CHARS2);
+        if (status === "fail" && yaml.stack !== void 0) {
+          result.stack = trimTo(yaml.stack, 1e3);
+        }
+        results.push(result);
+        if (ownDeclaration) ancestors.pop();
+      }
+    }
+    if (ancestors.length > 0) {
+      warnings.push(
+        `tap: ${sourcePath}: ${ancestors.length} subtest(s) never reported a result (truncated stream?)`
+      );
+    }
+    return { results, warnings };
+  }
+};
+function parseYamlBlock(block, sourcePath, warnings) {
+  const out = { isSuite: false };
+  try {
+    for (let k = 0; k < block.length; k++) {
+      const line = block[k];
+      const errorMatch = line.match(/^\s*error:\s*(.+)$/);
+      if (errorMatch && out.error === void 0) {
+        out.error = unquote(errorMatch[1]);
+        continue;
+      }
+      const typeMatch = line.match(/^\s*type:\s*'suite'/);
+      if (typeMatch) out.isSuite = true;
+      const stackMatch = line.match(/^\s*stack:\s*\|[-+]?\s*$/);
+      if (stackMatch) {
+        const stackLines = [];
+        let m = k + 1;
+        const baseIndent = block[m]?.match(/^\s*/)?.[0].length ?? 0;
+        while (m < block.length && (block[m].trim() === "" || (block[m].match(/^\s*/)?.[0].length ?? 0) >= baseIndent)) {
+          stackLines.push(block[m].slice(baseIndent));
+          m++;
+        }
+        out.stack = stackLines.join("\n").trimEnd();
+        k = m - 1;
+      }
+    }
+  } catch (err) {
+    warnings.push(`tap: ${sourcePath}: diagnostic block parse skipped (${errorMessage(err)})`);
+  }
+  return out;
+}
+function unquote(s) {
+  const m = s.match(/^'(.*)'$/);
+  return m !== null ? m[1].replace(/\\'/g, "'") : s;
+}
+
+// src/parsers/trx.ts
+var import_fast_xml_parser3 = require("fast-xml-parser");
+var xml2 = new import_fast_xml_parser3.XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+function attr2(node, name) {
+  const v = node[name];
+  return typeof v === "string" && v.trim() !== "" ? v : void 0;
+}
+function textOf2(node) {
+  if (typeof node === "string") return node;
+  if (isObj(node)) {
+    const t = node["#text"];
+    if (typeof t === "string") return t;
+    if (Array.isArray(t)) return t.filter((p) => typeof p === "string").join("");
+  }
+  return void 0;
+}
+function durationMs(raw) {
+  if (raw === void 0) return null;
+  const m = raw.match(/^(?:(\d+)):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/);
+  if (!m) return null;
+  const h = Number.parseInt(m[1], 10);
+  const min = Number.parseInt(m[2], 10);
+  const sec = Number.parseFloat(m[3]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec) || sec < 0) return null;
+  return Math.round(((h * 60 + min) * 60 + sec) * 1e3);
+}
+function outcomeStatus(outcome, hasErrorInfo) {
+  switch (outcome) {
+    case "Passed":
+      return "pass";
+    case "Failed":
+      return hasErrorInfo ? "error" : "fail";
+    case "NotExecuted":
+      return "skip";
+    default:
+      return null;
+  }
+}
+var trxParser = {
+  name: "trx",
+  sniff(content) {
+    const trimmed = stripBom(content).trimStart();
+    return trimmed.startsWith("<") && /<(?:[\w.-]+:)?TestRun[\s>]/.test(trimmed);
+  },
+  parse(content, sourcePath) {
+    const ctx = { sourcePath, results: [], warnings: [] };
+    const body3 = stripBom(content);
+    if (body3.trim() === "") {
+      ctx.warnings.push(`trx: ${sourcePath}: file is empty`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    let doc;
+    try {
+      doc = xml2.parse(body3);
+    } catch (err) {
+      ctx.warnings.push(`trx: ${sourcePath}: failed to parse XML: ${errorMessage(err)}`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    if (!isObj(doc)) {
+      ctx.warnings.push(`trx: ${sourcePath}: XML did not parse to a document object`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    const rootKey = Object.keys(doc).find((k) => /(?:^|:)TestRun$/.test(k));
+    if (rootKey === void 0) {
+      ctx.warnings.push(`trx: ${sourcePath}: no <TestRun> root element found`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    const root = doc[rootKey];
+    if (!isObj(root)) return { results: ctx.results, warnings: ctx.warnings };
+    const suiteByTestName = /* @__PURE__ */ new Map();
+    const defKey = Object.keys(root).find((k) => /(?:^|:)TestDefinitions$/.test(k));
+    if (defKey !== void 0) {
+      for (const unit of toArray(root[defKey]?.UnitTest)) {
+        if (!isObj(unit)) continue;
+        const unitName = attr2(unit, "@_name");
+        const methodKey = Object.keys(unit).find((k) => /(?:^|:)TestMethod$/.test(k));
+        const method = methodKey !== void 0 ? unit[methodKey] : void 0;
+        const className = method !== void 0 && isObj(method) ? attr2(method, "@_className") : void 0;
+        if (unitName !== void 0 && className !== void 0) {
+          suiteByTestName.set(unitName, className);
+        }
+      }
+    }
+    const resultsKey = Object.keys(root).find((k) => /(?:^|:)Results$/.test(k));
+    if (resultsKey === void 0) {
+      ctx.warnings.push(`trx: ${sourcePath}: no <Results> element found`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    for (const r of toArray(root[resultsKey]?.UnitTestResult)) {
+      if (!isObj(r)) continue;
+      const testName = attr2(r, "@_testName");
+      if (testName === void 0) {
+        ctx.warnings.push(`trx: ${sourcePath}: skipping <UnitTestResult> without testName`);
+        continue;
+      }
+      const outputKey = Object.keys(r).find((k) => /(?:^|:)Output$/.test(k));
+      const output = outputKey !== void 0 && isObj(r[outputKey]) ? r[outputKey] : void 0;
+      const errorKey = output !== void 0 ? Object.keys(output).find((k) => /(?:^|:)ErrorInfo$/.test(k)) : void 0;
+      const errorInfo = errorKey !== void 0 && isObj(output[errorKey]) ? output[errorKey] : void 0;
+      let message;
+      let stack;
+      if (errorInfo !== void 0) {
+        const msgKey = Object.keys(errorInfo).find((k) => /(?:^|:)Message$/.test(k));
+        if (msgKey !== void 0) message = textOf2(errorInfo[msgKey]);
+        const stackKey = Object.keys(errorInfo).find((k) => /(?:^|:)StackTrace$/.test(k));
+        if (stackKey !== void 0) stack = textOf2(errorInfo[stackKey]);
+      }
+      const status = outcomeStatus(attr2(r, "@_outcome"), errorInfo !== void 0);
+      if (status === null) {
+        ctx.warnings.push(
+          `trx: ${sourcePath}: unknown outcome "${attr2(r, "@_outcome")}" \u2014 skipped ${testName}`
+        );
+        continue;
+      }
+      const suite = suiteByTestName.get(testName) ?? "unknown";
+      const result = {
+        testId: makeTestId(suite, testName),
+        suite,
+        name: testName,
+        status,
+        durationMs: durationMs(attr2(r, "@_duration"))
+      };
+      const trimmedMessage = trimTo(message, 2e3);
+      if (trimmedMessage !== void 0) result.message = trimmedMessage;
+      const trimmedStack = trimTo(stack, 1e3);
+      if (trimmedStack !== void 0) result.stack = trimmedStack;
+      ctx.results.push(result);
+    }
+    return { results: ctx.results, warnings: ctx.warnings };
+  }
+};
+
 // src/parsers/index.ts
-var parsers = [junitParser, jestParser, mochaParser, goTestParser];
+var parsers = [
+  junitParser,
+  jestParser,
+  mochaParser,
+  goTestParser,
+  tapParser,
+  trxParser
+];
 function detectParser(content) {
   for (const parser of parsers) {
     try {
@@ -130209,9 +130464,21 @@ async function upsertPrComment(token, body3, ctx) {
   }
   const existing = comments.find((c) => (c.body ?? "").includes(PR_COMMENT_MARKER));
   if (existing) {
-    await ghRest(ctx.apiUrl, token, "PATCH", `/repos/${ctx.owner}/${ctx.repo}/issues/comments/${existing.id}`, { body: body3 });
+    await ghRest(
+      ctx.apiUrl,
+      token,
+      "PATCH",
+      `/repos/${ctx.owner}/${ctx.repo}/issues/comments/${existing.id}`,
+      { body: body3 }
+    );
   } else {
-    await ghRest(ctx.apiUrl, token, "POST", `/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments`, { body: body3 });
+    await ghRest(
+      ctx.apiUrl,
+      token,
+      "POST",
+      `/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments`,
+      { body: body3 }
+    );
   }
 }
 async function expandGlobs(patterns, cwd) {
@@ -130295,7 +130562,11 @@ async function actionMain() {
       { data: "Class", header: true },
       { data: "Score", header: true }
     ],
-    ...verdicts.filter((v) => v.classification.startsWith("flaky-")).sort((a, b) => b.flakeScore - a.flakeScore).slice(0, 20).map((v) => [`${redact(v.suite)} :: ${redact(v.name)}`, v.classification, String(v.flakeScore)])
+    ...verdicts.filter((v) => v.classification.startsWith("flaky-")).sort((a, b) => b.flakeScore - a.flakeScore).slice(0, 20).map((v) => [
+      `${redact(v.suite)} :: ${redact(v.name)}`,
+      v.classification,
+      String(v.flakeScore)
+    ])
   ]).write();
   if (getBooleanInput("comment") && gh.isPr) {
     const token = getInput("github-token");

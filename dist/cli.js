@@ -1138,14 +1138,14 @@ var jestParser = {
         ) : [];
         const suite = ancestors.length > 0 ? ancestors.join(" > ") : filePath;
         const name = typeof assertion.title === "string" && assertion.title.trim() !== "" ? assertion.title : typeof assertion.fullName === "string" && assertion.fullName.trim() !== "" ? assertion.fullName : "(unnamed)";
-        const durationMs = typeof assertion.duration === "number" && Number.isFinite(assertion.duration) ? assertion.duration : null;
+        const durationMs2 = typeof assertion.duration === "number" && Number.isFinite(assertion.duration) ? assertion.duration : null;
         const message = trimTo(toArray(assertion.failureMessages)[0], 2e3);
         const result = {
           testId: makeTestId(suite, name),
           suite,
           name,
           status,
-          durationMs
+          durationMs: durationMs2
         };
         if (message !== void 0) result.message = message;
         results.push(result);
@@ -1357,13 +1357,13 @@ var mochaParser = {
       }
       const finalStatus = status ?? "pass";
       const suite = deriveSuite(entry, title, fullTitle);
-      const durationMs = typeof entry.duration === "number" && Number.isFinite(entry.duration) ? entry.duration : null;
+      const durationMs2 = typeof entry.duration === "number" && Number.isFinite(entry.duration) ? entry.duration : null;
       const result = {
         testId: makeTestId(suite, title),
         suite,
         name: title,
         status: finalStatus,
-        durationMs
+        durationMs: durationMs2
       };
       const err = entry.err;
       if (typeof err === "string") {
@@ -1381,8 +1381,263 @@ var mochaParser = {
   }
 };
 
+// src/parsers/tap.ts
+var ROOT_SUITE = "node:test";
+var MESSAGE_MAX_CHARS2 = 2e3;
+var tapParser = {
+  name: "tap",
+  sniff(content) {
+    const first = stripBom(content).split(/\r?\n/).map((l) => l.trim()).find((l) => l !== "");
+    return first !== void 0 && /^TAP version \d+\s*$/i.test(first);
+  },
+  parse(content, sourcePath) {
+    const results = [];
+    const warnings = [];
+    const body = stripBom(content);
+    if (body.trim() === "") {
+      warnings.push(`tap: ${sourcePath}: file is empty`);
+      return { results, warnings };
+    }
+    const lines = body.split(/\r?\n/);
+    const ancestors = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const sub = line.match(/^\s*# Subtest: (.+?)\s*$/);
+      if (sub) {
+        ancestors.push(sub[1]);
+        continue;
+      }
+      const assertion = line.match(
+        /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s+#\s*(SKIP|TODO)\b(.*))?$/
+      );
+      if (assertion) {
+        const [, verdict, rawName, directive, directiveText] = assertion;
+        const name = rawName.trim();
+        let yaml = { isSuite: false };
+        if (lines[i + 1]?.trim() === "---") {
+          let j = i + 2;
+          const block = [];
+          while (j < lines.length && lines[j].trim() !== "...") {
+            block.push(lines[j]);
+            j++;
+          }
+          yaml = parseYamlBlock(block, sourcePath, warnings);
+        }
+        const ownDeclaration = ancestors.length > 0 && ancestors[ancestors.length - 1] === name;
+        const isAggregate = ownDeclaration && yaml.isSuite;
+        if (isAggregate) {
+          ancestors.pop();
+          continue;
+        }
+        const chain = ownDeclaration ? ancestors.slice(0, -1) : ancestors;
+        const suite = chain.length > 0 ? chain.join(" > ") : ROOT_SUITE;
+        let status = verdict === "not ok" ? "fail" : "pass";
+        let message = yaml.error;
+        if (directive === "SKIP" || directive === "TODO") {
+          status = "skip";
+          const reason = directiveText?.replace(/^\s*-\s*/, "").trim();
+          if (reason) message = reason;
+        }
+        const result = {
+          testId: makeTestId(suite, name),
+          suite,
+          name,
+          status,
+          durationMs: null
+        };
+        if (message !== void 0 && message !== "")
+          result.message = trimTo(message, MESSAGE_MAX_CHARS2);
+        if (status === "fail" && yaml.stack !== void 0) {
+          result.stack = trimTo(yaml.stack, 1e3);
+        }
+        results.push(result);
+        if (ownDeclaration) ancestors.pop();
+      }
+    }
+    if (ancestors.length > 0) {
+      warnings.push(
+        `tap: ${sourcePath}: ${ancestors.length} subtest(s) never reported a result (truncated stream?)`
+      );
+    }
+    return { results, warnings };
+  }
+};
+function parseYamlBlock(block, sourcePath, warnings) {
+  const out = { isSuite: false };
+  try {
+    for (let k = 0; k < block.length; k++) {
+      const line = block[k];
+      const errorMatch = line.match(/^\s*error:\s*(.+)$/);
+      if (errorMatch && out.error === void 0) {
+        out.error = unquote(errorMatch[1]);
+        continue;
+      }
+      const typeMatch = line.match(/^\s*type:\s*'suite'/);
+      if (typeMatch) out.isSuite = true;
+      const stackMatch = line.match(/^\s*stack:\s*\|[-+]?\s*$/);
+      if (stackMatch) {
+        const stackLines = [];
+        let m = k + 1;
+        const baseIndent = block[m]?.match(/^\s*/)?.[0].length ?? 0;
+        while (m < block.length && (block[m].trim() === "" || (block[m].match(/^\s*/)?.[0].length ?? 0) >= baseIndent)) {
+          stackLines.push(block[m].slice(baseIndent));
+          m++;
+        }
+        out.stack = stackLines.join("\n").trimEnd();
+        k = m - 1;
+      }
+    }
+  } catch (err) {
+    warnings.push(`tap: ${sourcePath}: diagnostic block parse skipped (${errorMessage(err)})`);
+  }
+  return out;
+}
+function unquote(s) {
+  const m = s.match(/^'(.*)'$/);
+  return m !== null ? m[1].replace(/\\'/g, "'") : s;
+}
+
+// src/parsers/trx.ts
+import { XMLParser as XMLParser2 } from "fast-xml-parser";
+var xml2 = new XMLParser2({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+function attr2(node, name) {
+  const v = node[name];
+  return typeof v === "string" && v.trim() !== "" ? v : void 0;
+}
+function textOf2(node) {
+  if (typeof node === "string") return node;
+  if (isObj(node)) {
+    const t = node["#text"];
+    if (typeof t === "string") return t;
+    if (Array.isArray(t)) return t.filter((p) => typeof p === "string").join("");
+  }
+  return void 0;
+}
+function durationMs(raw) {
+  if (raw === void 0) return null;
+  const m = raw.match(/^(?:(\d+)):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/);
+  if (!m) return null;
+  const h = Number.parseInt(m[1], 10);
+  const min = Number.parseInt(m[2], 10);
+  const sec = Number.parseFloat(m[3]);
+  if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec) || sec < 0) return null;
+  return Math.round(((h * 60 + min) * 60 + sec) * 1e3);
+}
+function outcomeStatus(outcome, hasErrorInfo) {
+  switch (outcome) {
+    case "Passed":
+      return "pass";
+    case "Failed":
+      return hasErrorInfo ? "error" : "fail";
+    case "NotExecuted":
+      return "skip";
+    default:
+      return null;
+  }
+}
+var trxParser = {
+  name: "trx",
+  sniff(content) {
+    const trimmed = stripBom(content).trimStart();
+    return trimmed.startsWith("<") && /<(?:[\w.-]+:)?TestRun[\s>]/.test(trimmed);
+  },
+  parse(content, sourcePath) {
+    const ctx = { sourcePath, results: [], warnings: [] };
+    const body = stripBom(content);
+    if (body.trim() === "") {
+      ctx.warnings.push(`trx: ${sourcePath}: file is empty`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    let doc;
+    try {
+      doc = xml2.parse(body);
+    } catch (err) {
+      ctx.warnings.push(`trx: ${sourcePath}: failed to parse XML: ${errorMessage(err)}`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    if (!isObj(doc)) {
+      ctx.warnings.push(`trx: ${sourcePath}: XML did not parse to a document object`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    const rootKey = Object.keys(doc).find((k) => /(?:^|:)TestRun$/.test(k));
+    if (rootKey === void 0) {
+      ctx.warnings.push(`trx: ${sourcePath}: no <TestRun> root element found`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    const root = doc[rootKey];
+    if (!isObj(root)) return { results: ctx.results, warnings: ctx.warnings };
+    const suiteByTestName = /* @__PURE__ */ new Map();
+    const defKey = Object.keys(root).find((k) => /(?:^|:)TestDefinitions$/.test(k));
+    if (defKey !== void 0) {
+      for (const unit of toArray(root[defKey]?.UnitTest)) {
+        if (!isObj(unit)) continue;
+        const unitName = attr2(unit, "@_name");
+        const methodKey = Object.keys(unit).find((k) => /(?:^|:)TestMethod$/.test(k));
+        const method = methodKey !== void 0 ? unit[methodKey] : void 0;
+        const className = method !== void 0 && isObj(method) ? attr2(method, "@_className") : void 0;
+        if (unitName !== void 0 && className !== void 0) {
+          suiteByTestName.set(unitName, className);
+        }
+      }
+    }
+    const resultsKey = Object.keys(root).find((k) => /(?:^|:)Results$/.test(k));
+    if (resultsKey === void 0) {
+      ctx.warnings.push(`trx: ${sourcePath}: no <Results> element found`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    for (const r of toArray(root[resultsKey]?.UnitTestResult)) {
+      if (!isObj(r)) continue;
+      const testName = attr2(r, "@_testName");
+      if (testName === void 0) {
+        ctx.warnings.push(`trx: ${sourcePath}: skipping <UnitTestResult> without testName`);
+        continue;
+      }
+      const outputKey = Object.keys(r).find((k) => /(?:^|:)Output$/.test(k));
+      const output = outputKey !== void 0 && isObj(r[outputKey]) ? r[outputKey] : void 0;
+      const errorKey = output !== void 0 ? Object.keys(output).find((k) => /(?:^|:)ErrorInfo$/.test(k)) : void 0;
+      const errorInfo = errorKey !== void 0 && isObj(output[errorKey]) ? output[errorKey] : void 0;
+      let message;
+      let stack;
+      if (errorInfo !== void 0) {
+        const msgKey = Object.keys(errorInfo).find((k) => /(?:^|:)Message$/.test(k));
+        if (msgKey !== void 0) message = textOf2(errorInfo[msgKey]);
+        const stackKey = Object.keys(errorInfo).find((k) => /(?:^|:)StackTrace$/.test(k));
+        if (stackKey !== void 0) stack = textOf2(errorInfo[stackKey]);
+      }
+      const status = outcomeStatus(attr2(r, "@_outcome"), errorInfo !== void 0);
+      if (status === null) {
+        ctx.warnings.push(
+          `trx: ${sourcePath}: unknown outcome "${attr2(r, "@_outcome")}" \u2014 skipped ${testName}`
+        );
+        continue;
+      }
+      const suite = suiteByTestName.get(testName) ?? "unknown";
+      const result = {
+        testId: makeTestId(suite, testName),
+        suite,
+        name: testName,
+        status,
+        durationMs: durationMs(attr2(r, "@_duration"))
+      };
+      const trimmedMessage = trimTo(message, 2e3);
+      if (trimmedMessage !== void 0) result.message = trimmedMessage;
+      const trimmedStack = trimTo(stack, 1e3);
+      if (trimmedStack !== void 0) result.stack = trimmedStack;
+      ctx.results.push(result);
+    }
+    return { results: ctx.results, warnings: ctx.warnings };
+  }
+};
+
 // src/parsers/index.ts
-var parsers = [junitParser, jestParser, mochaParser, goTestParser];
+var parsers = [
+  junitParser,
+  jestParser,
+  mochaParser,
+  goTestParser,
+  tapParser,
+  trxParser
+];
 function detectParser(content) {
   for (const parser of parsers) {
     try {
@@ -1439,6 +1694,169 @@ function redact(text) {
     out = out.replace(p.re, p.replacement);
   }
   return out;
+}
+
+// src/report/markdown.ts
+var PR_COMMENT_MARKER = "<!-- flakefinder:report -->";
+var FLAKY_CLASSES = ["flaky-confirmed", "flaky-retry", "flaky-suspected"];
+function isFlaky(v) {
+  return FLAKY_CLASSES.includes(v.classification);
+}
+function cell(s, max = 80) {
+  if (!s) return "";
+  const oneLine = redact(s).replace(/\r?\n/g, " ");
+  const out = oneLine.length > max ? `${oneLine.slice(0, max - 1)}\u2026` : oneLine;
+  return out.replace(/\|/g, "\\|");
+}
+function classLabel(v) {
+  switch (v.classification) {
+    case "flaky-confirmed":
+      return "flaky \u2705\u274C";
+    case "flaky-retry":
+      return "flaky \u{1F501}";
+    case "flaky-suspected":
+      return "flaky \u2753";
+    case "failing":
+      return "failing";
+    case "new-failure":
+      return "new failure";
+    case "passing":
+      return "passing";
+    case "skipped":
+      return "skipped";
+    case "gone":
+      return "gone";
+  }
+}
+function table(rows) {
+  const lines = [
+    "| Test | Suite | Class | Score | Conf | \u0394 |",
+    "| --- | --- | --- | --- | --- | --- |"
+  ];
+  for (const { v, delta } of rows) {
+    lines.push(
+      `| ${cell(v.name, 60)} | ${cell(v.suite, 40)} | ${classLabel(v)} | ${v.flakeScore} | ${v.confidence}% | ${delta} |`
+    );
+  }
+  return lines.join("\n");
+}
+function flakeRows(verdicts) {
+  return verdicts.filter(isFlaky).sort((a, b) => b.flakeScore - a.flakeScore).map((v) => ({ v, delta: "" }));
+}
+function renderMarkdown(verdicts, opts) {
+  const flaky = flakeRows(verdicts);
+  const failing = verdicts.filter(
+    (v) => v.classification === "failing" || v.classification === "new-failure"
+  );
+  const sections = ["## flakefinder report", ""];
+  if (flaky.length > 0) {
+    sections.push(`**Flaky tests: ${flaky.length}**`, "", table(flaky), "");
+  } else {
+    sections.push("\u2705 no flakes detected", "");
+  }
+  if (failing.length > 0) {
+    sections.push(
+      `**Deterministic failures: ${failing.length}**`,
+      "",
+      table(failing.map((v) => ({ v, delta: "" }))),
+      ""
+    );
+  }
+  if (!opts.flakesOnly) {
+    const passing = verdicts.filter((v) => v.classification === "passing").length;
+    sections.push(`_tracked: ${verdicts.length} tests \xB7 ${passing} passing_`, "");
+  }
+  return sections.join("\n");
+}
+function buildPrComment(verdicts, previous) {
+  const prevFlaky = new Set((previous ?? []).filter(isFlaky).map((v) => v.testId));
+  const prevScore = new Map((previous ?? []).map((v) => [v.testId, v.flakeScore]));
+  const flaky = verdicts.filter(isFlaky).sort((a, b) => b.flakeScore - a.flakeScore);
+  const newFlakes = flaky.filter((v) => !prevFlaky.has(v.testId));
+  const failing = verdicts.filter(
+    (v) => v.classification === "failing" || v.classification === "new-failure"
+  );
+  const rows = flaky.map((v) => {
+    if (!previous) return { v, delta: "\u2014" };
+    if (!prevFlaky.has(v.testId)) return { v, delta: "**new**" };
+    const d = v.flakeScore - (prevScore.get(v.testId) ?? 0);
+    return { v, delta: d === 0 ? "=" : d > 0 ? `\u2191${d}` : `\u2193${-d}` };
+  });
+  const out = [PR_COMMENT_MARKER, "## \u{1F40D} flakefinder", ""];
+  const summary = flaky.length === 0 ? `\u2705 no flakes detected among ${verdicts.length} tracked tests` : `**${flaky.length} flaky** (${newFlakes.length} new \xB7 ${flaky.length - newFlakes.length} known) \xB7 ${failing.length} failing \xB7 ${verdicts.length} tracked`;
+  out.push(summary);
+  if (previous === null && flaky.length > 0) out.push("_first run \u2014 building history_");
+  out.push("");
+  if (flaky.length > 0) out.push(table(rows), "");
+  const detailCount = Math.min(newFlakes.length, 5);
+  for (let i = 0; i < detailCount; i++) {
+    const v = newFlakes[i];
+    out.push(
+      `<details><summary><code>${cell(v.name, 60)}</code> \u2014 score ${v.flakeScore}</summary>`,
+      ""
+    );
+    out.push("````text");
+    out.push(redact(v.lastMessage ?? "(no failure message recorded)").slice(0, 400));
+    out.push("````", "");
+    out.push("Quarantine it:", "");
+    out.push("```bash");
+    out.push(`flakefinder quarantine add ${v.testId}`);
+    out.push("```", "");
+    out.push("</details>", "");
+  }
+  if (newFlakes.length > detailCount) {
+    out.push(
+      `_\u2026and ${newFlakes.length - detailCount} more new flake(s) \u2014 see the dashboard artifact._`,
+      ""
+    );
+  }
+  out.push(
+    "---",
+    "_\u{1F4CA} HTML dashboard uploaded as artifact `flakefinder-dashboard` \xB7 docs: `docs/github-action.md`_"
+  );
+  return out.join("\n");
+}
+
+// src/report/gitlab.ts
+function gitlabEnvFromProcess(env = process.env) {
+  if (env.GITLAB_CI !== "true") return null;
+  const apiV4 = env.CI_API_V4_URL;
+  const projectId = env.CI_PROJECT_ID;
+  const mrIid = env.CI_MERGE_REQUEST_IID;
+  const token = env.GITLAB_TOKEN;
+  if (!apiV4 || !projectId || !mrIid || !token) return null;
+  return { apiV4, projectId, mrIid, token };
+}
+async function upsertMrNote(gl, body, fetchImpl = fetch) {
+  const headers = {
+    "PRIVATE-TOKEN": gl.token,
+    "Content-Type": "application/json"
+  };
+  const notesUrl = `${gl.apiV4}/projects/${encodeURIComponent(gl.projectId)}/merge_requests/${encodeURIComponent(gl.mrIid)}/notes?per_page=100`;
+  try {
+    const listRes = await fetchImpl(notesUrl, { headers });
+    if (!listRes.ok) {
+      return "unavailable";
+    }
+    const notes = await listRes.json();
+    if (!Array.isArray(notes)) return "unavailable";
+    const existing = notes.find((n) => (n.body ?? "").includes(PR_COMMENT_MARKER));
+    if (existing) {
+      const res2 = await fetchImpl(
+        `${gl.apiV4}/projects/${encodeURIComponent(gl.projectId)}/merge_requests/${encodeURIComponent(gl.mrIid)}/notes/${existing.id}`,
+        { method: "PUT", headers, body: JSON.stringify({ body }) }
+      );
+      return res2.ok ? "updated" : "unavailable";
+    }
+    const res = await fetchImpl(notesUrl, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ body })
+    });
+    return res.ok ? "created" : "unavailable";
+  } catch {
+    return "unavailable";
+  }
 }
 
 // src/report/html.ts
@@ -2813,7 +3231,7 @@ ${hasVerdicts ? drawerMarkup : ""}
 }
 
 // src/types.ts
-var FLAKEFINDER_VERSION = "1.0.0";
+var FLAKEFINDER_VERSION = "1.1.0";
 
 // src/report/json.ts
 function renderJson(verdicts, cfg) {
@@ -2830,78 +3248,6 @@ function renderJson(verdicts, cfg) {
     })
   };
   return JSON.stringify(payload, null, 2);
-}
-
-// src/report/markdown.ts
-var FLAKY_CLASSES = ["flaky-confirmed", "flaky-retry", "flaky-suspected"];
-function isFlaky(v) {
-  return FLAKY_CLASSES.includes(v.classification);
-}
-function cell(s, max = 80) {
-  if (!s) return "";
-  const oneLine = redact(s).replace(/\r?\n/g, " ");
-  const out = oneLine.length > max ? `${oneLine.slice(0, max - 1)}\u2026` : oneLine;
-  return out.replace(/\|/g, "\\|");
-}
-function classLabel(v) {
-  switch (v.classification) {
-    case "flaky-confirmed":
-      return "flaky \u2705\u274C";
-    case "flaky-retry":
-      return "flaky \u{1F501}";
-    case "flaky-suspected":
-      return "flaky \u2753";
-    case "failing":
-      return "failing";
-    case "new-failure":
-      return "new failure";
-    case "passing":
-      return "passing";
-    case "skipped":
-      return "skipped";
-    case "gone":
-      return "gone";
-  }
-}
-function table(rows) {
-  const lines = [
-    "| Test | Suite | Class | Score | Conf | \u0394 |",
-    "| --- | --- | --- | --- | --- | --- |"
-  ];
-  for (const { v, delta } of rows) {
-    lines.push(
-      `| ${cell(v.name, 60)} | ${cell(v.suite, 40)} | ${classLabel(v)} | ${v.flakeScore} | ${v.confidence}% | ${delta} |`
-    );
-  }
-  return lines.join("\n");
-}
-function flakeRows(verdicts) {
-  return verdicts.filter(isFlaky).sort((a, b) => b.flakeScore - a.flakeScore).map((v) => ({ v, delta: "" }));
-}
-function renderMarkdown(verdicts, opts) {
-  const flaky = flakeRows(verdicts);
-  const failing = verdicts.filter(
-    (v) => v.classification === "failing" || v.classification === "new-failure"
-  );
-  const sections = ["## flakefinder report", ""];
-  if (flaky.length > 0) {
-    sections.push(`**Flaky tests: ${flaky.length}**`, "", table(flaky), "");
-  } else {
-    sections.push("\u2705 no flakes detected", "");
-  }
-  if (failing.length > 0) {
-    sections.push(
-      `**Deterministic failures: ${failing.length}**`,
-      "",
-      table(failing.map((v) => ({ v, delta: "" }))),
-      ""
-    );
-  }
-  if (!opts.flakesOnly) {
-    const passing = verdicts.filter((v) => v.classification === "passing").length;
-    sections.push(`_tracked: ${verdicts.length} tests \xB7 ${passing} passing_`, "");
-  }
-  return sections.join("\n");
 }
 
 // src/report/terminal.ts
@@ -3750,7 +4096,7 @@ async function main(argv) {
   ).option(
     "--fail-on-new-flakes",
     "exit 1 when flakes appear that were not flaky in the previous snapshot"
-  ).action((opts) => {
+  ).action(async (opts) => {
     const g = globals();
     const cfg = resolveCfg(g);
     const targets = matchGlobs(g.cwd, cfg.reports);
@@ -3811,6 +4157,21 @@ async function main(argv) {
     }
     const newFlakes = computeNewFlakes(verdicts, previous);
     writeFileSync3(snap, JSON.stringify(verdicts), "utf8");
+    const gl = gitlabEnvFromProcess();
+    if (gl) {
+      try {
+        const noteVerdict = await upsertMrNote(gl, buildPrComment(verdicts, previous));
+        if (noteVerdict === "unavailable") {
+          console.warn(
+            "flakefinder: GitLab MR note could not be posted (check GITLAB_TOKEN scope)"
+          );
+        } else {
+          console.log(`gitlab: MR note ${noteVerdict}`);
+        }
+      } catch (err) {
+        console.warn(`flakefinder: GitLab MR note failed: ${err.message}`);
+      }
+    }
     if (opts.failOnNewFlakes && newFlakes.length > 0) {
       console.error(`flakefinder ci: ${newFlakes.length} NEW flake(s):`);
       for (const v of newFlakes)
