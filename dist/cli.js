@@ -103,7 +103,7 @@ function validateConfig(config) {
     const ok = Array.isArray(c.reports) && c.reports.every((x) => typeof x === "string" && x.trim() !== "");
     if (!ok)
       problems.push(
-        "reports: expected array of non-empty glob strings, got " + describe(c.reports)
+        `reports: expected array of non-empty glob strings, got ${describe(c.reports)}`
       );
   }
   if (c.storeDir !== void 0 && (typeof c.storeDir !== "string" || c.storeDir.trim() === "")) {
@@ -699,7 +699,11 @@ function sortRuns(runs) {
     if (g) g.push(r);
     else groups.set(r.runId, [r]);
   }
-  const minTs = (g) => g.reduce((m, r) => r.timestamp < m ? r.timestamp : m, g[0].timestamp);
+  const minTs = (g) => {
+    let min = g[0].timestamp;
+    for (const r of g) if (r.timestamp < min) min = r.timestamp;
+    return min;
+  };
   const ordered = [];
   for (const g of [...groups.values()].sort((a, b) => {
     const am = minTs(a);

@@ -210,6 +210,18 @@ sparkline, and a copyable `quarantine add` command.
   missing parent directories are created automatically
 - `--open` — open it in your browser after writing
 
+### `doctor`
+
+```console
+$ npx flakefinder doctor
+```
+
+Checks the whole setup in one pass: config validity, detected runner, report
+files actually matching the globs, history size/freshness/corruption, git
+metadata availability, quarantine health. Each line is `[ok]`/`[warn]`/
+`[FAIL]`/`[info]` with an actionable hint where relevant. Exit `1` when any
+check FAILed — safe to gate CI or a setup script on it.
+
 ### `quarantine`
 
 ```console
@@ -281,6 +293,7 @@ Previously these silently misbehaved (a wrong-case runner fell back to
 |---|---|
 | `0` | Clean run, **or** failures that were all proven flakes (unless `--fail-on-flake` / `failOnFlakes`) |
 | `1` | A deterministic failure persisted to the final attempt (`run`); a quarantined testId wasn't found; `ci --fail-on-new-flakes` saw new flakes |
+| `1` (doctor) | `doctor` found at least one FAIL-level problem (e.g. invalid config, unreadable quarantine file) |
 | `2` | Usage or environment error: bad flags, unreadable config, no report files matched for `ingest`/`ci`, unknown quarantine action |
 
 These are stable and scriptable — gate CI on `run`'s exit code directly.
