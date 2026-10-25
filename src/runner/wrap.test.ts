@@ -182,7 +182,9 @@ describe('quarantine forwarding mechanics', () => {
     const { shellQuote, isPackageManagerWrapper } = await import('./wrap.js');
     expect(shellQuote('safe-token_1.txt')).toBe('safe-token_1.txt');
     const quoted = shellQuote('^(?!.*(?:annoying flake))');
-    expect(quoted === '"^(?!.*(?:annoying flake))"' || quoted === "'^(?!.*(?:annoying flake))'").toBe(true);
+    expect(
+      quoted === '"^(?!.*(?:annoying flake))"' || quoted === "'^(?!.*(?:annoying flake))'",
+    ).toBe(true);
     expect(isPackageManagerWrapper(['npm', 'test'])).toBe(true);
     expect(isPackageManagerWrapper(['npm.cmd', 'test'])).toBe(true);
     expect(isPackageManagerWrapper(['yarn', 'jest'])).toBe(true);
@@ -193,7 +195,11 @@ describe('quarantine forwarding mechanics', () => {
   it('npm-style wrappers receive exclusion flags after -- (end-to-end)', async () => {
     const cwd = tmpCwd();
     // fake package: npm test -> node runner.js, which records its argv
-    writeFileSync(path.join(cwd, 'package.json'), JSON.stringify({ name: 'x', private: true, scripts: { test: 'node runner.js' } }), 'utf8');
+    writeFileSync(
+      path.join(cwd, 'package.json'),
+      JSON.stringify({ name: 'x', private: true, scripts: { test: 'node runner.js' } }),
+      'utf8',
+    );
     writeFileSync(
       path.join(cwd, 'runner.js'),
       "require('fs').writeFileSync('received.json', JSON.stringify(require('process').argv.slice(2)));",
@@ -201,12 +207,28 @@ describe('quarantine forwarding mechanics', () => {
     );
     writeFileSync(
       path.join(cwd, 'flakefinder.quarantine.json'),
-      JSON.stringify({ version: 1, entries: [{ testId: 'abc', suite: 's.test.js', name: 'annoying flake', reason: 'flaky', quarantinedAt: new Date().toISOString(), flakeScore: 90 }] }),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            testId: 'abc',
+            suite: 's.test.js',
+            name: 'annoying flake',
+            reason: 'flaky',
+            quarantinedAt: new Date().toISOString(),
+            flakeScore: 90,
+          },
+        ],
+      }),
       'utf8',
     );
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    await runLive(['npm', 'test'], cfg({ reports: [], runner: 'jest' }), { retries: 0, cwd, applyQuarantine: true });
+    await runLive(['npm', 'test'], cfg({ reports: [], runner: 'jest' }), {
+      retries: 0,
+      cwd,
+      applyQuarantine: true,
+    });
     const received = JSON.parse(readFileSync(path.join(cwd, 'received.json'), 'utf8')) as string[];
     expect(received).toContain('-t');
     expect(received).toContain('^(?!.*(?:annoying flake))'); // one intact arg, not split

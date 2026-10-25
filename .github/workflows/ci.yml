@@ -35,7 +35,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: [18, 20, 22]
+        # vitest (dev toolchain) needs Node >= 20.19; Node 18 is covered by the runtime job below
+        node: [20, 22]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -46,6 +47,29 @@ jobs:
       - run: npx vitest run
       - run: npm run build
       - run: node dist/cli.js version
+
+  node-18-runtime:
+    # The PUBLISHED CLI supports Node 18 (engines: >=18); exercise the built
+    # artifact directly, without the dev toolchain.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: node dist/cli.js version
+      - name: CLI smoke (ingest → report → html)
+        run: |
+          SMOKE=$(mktemp -d)
+          cp tests/parsers-fixtures/jest.json "$SMOKE/"
+          node dist/cli.js --cwd "$SMOKE" ingest jest.json
+          node dist/cli.js --cwd "$SMOKE" report --no-color | grep -q "tracked test"
+          node dist/cli.js --cwd "$SMOKE" html
+          test -s "$SMOKE/flakefinder-report.html"
+          echo "node-18 runtime smoke OK"
 
   e2e:
     runs-on: ubuntu-latest

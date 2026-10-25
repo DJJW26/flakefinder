@@ -2623,7 +2623,7 @@ async function runLive(command, cfg, opts) {
         const separator = isPackageManagerWrapper(command) ? ["--"] : [];
         const flags = exclusionArgs(runner, entries);
         const base = command.length + separator.length;
-        quarantineQuoteIdx = flags.map((arg, i) => i % 2 === 1 ? base + i : -1).filter((i) => i >= 0);
+        quarantineQuoteIdx = flags.map((_arg, i) => i % 2 === 1 ? base + i : -1).filter((i) => i >= 0);
         effectiveCommand = [...command, ...separator, ...flags];
         console.log(
           `flakefinder: quarantine active \u2014 excluding ${entries.length} quarantined test(s) via runner flags`

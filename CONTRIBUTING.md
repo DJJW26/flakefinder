@@ -5,6 +5,9 @@ dependency-light — please keep it that way.
 
 ## Setup
 
+Node 20+ for development (the vitest toolchain requires it); the published CLI
+itself supports Node 18+ and CI exercises that separately.
+
 ```bash
 git clone https://github.com/DJJW26/flakefinder.git
 cd flakefinder

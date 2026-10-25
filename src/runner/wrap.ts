@@ -53,7 +53,7 @@ function spawnCommand(command: string[], cwd: string, quoteIdx: number[] = []): 
     };
     const start = (argv: string[], useShell: boolean): void => {
       let abandoned = false; // once we fall back to shell mode, ignore this attempt's events
-      let child;
+      let child: ReturnType<typeof spawn>;
       try {
         child = spawn(argv[0]!, argv.slice(1), { shell: useShell, cwd, stdio: 'inherit' });
       } catch (err) {
@@ -114,7 +114,9 @@ export async function runLive(
         const separator = isPackageManagerWrapper(command) ? ['--'] : [];
         const flags = exclusionArgs(runner, entries);
         const base = command.length + separator.length;
-        quarantineQuoteIdx = flags.map((arg, i) => (i % 2 === 1 ? base + i : -1)).filter((i) => i >= 0);
+        quarantineQuoteIdx = flags
+          .map((_arg, i) => (i % 2 === 1 ? base + i : -1))
+          .filter((i) => i >= 0);
         effectiveCommand = [...command, ...separator, ...flags];
         console.log(
           `flakefinder: quarantine active — excluding ${entries.length} quarantined test(s) via runner flags`,
