@@ -218,3 +218,13 @@ describe('validateConfig (v0.2.0)', () => {
     expect(resolveConfig({ minRuns: 2 }, { liveRetries: 1 }).liveRetries).toBe(1);
   });
 });
+
+describe('BOM tolerance (QA round 2)', () => {
+  it('loads a UTF-8-BOM-prefixed config (PowerShell Out-File / Notepad emit one)', () => {
+    const dir = tmpDir();
+    const file = path.join(dir, CONFIG_FILE_NAME);
+    writeFileSync(file, '\uFEFF{\n  "liveRetries": 4,\n}', 'utf8');
+    const { config } = loadConfig(dir);
+    expect(config.liveRetries).toBe(4);
+  });
+});

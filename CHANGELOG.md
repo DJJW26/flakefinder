@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.2.1
+
+QA round 2 (independent agent, all findings double-verified):
+
+- **fix: `run` exit code no longer trusts a stale report.** When a passing
+  re-run leaves the report unchanged or deletes it, the earlier failure
+  evidence is kept — exit 0 is reserved for "clean or all failures were
+  flakes". Previously a rescued exit code could hide a reported failure.
+- **fix: quarantine flags reach the runner in shell commands.** Flags now
+  join the runner's segment (before `|`/`&&`/`>`), and shell-mode spawns use
+  the quoted argv — previously flags appended after the last shell word and
+  cmd.exe ate metacharacters like `^` in exclusion patterns.
+- **fix: `--fail-on-flake` now fires on suite-level flakes** (varying exit
+  codes with no report files), matching its documented contract.
+- **fix: vitest `status:"skipped"` is recognized** by the jest parser (jest
+  emits `"pending"`, vitest `"skipped"` — vitest users lost every skipped
+  test from history).
+- **fix: UTF-8-BOM-prefixed configs load** (PowerShell `Out-File`/Notepad
+  emit a BOM; JSON.parse rejected it).
+- **fix: namespace-prefixed JUnit XML parses** (`<x:testsuites xmlns:x=…>`)
+  — sniff and element lookup are prefix-tolerant.
+- Engine edge-case regression suite added (future timestamps, resurrected
+  `gone` tests, error-only histories, `gone` boundary, suite-identity).
+
 ## 0.2.0
 
 - **feat: config validation.** `flakefinder.config.json` keys are now

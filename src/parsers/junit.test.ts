@@ -176,3 +176,23 @@ describe('junitParser', () => {
     expect(junitParser.sniff('<html><body>no suites here</body></html>')).toBe(false);
   });
 });
+
+describe('namespace tolerance (QA round 2)', () => {
+  it('parses namespace-prefixed junit XML (x:testsuites / x:testsuite / x:testcase)', () => {
+    const content =
+      '<?xml version="1.0"?>' +
+      '<x:testsuites xmlns:x="urn:x">' +
+      '<x:testsuite name="NSP"><x:testcase name="nsp1" time="0.01"/></x:testsuite>' +
+      '</x:testsuites>';
+    expect(junitParser.sniff(content)).toBe(true);
+    const { results, warnings } = junitParser.parse(content, 'inline');
+    expect(warnings).toEqual([]);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      suite: 'NSP',
+      name: 'nsp1',
+      status: 'pass',
+      durationMs: 10,
+    });
+  });
+});

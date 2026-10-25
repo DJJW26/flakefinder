@@ -30,6 +30,7 @@ function statusOf(status: unknown): TestStatus | null {
     case 'failed':
       return 'fail';
     case 'pending':
+    case 'skipped': // vitest's json reporter emits "skipped" (jest: "pending")
     case 'todo':
       return 'skip';
     default:

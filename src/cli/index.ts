@@ -48,7 +48,7 @@ function resolveCfg(g: Globals, overrides: Partial<FlakefinderConfig> = {}): Res
     }
     let parsed: FlakefinderConfig;
     try {
-      parsed = JSON.parse(stripJsonComments(raw)) as FlakefinderConfig;
+      parsed = JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, ''))) as FlakefinderConfig;
     } catch (err) {
       throw new Error(`invalid config ${g.config}: ${(err as Error).message}`);
     }

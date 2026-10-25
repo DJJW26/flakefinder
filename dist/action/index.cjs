@@ -41005,14 +41005,14 @@ var require_commonjs4 = __commonJS({
        *
        * @internal
        */
-      constructor(name, type = UNKNOWN, root, roots, nocase, children, opts) {
+      constructor(name, type = UNKNOWN, root, roots, nocase, children2, opts) {
         this.name = name;
         this.#matchName = nocase ? normalizeNocase(name) : normalize2(name);
         this.#type = type & TYPEMASK;
         this.nocase = nocase;
         this.roots = roots;
         this.root = root || this;
-        this.#children = children;
+        this.#children = children2;
         this.#fullpath = opts.fullpath;
         this.#relative = opts.relative;
         this.#relativePosix = opts.relativePosix;
@@ -41074,10 +41074,10 @@ var require_commonjs4 = __commonJS({
         if (cached) {
           return cached;
         }
-        const children = Object.assign([], { provisional: 0 });
-        this.#children.set(this, children);
+        const children2 = Object.assign([], { provisional: 0 });
+        this.#children.set(this, children2);
         this.#type &= ~READDIR_CALLED;
-        return children;
+        return children2;
       }
       /**
        * Resolves a path portion and returns or creates the child Path.
@@ -41099,9 +41099,9 @@ var require_commonjs4 = __commonJS({
         if (pathPart === "..") {
           return this.parent || this;
         }
-        const children = this.children();
+        const children2 = this.children();
         const name = this.nocase ? normalizeNocase(pathPart) : normalize2(pathPart);
-        for (const p of children) {
+        for (const p of children2) {
           if (p.#matchName === name) {
             return p;
           }
@@ -41116,7 +41116,7 @@ var require_commonjs4 = __commonJS({
         if (!this.canReaddir()) {
           pchild.#type |= ENOENT;
         }
-        children.push(pchild);
+        children2.push(pchild);
         return pchild;
       }
       /**
@@ -41300,8 +41300,8 @@ var require_commonjs4 = __commonJS({
        * readdir() has been called recently enough to still be valid.
        */
       readdirCached() {
-        const children = this.children();
-        return children.slice(0, children.provisional);
+        const children2 = this.children();
+        return children2.slice(0, children2.provisional);
       }
       /**
        * Return true if it's worth trying to readlink.  Ie, we don't (yet) have
@@ -41402,10 +41402,10 @@ var require_commonjs4 = __commonJS({
           return void 0;
         }
       }
-      #readdirSuccess(children) {
+      #readdirSuccess(children2) {
         this.#type |= READDIR_CALLED;
-        for (let p = children.provisional; p < children.length; p++) {
-          const c = children[p];
+        for (let p = children2.provisional; p < children2.length; p++) {
+          const c = children2[p];
           if (c)
             c.#markENOENT();
         }
@@ -41417,9 +41417,9 @@ var require_commonjs4 = __commonJS({
         this.#markChildrenENOENT();
       }
       #markChildrenENOENT() {
-        const children = this.children();
-        children.provisional = 0;
-        for (const p of children) {
+        const children2 = this.children();
+        children2.provisional = 0;
+        for (const p of children2) {
           p.#markENOENT();
         }
       }
@@ -41572,11 +41572,11 @@ var require_commonjs4 = __commonJS({
       }
       #onReaddirCB = [];
       #readdirCBInFlight = false;
-      #callOnReaddirCB(children) {
+      #callOnReaddirCB(children2) {
         this.#readdirCBInFlight = false;
         const cbs = this.#onReaddirCB.slice();
         this.#onReaddirCB.length = 0;
-        cbs.forEach((cb) => cb(null, children));
+        cbs.forEach((cb) => cb(null, children2));
       }
       /**
        * Standard node-style callback interface to get list of directory entries.
@@ -41602,9 +41602,9 @@ var require_commonjs4 = __commonJS({
             queueMicrotask(() => cb(null, []));
           return;
         }
-        const children = this.children();
+        const children2 = this.children();
         if (this.calledReaddir()) {
-          const c = children.slice(0, children.provisional);
+          const c = children2.slice(0, children2.provisional);
           if (allowZalgo)
             cb(null, c);
           else
@@ -41620,14 +41620,14 @@ var require_commonjs4 = __commonJS({
         this.#fs.readdir(fullpath, { withFileTypes: true }, (er, entries) => {
           if (er) {
             this.#readdirFail(er.code);
-            children.provisional = 0;
+            children2.provisional = 0;
           } else {
             for (const e of entries) {
-              this.#readdirAddChild(e, children);
+              this.#readdirAddChild(e, children2);
             }
-            this.#readdirSuccess(children);
+            this.#readdirSuccess(children2);
           }
-          this.#callOnReaddirCB(children.slice(0, children.provisional));
+          this.#callOnReaddirCB(children2.slice(0, children2.provisional));
           return;
         });
       }
@@ -41645,9 +41645,9 @@ var require_commonjs4 = __commonJS({
         if (!this.canReaddir()) {
           return [];
         }
-        const children = this.children();
+        const children2 = this.children();
         if (this.calledReaddir()) {
-          return children.slice(0, children.provisional);
+          return children2.slice(0, children2.provisional);
         }
         const fullpath = this.fullpath();
         if (this.#asyncReaddirInFlight) {
@@ -41660,17 +41660,17 @@ var require_commonjs4 = __commonJS({
             for (const e of await this.#fs.promises.readdir(fullpath, {
               withFileTypes: true
             })) {
-              this.#readdirAddChild(e, children);
+              this.#readdirAddChild(e, children2);
             }
-            this.#readdirSuccess(children);
+            this.#readdirSuccess(children2);
           } catch (er) {
             this.#readdirFail(er.code);
-            children.provisional = 0;
+            children2.provisional = 0;
           }
           this.#asyncReaddirInFlight = void 0;
           resolve4();
         }
-        return children.slice(0, children.provisional);
+        return children2.slice(0, children2.provisional);
       }
       /**
        * synchronous {@link PathBase.readdir}
@@ -41679,23 +41679,23 @@ var require_commonjs4 = __commonJS({
         if (!this.canReaddir()) {
           return [];
         }
-        const children = this.children();
+        const children2 = this.children();
         if (this.calledReaddir()) {
-          return children.slice(0, children.provisional);
+          return children2.slice(0, children2.provisional);
         }
         const fullpath = this.fullpath();
         try {
           for (const e of this.#fs.readdirSync(fullpath, {
             withFileTypes: true
           })) {
-            this.#readdirAddChild(e, children);
+            this.#readdirAddChild(e, children2);
           }
-          this.#readdirSuccess(children);
+          this.#readdirSuccess(children2);
         } catch (er) {
           this.#readdirFail(er.code);
-          children.provisional = 0;
+          children2.provisional = 0;
         }
-        return children.slice(0, children.provisional);
+        return children2.slice(0, children2.provisional);
       }
       canReaddir() {
         if (this.#type & ENOCHILD)
@@ -41790,8 +41790,8 @@ var require_commonjs4 = __commonJS({
        *
        * @internal
        */
-      constructor(name, type = UNKNOWN, root, roots, nocase, children, opts) {
-        super(name, type, root, roots, nocase, children, opts);
+      constructor(name, type = UNKNOWN, root, roots, nocase, children2, opts) {
+        super(name, type, root, roots, nocase, children2, opts);
       }
       /**
        * @internal
@@ -41844,8 +41844,8 @@ var require_commonjs4 = __commonJS({
        *
        * @internal
        */
-      constructor(name, type = UNKNOWN, root, roots, nocase, children, opts) {
-        super(name, type, root, roots, nocase, children, opts);
+      constructor(name, type = UNKNOWN, root, roots, nocase, children2, opts) {
+        super(name, type, root, roots, nocase, children2, opts);
       }
       /**
        * @internal
@@ -42738,13 +42738,13 @@ var require_ignore = __commonJS({
           }
           const p = new pattern_js_1.Pattern(parsed, globParts, 0, this.platform);
           const m = new minimatch_1.Minimatch(p.globString(), this.mmopts);
-          const children = globParts[globParts.length - 1] === "**";
+          const children2 = globParts[globParts.length - 1] === "**";
           const absolute = p.isAbsolute();
           if (absolute)
             this.absolute.push(m);
           else
             this.relative.push(m);
-          if (children) {
+          if (children2) {
             if (absolute)
               this.absoluteChildren.push(m);
             else
@@ -43255,8 +43255,8 @@ var require_walker = __commonJS({
             continue;
           }
           tasks++;
-          const children = t.readdirSync();
-          this.walkCB3Sync(t, children, processor, next);
+          const children2 = t.readdirSync();
+          this.walkCB3Sync(t, children2, processor, next);
         }
         next();
       }
@@ -127630,7 +127630,7 @@ function loadConfig(cwd) {
         throw new Error(`cannot read ${candidate}: ${err.message}`);
       }
       try {
-        const parsed = JSON.parse(stripJsonComments(raw));
+        const parsed = JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, "")));
         return { config: parsed, path: candidate };
       } catch (err) {
         throw new Error(`invalid config in ${candidate}: ${err.message}`);
@@ -129698,6 +129698,8 @@ function statusOf(status) {
     case "failed":
       return "fail";
     case "pending":
+    case "skipped":
+    // vitest's json reporter emits "skipped" (jest: "pending")
     case "todo":
       return "skip";
     default:
@@ -129840,17 +129842,27 @@ function mapTestCase(tc, suiteName, ctx) {
   }
   ctx.results.push(result);
 }
+function children(el, localName) {
+  const out = [];
+  for (const [key, value] of Object.entries(el)) {
+    if (key === localName || key.endsWith(`:${localName}`)) {
+      if (Array.isArray(value)) out.push(...value);
+      else out.push(value);
+    }
+  }
+  return out;
+}
 function walk(el, inheritedSuite, ctx) {
   if (!isObj(el)) return;
   const ownSuite = attr(el, "@_name") ?? inheritedSuite;
-  for (const tc of toArray(el.testcase)) mapTestCase(tc, ownSuite, ctx);
-  for (const ts of toArray(el.testsuite)) walk(ts, ownSuite, ctx);
+  for (const tc of children(el, "testcase")) mapTestCase(tc, ownSuite, ctx);
+  for (const ts of children(el, "testsuite")) walk(ts, ownSuite, ctx);
 }
 var junitParser = {
   name: "junit",
   sniff(content) {
     const trimmed = stripBom(content).trimStart();
-    return trimmed.startsWith("<") && content.includes("<testsuit");
+    return trimmed.startsWith("<") && /<(?:[\w.-]+:)?testsuit/.test(trimmed);
   },
   parse(content, sourcePath) {
     const ctx = { sourcePath, results: [], warnings: [] };
@@ -129873,7 +129885,8 @@ var junitParser = {
       ctx.warnings.push(`junit: ${sourcePath}: XML did not parse to a document object`);
       return { results: ctx.results, warnings: ctx.warnings };
     }
-    const root = doc.testsuites !== void 0 ? doc.testsuites : doc.testsuite;
+    const rootKey = Object.keys(doc).find((k) => /(?:^|:)testsuites?$/.test(k));
+    const root = rootKey !== void 0 ? doc[rootKey] : void 0;
     if (root === void 0) {
       ctx.warnings.push(`junit: ${sourcePath}: no <testsuites> or <testsuite> root element found`);
       return { results: ctx.results, warnings: ctx.warnings };

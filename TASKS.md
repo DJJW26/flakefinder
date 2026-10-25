@@ -99,3 +99,14 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P7.8 Full pipeline green (193 tests / 18 files, tsc, biome, build, e2e 10/10)
 - ✅ P7.9 Independent reviewer pass: 12 verified findings (3 MAJOR), ALL fixed + regression-tested (193 → 205 tests)
 - ✅ P7.10 Release v0.2.0 (version bump both places, tag, push, CI green)
+
+## Phase 8 — QA round 2 → v0.2.1
+
+- ✅ P8.1 Independent QA agent (~35 probes, round-2 surfaces): 6 findings (4 MAJOR), all double-verified
+- ✅ P8.2 FIX: stale-report + rescued exit code → exit 1 (evidence not erased by finalAttempt gating)
+- ✅ P8.3 FIX: quarantine flags join runner segment before shell operators; shell-mode uses quoted argv (^-eating bug)
+- ✅ P8.4 FIX: --fail-on-flake fires on suite-level flakes
+- ✅ P8.5 FIX: vitest status:"skipped" mapped to skip
+- ✅ P8.6 FIX: BOM-prefixed configs; namespace-prefixed JUnit XML
+- ✅ P8.7 Engine edge-case suite promoted to permanent tests; ci reuses computeNewFlakes
+- ✅ P8.8 Release v0.2.1 (217 tests / 20 files, pipeline green)

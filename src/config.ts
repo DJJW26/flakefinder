@@ -201,7 +201,11 @@ export function loadConfig(cwd: string): { config: FlakefinderConfig; path: stri
         throw new Error(`cannot read ${candidate}: ${(err as Error).message}`);
       }
       try {
-        const parsed = JSON.parse(stripJsonComments(raw)) as FlakefinderConfig;
+        // strip a UTF-8 BOM — PowerShell's Out-File and Notepad emit one, and
+        // JSON.parse rejects it
+        const parsed = JSON.parse(
+          stripJsonComments(raw.replace(/^\uFEFF/, '')),
+        ) as FlakefinderConfig;
         return { config: parsed, path: candidate };
       } catch (err) {
         throw new Error(`invalid config in ${candidate}: ${(err as Error).message}`);

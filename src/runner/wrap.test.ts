@@ -234,3 +234,97 @@ describe('quarantine forwarding mechanics', () => {
     expect(received).toContain('^(?!.*(?:annoying flake))'); // one intact arg, not split
   }, 60_000);
 });
+
+describe('QA round 2 fixes', () => {
+  it('stale report + rescued exit code still exits 1 (failure evidence is not erased)', async () => {
+    const cwd = tmpCwd();
+    // attempt 1: writes a report with one failing test, exits 1.
+    // attempt 2: exits 0 WITHOUT rewriting the report (stale).
+    const script = `
+const fs = require('fs');
+let n = 0;
+try { n = parseInt(fs.readFileSync('c3.txt', 'utf8'), 10) || 0; } catch {}
+n++;
+fs.writeFileSync('c3.txt', String(n));
+if (n === 1) {
+  fs.writeFileSync('out.json', JSON.stringify({ testResults: [{ name: 's.test.js', status: 'failed', assertionResults: [
+    { title: 'failA', fullName: 'failA', status: 'failed', ancestorTitles: [], duration: 5, failureMessages: ['boom'] },
+  ] }] }));
+  process.exit(1);
+}
+process.exit(0);
+`;
+    writeFileSync(path.join(cwd, 'script.js'), script, 'utf8');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await runLive(['node', 'script.js'], cfg({ minRuns: 1 }), {
+      retries: 1,
+      cwd,
+      applyQuarantine: false,
+    });
+    expect(result.finalExitCode).toBe(1); // nothing proved the failure flaky
+  }, 60_000);
+
+  it('--fail-on-flake fires on a suite-level flake (no reports, exits varied)', async () => {
+    const cwd = tmpCwd();
+    const script = `
+const fs = require('fs');
+let n = 0;
+try { n = parseInt(fs.readFileSync('c4.txt', 'utf8'), 10) || 0; } catch {}
+n++;
+fs.writeFileSync('c4.txt', String(n));
+process.exit(n === 1 ? 1 : 0);
+`;
+    writeFileSync(path.join(cwd, 'script.js'), script, 'utf8');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await runLive(['node', 'script.js'], cfg({ reports: [], failOnFlakes: true }), {
+      retries: 1,
+      cwd,
+      applyQuarantine: false,
+    });
+    expect(result.suiteFlake).toBe(true);
+    expect(result.finalExitCode).toBe(1);
+  }, 60_000);
+
+  it('quarantine flags join the runner segment when shell operators are present', async () => {
+    const cwd = tmpCwd();
+    // runner echoes argv to a file, then a second segment runs; the -t flag must land on the FIRST segment
+    writeFileSync(
+      path.join(cwd, 'echo-args.js'),
+      "require('fs').writeFileSync('argv.json', JSON.stringify(require('process').argv.slice(1)));",
+      'utf8',
+    );
+    writeFileSync(
+      path.join(cwd, 'flakefinder.quarantine.json'),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            testId: 'x',
+            suite: 's.test.js',
+            name: 'test_x',
+            reason: 'flaky',
+            quarantinedAt: new Date().toISOString(),
+            flakeScore: 90,
+          },
+        ],
+      }),
+      'utf8',
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await runLive(
+      ['node', 'echo-args.js', '||', 'echo', 'hi'],
+      cfg({ reports: [], runner: 'jest' }),
+      {
+        retries: 0,
+        cwd,
+        applyQuarantine: true,
+      },
+    );
+    const argv = JSON.parse(readFileSync(path.join(cwd, 'argv.json'), 'utf8')) as string[];
+    expect(argv).toContain('-t');
+    expect(argv).toContain('^(?!.*(?:test_x))');
+  }, 60_000);
+});

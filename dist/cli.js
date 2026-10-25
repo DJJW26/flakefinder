@@ -171,7 +171,7 @@ function loadConfig(cwd) {
         throw new Error(`cannot read ${candidate}: ${err.message}`);
       }
       try {
-        const parsed = JSON.parse(stripJsonComments(raw));
+        const parsed = JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, "")));
         return { config: parsed, path: candidate };
       } catch (err) {
         throw new Error(`invalid config in ${candidate}: ${err.message}`);
@@ -636,6 +636,8 @@ function statusOf(status) {
     case "failed":
       return "fail";
     case "pending":
+    case "skipped":
+    // vitest's json reporter emits "skipped" (jest: "pending")
     case "todo":
       return "skip";
     default:
@@ -778,17 +780,27 @@ function mapTestCase(tc, suiteName, ctx) {
   }
   ctx.results.push(result);
 }
+function children(el, localName) {
+  const out = [];
+  for (const [key, value] of Object.entries(el)) {
+    if (key === localName || key.endsWith(`:${localName}`)) {
+      if (Array.isArray(value)) out.push(...value);
+      else out.push(value);
+    }
+  }
+  return out;
+}
 function walk(el, inheritedSuite, ctx) {
   if (!isObj(el)) return;
   const ownSuite = attr(el, "@_name") ?? inheritedSuite;
-  for (const tc of toArray(el.testcase)) mapTestCase(tc, ownSuite, ctx);
-  for (const ts of toArray(el.testsuite)) walk(ts, ownSuite, ctx);
+  for (const tc of children(el, "testcase")) mapTestCase(tc, ownSuite, ctx);
+  for (const ts of children(el, "testsuite")) walk(ts, ownSuite, ctx);
 }
 var junitParser = {
   name: "junit",
   sniff(content) {
     const trimmed = stripBom(content).trimStart();
-    return trimmed.startsWith("<") && content.includes("<testsuit");
+    return trimmed.startsWith("<") && /<(?:[\w.-]+:)?testsuit/.test(trimmed);
   },
   parse(content, sourcePath) {
     const ctx = { sourcePath, results: [], warnings: [] };
@@ -811,7 +823,8 @@ var junitParser = {
       ctx.warnings.push(`junit: ${sourcePath}: XML did not parse to a document object`);
       return { results: ctx.results, warnings: ctx.warnings };
     }
-    const root = doc.testsuites !== void 0 ? doc.testsuites : doc.testsuite;
+    const rootKey = Object.keys(doc).find((k) => /(?:^|:)testsuites?$/.test(k));
+    const root = rootKey !== void 0 ? doc[rootKey] : void 0;
     if (root === void 0) {
       ctx.warnings.push(`junit: ${sourcePath}: no <testsuites> or <testsuite> root element found`);
       return { results: ctx.results, warnings: ctx.warnings };
@@ -2843,13 +2856,13 @@ function spawnCommand(command, cwd, quoteIdx = []) {
     const done = (code) => {
       resolve(code);
     };
-    const start = (argv, useShell) => {
+    const start = (argv, useShell2) => {
       let abandoned = false;
       let child;
       try {
-        child = spawn(argv[0], argv.slice(1), { shell: useShell, cwd, stdio: "inherit" });
+        child = spawn(argv[0], argv.slice(1), { shell: useShell2, cwd, stdio: "inherit" });
       } catch (err) {
-        if (!useShell) {
+        if (!useShell2) {
           start(shellArgv, true);
           return;
         }
@@ -2858,7 +2871,7 @@ function spawnCommand(command, cwd, quoteIdx = []) {
         return;
       }
       child.on("error", (err) => {
-        if (!useShell && (err.code === "ENOENT" || err.code === "EINVAL")) {
+        if (!useShell2 && (err.code === "ENOENT" || err.code === "EINVAL")) {
           abandoned = true;
           start(shellArgv, true);
           return;
@@ -2877,7 +2890,8 @@ function spawnCommand(command, cwd, quoteIdx = []) {
         done(code ?? 1);
       });
     };
-    start(command, needsShell(command));
+    const useShell = needsShell(command);
+    start(useShell ? shellArgv : command, useShell);
   });
 }
 async function runLive(command, cfg, opts) {
@@ -2896,9 +2910,16 @@ async function runLive(command, cfg, opts) {
       if (entries.length > 0) {
         const separator = isPackageManagerWrapper(command) ? ["--"] : [];
         const flags = exclusionArgs(runner, entries);
-        const base = command.length + separator.length;
+        const opIdx = command.findIndex((t) => /[<>|&]/.test(t));
+        const insertAt = opIdx === -1 ? command.length : opIdx;
+        const base = insertAt + separator.length;
         quarantineQuoteIdx = flags.map((_arg, i) => i % 2 === 1 ? base + i : -1).filter((i) => i >= 0);
-        effectiveCommand = [...command, ...separator, ...flags];
+        effectiveCommand = [
+          ...command.slice(0, insertAt),
+          ...separator,
+          ...flags,
+          ...command.slice(insertAt)
+        ];
         console.log(
           `flakefinder: quarantine active \u2014 excluding ${entries.length} quarantined test(s) via runner flags`
         );
@@ -2976,16 +2997,12 @@ async function runLive(command, cfg, opts) {
       "flakefinder: no report files matched \u2014 suite-level verdict only (exits varied across attempts)."
     );
   }
-  const finalAttempt = exitCodes.length;
-  const finalAttemptIds = new Set(
-    attempts.filter((r) => r.attempt === finalAttempt).flatMap((r) => r.results.map((t) => t.testId))
-  );
   const lastExit = exitCodes[exitCodes.length - 1] ?? 1;
   const deterministicFail = verdicts.some(
-    (v) => finalAttemptIds.has(v.testId) && (v.classification === "failing" || v.classification === "new-failure") && (v.lastStatus === "fail" || v.lastStatus === "error")
+    (v) => (v.classification === "failing" || v.classification === "new-failure") && (v.lastStatus === "fail" || v.lastStatus === "error")
   );
   let finalExitCode = deterministicFail || lastExit !== 0 ? 1 : 0;
-  if (cfg.failOnFlakes && verdicts.some((v) => v.classification.startsWith("flaky-"))) {
+  if (cfg.failOnFlakes && (verdicts.some((v) => v.classification.startsWith("flaky-")) || suiteFlake)) {
     finalExitCode = 1;
   }
   return {
@@ -3023,7 +3040,7 @@ function resolveCfg(g, overrides = {}) {
     }
     let parsed;
     try {
-      parsed = JSON.parse(stripJsonComments(raw));
+      parsed = JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, "")));
     } catch (err) {
       throw new Error(`invalid config ${g.config}: ${err.message}`);
     }

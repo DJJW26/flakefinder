@@ -150,3 +150,29 @@ describe('jestParser', () => {
     expect(jestParser.sniff(load('mocha.json'))).toBe(false);
   });
 });
+
+describe('vitest compatibility (QA round 2)', () => {
+  it('maps status "skipped" (vitest) to skip, like "pending" (jest)', () => {
+    const content = JSON.stringify({
+      testResults: [
+        {
+          name: 'vitest.test.ts',
+          status: 'skipped',
+          assertionResults: [
+            {
+              title: 'vs',
+              fullName: 'VS > vs',
+              status: 'skipped',
+              ancestorTitles: ['VS'],
+              duration: 0,
+            },
+          ],
+        },
+      ],
+    });
+    const { results, warnings } = jestParser.parse(content, 'inline');
+    expect(warnings).toEqual([]);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ name: 'vs', status: 'skip', suite: 'VS' });
+  });
+});

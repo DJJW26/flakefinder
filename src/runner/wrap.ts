@@ -86,7 +86,10 @@ function spawnCommand(command: string[], cwd: string, quoteIdx: number[] = []): 
         done(code ?? 1);
       });
     };
-    start(command, needsShell(command));
+    // shell mode must use the quoted argv — unquoted values lose cmd.exe
+    // metacharacters (e.g. ^ in quarantine patterns)
+    const useShell = needsShell(command);
+    start(useShell ? shellArgv : command, useShell);
   });
 }
 
@@ -116,14 +119,22 @@ export async function runLive(
       const qm = new QuarantineManager(path.resolve(cwd, cfg.quarantineFile));
       const entries = qm.list();
       if (entries.length > 0) {
-        // flag/value pairs — remember VALUE positions for shell-mode quoting
         const separator = isPackageManagerWrapper(command) ? ['--'] : [];
         const flags = exclusionArgs(runner, entries);
-        const base = command.length + separator.length;
+        // Shell operators split the command into segments; the flags must join
+        // the RUNNER's segment (the first one), not the last shell word.
+        const opIdx = command.findIndex((t) => /[<>|&]/.test(t));
+        const insertAt = opIdx === -1 ? command.length : opIdx;
+        const base = insertAt + separator.length;
         quarantineQuoteIdx = flags
           .map((_arg, i) => (i % 2 === 1 ? base + i : -1))
           .filter((i) => i >= 0);
-        effectiveCommand = [...command, ...separator, ...flags];
+        effectiveCommand = [
+          ...command.slice(0, insertAt),
+          ...separator,
+          ...flags,
+          ...command.slice(insertAt),
+        ];
         console.log(
           `flakefinder: quarantine active — excluding ${entries.length} quarantined test(s) via runner flags`,
         );
@@ -210,21 +221,21 @@ export async function runLive(
     );
   }
 
-  const finalAttempt = exitCodes.length;
-  const finalAttemptIds = new Set(
-    attempts
-      .filter((r) => r.attempt === finalAttempt)
-      .flatMap((r) => r.results.map((t) => t.testId)),
-  );
   const lastExit = exitCodes[exitCodes.length - 1] ?? 1;
+  // Deterministic failure = the test's LAST observed state (this invocation or
+  // history) is fail-family and nothing proved it flaky. The final attempt
+  // ingesting nothing (stale or deleted report) must NOT erase the failure
+  // evidence: exit 0 is reserved for "clean run or all failures were flakes".
   const deterministicFail = verdicts.some(
     (v) =>
-      finalAttemptIds.has(v.testId) &&
       (v.classification === 'failing' || v.classification === 'new-failure') &&
       (v.lastStatus === 'fail' || v.lastStatus === 'error'),
   );
   let finalExitCode = deterministicFail || lastExit !== 0 ? 1 : 0;
-  if (cfg.failOnFlakes && verdicts.some((v) => v.classification.startsWith('flaky-'))) {
+  if (
+    cfg.failOnFlakes &&
+    (verdicts.some((v) => v.classification.startsWith('flaky-')) || suiteFlake)
+  ) {
     finalExitCode = 1;
   }
 

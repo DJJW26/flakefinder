@@ -19,7 +19,7 @@
 import { XMLParser } from 'fast-xml-parser';
 import type { ReportParser, TestCaseResult, TestStatus } from '../types.js';
 import { makeTestId } from '../util/test-id.js';
-import { errorMessage, isObj, stripBom, toArray, trimTo } from './internal.js';
+import { errorMessage, isObj, stripBom, trimTo } from './internal.js';
 
 const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_' });
 
@@ -91,14 +91,29 @@ function mapTestCase(tc: unknown, suiteName: string, ctx: Ctx): void {
 }
 
 /**
+ * Namespace-tolerant child lookup: matches `testcase`, `x:testcase`, etc.
+ * fast-xml-parser keeps the namespace prefix in tag names.
+ */
+function children(el: Record<string, unknown>, localName: string): unknown[] {
+  const out: unknown[] = [];
+  for (const [key, value] of Object.entries(el)) {
+    if (key === localName || key.endsWith(`:${localName}`)) {
+      if (Array.isArray(value)) out.push(...value);
+      else out.push(value);
+    }
+  }
+  return out;
+}
+
+/**
  * Walk a testsuites/testsuite element: map its direct testcases, then recurse
  * into nested testsuites. A nested suite without @_name inherits the parent name.
  */
 function walk(el: unknown, inheritedSuite: string, ctx: Ctx): void {
   if (!isObj(el)) return;
   const ownSuite = attr(el, '@_name') ?? inheritedSuite;
-  for (const tc of toArray(el.testcase)) mapTestCase(tc, ownSuite, ctx);
-  for (const ts of toArray(el.testsuite)) walk(ts, ownSuite, ctx);
+  for (const tc of children(el, 'testcase')) mapTestCase(tc, ownSuite, ctx);
+  for (const ts of children(el, 'testsuite')) walk(ts, ownSuite, ctx);
 }
 
 export const junitParser: ReportParser = {
@@ -106,7 +121,8 @@ export const junitParser: ReportParser = {
 
   sniff(content: string): boolean {
     const trimmed = stripBom(content).trimStart();
-    return trimmed.startsWith('<') && content.includes('<testsuit');
+    // namespace prefixes allowed: <testsuit…>, <x:testsuit…>
+    return trimmed.startsWith('<') && /<(?:[\w.-]+:)?testsuit/.test(trimmed);
   },
 
   parse(content: string, sourcePath: string): { results: TestCaseResult[]; warnings: string[] } {
@@ -133,7 +149,9 @@ export const junitParser: ReportParser = {
       return { results: ctx.results, warnings: ctx.warnings };
     }
 
-    const root = doc.testsuites !== undefined ? doc.testsuites : doc.testsuite;
+    // namespace-tolerant root lookup: <testsuites>, <testsuite>, <x:testsuites>…
+    const rootKey = Object.keys(doc).find((k) => /(?:^|:)testsuites?$/.test(k));
+    const root = rootKey !== undefined ? doc[rootKey] : undefined;
     if (root === undefined) {
       ctx.warnings.push(`junit: ${sourcePath}: no <testsuites> or <testsuite> root element found`);
       return { results: ctx.results, warnings: ctx.warnings };
