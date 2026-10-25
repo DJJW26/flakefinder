@@ -129401,10 +129401,24 @@ function isFail(status) {
   return FAIL_FAMILY.has(status);
 }
 function sortRuns(runs) {
-  return [...runs].sort((a, b) => {
-    if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1;
-    return a.attempt - b.attempt;
-  });
+  const groups = /* @__PURE__ */ new Map();
+  for (const r of runs) {
+    const g = groups.get(r.runId);
+    if (g) g.push(r);
+    else groups.set(r.runId, [r]);
+  }
+  const minTs = (g) => g.reduce((m, r) => r.timestamp < m ? r.timestamp : m, g[0].timestamp);
+  const ordered = [];
+  for (const g of [...groups.values()].sort((a, b) => {
+    const am = minTs(a);
+    const bm = minTs(b);
+    if (am !== bm) return am < bm ? -1 : 1;
+    return 0;
+  })) {
+    g.sort((a, b) => a.attempt - b.attempt);
+    ordered.push(...g);
+  }
+  return ordered;
 }
 function buildHistories(runs) {
   const byId = /* @__PURE__ */ new Map();

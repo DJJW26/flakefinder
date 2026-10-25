@@ -21,12 +21,34 @@ function isFail(status: TestStatus): boolean {
   return FAIL_FAMILY.has(status);
 }
 
-/** Sort runs chronologically; timestamp first, attempt ascending as tie-break. */
+/**
+ * Order runs chronologically with retry groups kept CONTIGUOUS: all records
+ * of one runId stay together, attempts ascending, groups ordered by their
+ * earliest timestamp. The naive (timestamp, attempt) sort is wrong — with
+ * same-second timestamps across different runIds it interleaves another
+ * run's attempt-1 records between a retry pair, silently destroying
+ * retryRescue detection.
+ */
 function sortRuns(runs: RunRecord[]): RunRecord[] {
-  return [...runs].sort((a, b) => {
-    if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1;
-    return a.attempt - b.attempt;
-  });
+  const groups = new Map<string, RunRecord[]>();
+  for (const r of runs) {
+    const g = groups.get(r.runId);
+    if (g) g.push(r);
+    else groups.set(r.runId, [r]);
+  }
+  const minTs = (g: RunRecord[]): string =>
+    g.reduce((m, r) => (r.timestamp < m ? r.timestamp : m), g[0]!.timestamp);
+  const ordered: RunRecord[] = [];
+  for (const g of [...groups.values()].sort((a, b) => {
+    const am = minTs(a);
+    const bm = minTs(b);
+    if (am !== bm) return am < bm ? -1 : 1;
+    return 0; // simultaneous groups: relative order is not observable
+  })) {
+    g.sort((a, b) => a.attempt - b.attempt);
+    ordered.push(...g);
+  }
+  return ordered;
 }
 
 /** Build one chronological TestHistory per testId. Suite/name taken from the latest record. */
