@@ -245,7 +245,8 @@ describe('prune fresh-read under lock (QA A2)', () => {
     const onDisk = readFileSync(a.path, 'utf8')
       .split('\n')
       .filter((l) => l.trim() !== '')
-      .map((l) => (JSON.parse(l) as { runId: string }).runId);
+      .map((l) => (JSON.parse(l) as { runId?: string }).runId)
+      .filter((id): id is string => id !== undefined); // skip the schema header line
     expect(onDisk).toEqual(['r2', 'r3', 'r4']); // r4 survived (was deleted before the fix)
     // and A's in-memory view resynced
     expect(a.runs().map((r) => r.runId)).toEqual(['r2', 'r3', 'r4']);
