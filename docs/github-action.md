@@ -76,6 +76,8 @@ The action stores history in `.flakefinder/` and persists it with
 - Table with per-test score, confidence and Δ vs the previous run.
 - `<details>` blocks for up to 5 NEW flakes with the failure message and the
   exact `flakefinder quarantine add <testId>` command.
+- Failure messages are scanned for credential shapes (API tokens, JWTs,
+  `SECRET_KEY=…` assignments) and redacted before commenting.
 
 ## FAQ
 

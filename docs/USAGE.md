@@ -163,9 +163,11 @@ Classifies everything in the history store and prints it.
 - `--format md` — markdown (same shape as PR comments).
 - `--flakes-only` — drop the `ok:` summary line (table).
 - `--all` — include passing/skipped/gone rows (table), all tests (md).
-- `--threshold <n>` — minimum score for `flaky-suspected` inclusion;
-  confirmed/retry flakes are always included. Default: config
-  `flakeScoreThreshold`.
+- `--threshold <n>` — minimum score for `flaky-suspected` inclusion; applied
+  identically to the table and md formats. Confirmed/retry flakes and
+  failures are always included. Default: config `flakeScoreThreshold`. The
+  `json` format is always complete, and the `ci` command / GitHub Action
+  report unfiltered by design (CI surfaces favor full visibility).
 
 ### `html`
 
@@ -179,7 +181,8 @@ strip chart (last 50 runs), a sortable/filterable tests table, and a detail
 drawer per test with its full observation timeline, failure message, duration
 sparkline, and a copyable `quarantine add` command.
 
-- `-o, --out <file>` — output path (default `flakefinder-report.html`)
+- `-o, --out <file>` — output path (default `flakefinder-report.html`);
+  missing parent directories are created automatically
 - `--open` — open it in your browser after writing
 
 ### `quarantine`
@@ -219,19 +222,25 @@ Prints the flakefinder version.
 
 `flakefinder.config.json` (JSONC allowed). All keys optional.
 
-| Key | Default | Meaning |
-|---|---|---|
-| `reports` | `[]` | Globs (relative to cwd) for report files: `**`, `*`, `?` supported; `node_modules`, `.git`, `dist`, and the store dir are skipped. Example: `["junit*.xml", "test-results/*.json"]` |
-| `storeDir` | `".flakefinder"` | History directory (holds `history.jsonl` and the verdict snapshot) |
-| `maxRuns` | `300` | Prune history to the last N runs after each append |
-| `minRuns` | `3` | Minimum observations before statistical claims (gates `flaky-suspected` and `failing`) |
-| `liveRetries` | `2` | Extra attempts for `run` (override per invocation with `-R`) |
-| `flakeScoreThreshold` | `40` | Score bar for including `flaky-suspected` in reports; confirmed/retry always included |
-| `slowThresholdMs` | `10000` | Absolute bar for the `slow` tag (median duration above this) |
-| `slowMultiplier` | `5` | Relative bar: p95 above `slowMultiplier ×` suite median also tags `slow` |
-| `quarantineFile` | `"flakefinder.quarantine.json"` | Quarantine list location |
-| `runner` | `"auto"` | `auto` (detect per run), `pytest`, `jest`, `mocha`, `go`, `generic`. Controls quarantine exclusion flags and `init` hints |
-| `failOnFlakes` | `false` | Flakes make `run` exit non-zero (same as `--fail-on-flake`) |
+**Validation (v0.2.0+):** every key is type- and range-checked on load —
+unknown keys and wrong-typed values (including wrong-case `runner` values,
+e.g. `"Jest"`) fail fast with ALL problems listed and their expected types.
+Previously these silently misbehaved (a wrong-case runner fell back to
+`generic`, which quietly disables quarantine).
+
+| Key | Type | Default | Meaning |
+|---|---|---|---|
+| `reports` | `string[]` | `[]` | Globs (relative to cwd) for report files: `**`, `*`, `?` supported; `node_modules`, `.git`, `dist`, and the store dir are skipped. Example: `["junit*.xml", "test-results/*.json"]` |
+| `storeDir` | string | `".flakefinder"` | History directory (holds `history.jsonl` and the verdict snapshot) |
+| `maxRuns` | integer 1–100000 | `300` | Prune history to the last N runs after each append |
+| `minRuns` | integer 1–1000 | `3` | Minimum observations before statistical claims (gates `flaky-suspected` and `failing`) |
+| `liveRetries` | integer 0–10 | `2` | Extra attempts for `run` (override per invocation with `-R`) |
+| `flakeScoreThreshold` | integer 0–100 | `40` | Score bar for including `flaky-suspected` in reports; confirmed/retry always included |
+| `slowThresholdMs` | number \| null | `10000` | Absolute bar for the `slow` tag (median duration above this) |
+| `slowMultiplier` | number > 0 | `5` | Relative bar: p95 above `slowMultiplier ×` suite median also tags `slow` |
+| `quarantineFile` | string | `"flakefinder.quarantine.json"` | Quarantine list location |
+| `runner` | enum | `"auto"` | `auto` (detect per run), `pytest`, `jest`, `mocha`, `go`, `generic`. Controls quarantine exclusion flags and `init` hints |
+| `failOnFlakes` | boolean | `false` | Flakes make `run` exit non-zero (same as `--fail-on-flake`) |
 
 ## Exit codes
 
@@ -256,6 +265,14 @@ These are stable and scriptable — gate CI on `run`'s exit code directly.
   `directionChanges`, `tags`, plus identity (`testId`, `suite`, `name`).
 - **md** — markdown tables; the PR-comment body is a variant of this with a
   hidden upsert marker and new-vs-known deltas.
+
+**Secret redaction (v0.2.0+):** failure messages and table cells in the md/PR
+and dashboard outputs are scanned for credential shapes (GitHub/AWS/OpenAI/
+Slack/GitLab/npm tokens, JWTs, `Bearer`/`Basic` headers, `SECRET_KEY=…`-style
+assignments) and replaced with `[REDACTED]` markers before anything leaves
+your machine. Redaction happens **after** the raw message is stored —
+`history.jsonl` keeps the original text so debugging isn't degraded. The
+terminal table never prints messages at all.
 
 ## The scoring model, explained for humans
 
@@ -406,11 +423,16 @@ keep history-aware verdicts.
 ## History store
 
 Location: `<storeDir>/history.jsonl` (default `.flakefinder/history.jsonl`),
-relative to `--cwd`. Format: JSON Lines, one run record per line:
+relative to `--cwd`. Format: JSON Lines, one run record per line, preceded by
+a schema header (v0.2.0+):
 
 ```json
+{"version":1}
 {"runId":"…uuid…","timestamp":"2026-10-25T10:20:44.101Z","source":"live","parsedFrom":"junit","attempt":2,"commitSha":"1a2b3c…","results":[{"testId":"b6930d21e68e49f7","suite":"tests/flaky-counter.test.js","name":"flaky-counter fails on odd counts","status":"fail","durationMs":1,"message":"flaky-counter saw odd count 1"}]}
 ```
+
+The header identifies the on-disk schema so future versions can migrate
+safely; readers tolerate legacy header-less stores (v0.1.x files) unchanged.
 
 - `runId` — shared by retry attempts of one invocation; this is what makes
   retry-rescue detection possible

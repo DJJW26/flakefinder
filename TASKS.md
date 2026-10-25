@@ -86,3 +86,16 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P6.6 docs/QA_FINDINGS.md — fixed/open/non-bugs record; 14 open items ranked
 - ✅ P6.7 All docs updated for v0.1.1 mechanisms; release tagged v0.1.1 (171 tests,
   e2e 10/10)
+
+## Phase 7 — v0.2.0 production-hardening pack (PRODUCTION_PLAN Phase A)
+
+- ✅ P7.1 Merged leftover job lists into a single execution order (PRODUCTION_PLAN.md, local)
+- ✅ P7.2 Config schema validation (`validateConfig`, all-problems-listed errors, did-you-mean runner hints) + tests
+- ✅ P7.3 Secret redaction for PR comments + dashboard artifacts (`src/util/redact.ts`) + tests
+- ✅ P7.4 `--threshold` consistency between table and md reports + tests
+- ✅ P7.5 Go dangling-run crash coverage (synthesized error results) + tests
+- ✅ P7.6 UX debts: `html -o` mkdir, command-not-found message
+- ✅ P7.7 Store schema version header + legacy tolerance + PLAN.md §4 sync + tests
+- ✅ P7.8 Full pipeline green (193 tests / 18 files, tsc, biome, build, e2e 10/10)
+- 🔄 P7.9 Independent reviewer pass on the v0.2.0 diff → findings to address
+- 🔄 P7.10 Release v0.2.0 (version bump, tag, push, CI green)

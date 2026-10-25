@@ -210,6 +210,9 @@ format in the industry — used by dozens of tools).
 - **Send anything anywhere.** No cloud, no accounts, no telemetry, no
   network calls. All data lives in one small file (`.flakefinder/history.jsonl`)
   inside your project. Delete it and you're back to a blank slate.
+  (When report data *does* leave your machine — a PR comment or CI artifact —
+  flakefinder first redacts credential-shaped strings like API tokens that
+  leaked into a failure message.)
 - **Use AI or guesswork.** Every verdict is deterministic math on recorded
   evidence, and the rules are published (PLAN.md §5, implemented and tested
   to the letter).
