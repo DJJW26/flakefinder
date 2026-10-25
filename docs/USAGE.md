@@ -119,6 +119,20 @@ in this invocation.
   detected. Default behavior: flakes alone exit 0, so known flakes don't fail
   your CI gate.
 - `--no-quarantine` — run the full suite, ignoring the quarantine list.
+- `--retry-mode auto|failed|full` — retry strategy (default: config `retryMode`,
+  itself default `auto`). `auto`: attempt 1 runs everything; re-runs execute
+  **only the failed tests** — jest/vitest via `-t`, mocha via `--grep`, go via
+  `-run`, pytest via `--lf` — falling back to a full re-run when the runner has
+  no adapter or attempt 1 recorded no failures. `full` restores re-running the
+  entire command every attempt.
+
+**Targeted re-runs** cut retry cost from 3×(whole suite) to roughly
+suite + 2×(failed tests only). One honest caveat: order-dependent flakes may
+not reproduce in a targeted re-run because neighboring tests no longer run
+around them — if you suspect ordering flakiness, use `--retry-mode full`.
+Correctness is unaffected either way: a test only counts as flaky when it
+explicitly *passes* on a re-run, so an empty or partial re-run can never fake
+a rescue.
 
 If quarantined entries exist and the runner supports exclusion, the exclusion
 flags are appended automatically (with a notice); see

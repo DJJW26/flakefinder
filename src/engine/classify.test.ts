@@ -15,6 +15,7 @@ const cfg: ResolvedConfig = {
   quarantineFile: 'flakefinder.quarantine.json',
   runner: 'auto',
   failOnFlakes: false,
+  retryMode: 'auto',
 };
 
 interface TestSpec {

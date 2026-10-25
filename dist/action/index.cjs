@@ -127533,7 +127533,8 @@ var KNOWN_KEYS = /* @__PURE__ */ new Set([
   "slowMultiplier",
   "quarantineFile",
   "runner",
-  "failOnFlakes"
+  "failOnFlakes",
+  "retryMode"
 ]);
 var VALID_RUNNERS = ["auto", "pytest", "jest", "mocha", "go", "generic"];
 function describe(v) {
@@ -127594,6 +127595,12 @@ function validateConfig(config) {
   if (c.failOnFlakes !== void 0 && typeof c.failOnFlakes !== "boolean") {
     problems.push(`failOnFlakes: expected boolean, got ${describe(c.failOnFlakes)}`);
   }
+  if (c.retryMode !== void 0) {
+    const modes = ["auto", "failed", "full"];
+    if (typeof c.retryMode !== "string" || !modes.includes(c.retryMode)) {
+      problems.push(`retryMode: expected one of ${modes.join("|")}, got ${describe(c.retryMode)}`);
+    }
+  }
   if (problems.length > 0) {
     throw new ConfigValidationError(`invalid flakefinder config:
   - ${problems.join("\n  - ")}`);
@@ -127614,6 +127621,7 @@ function resolveConfig(config = {}, overrides = {}) {
     quarantineFile: "flakefinder.quarantine.json",
     runner: "auto",
     failOnFlakes: false,
+    retryMode: "auto",
     ...config,
     ...overrides
   };

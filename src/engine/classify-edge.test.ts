@@ -15,6 +15,7 @@ const cfg: ResolvedConfig = {
   quarantineFile: 'q.json',
   runner: 'auto',
   failOnFlakes: false,
+  retryMode: 'auto',
 };
 
 let clock = 0;

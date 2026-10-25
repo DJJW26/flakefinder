@@ -180,11 +180,15 @@ export async function main(argv: string[]): Promise<number> {
     .option('-R, --retries <n>', 'extra attempts after the first (default: config.liveRetries)')
     .option('--fail-on-flake', 'exit non-zero when flakes (not just failures) are detected')
     .option('--no-quarantine', 'run everything, ignoring the quarantine list')
+    .option(
+      '--retry-mode <mode>',
+      'auto (targeted re-runs when possible) | failed (force targeted) | full (always re-run everything)',
+    )
     .argument('<command...>', 'the test command, placed after --')
     .action(
       async (
         command: string[],
-        opts: { retries?: string; failOnFlake?: boolean; quarantine?: boolean },
+        opts: { retries?: string; failOnFlake?: boolean; quarantine?: boolean; retryMode?: string },
       ) => {
         const g = globals();
         const retries = opts.retries != null ? Number.parseInt(opts.retries, 10) : undefined;

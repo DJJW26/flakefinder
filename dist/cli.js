@@ -74,7 +74,8 @@ var KNOWN_KEYS = /* @__PURE__ */ new Set([
   "slowMultiplier",
   "quarantineFile",
   "runner",
-  "failOnFlakes"
+  "failOnFlakes",
+  "retryMode"
 ]);
 var VALID_RUNNERS = ["auto", "pytest", "jest", "mocha", "go", "generic"];
 function describe(v) {
@@ -135,6 +136,12 @@ function validateConfig(config) {
   if (c.failOnFlakes !== void 0 && typeof c.failOnFlakes !== "boolean") {
     problems.push(`failOnFlakes: expected boolean, got ${describe(c.failOnFlakes)}`);
   }
+  if (c.retryMode !== void 0) {
+    const modes = ["auto", "failed", "full"];
+    if (typeof c.retryMode !== "string" || !modes.includes(c.retryMode)) {
+      problems.push(`retryMode: expected one of ${modes.join("|")}, got ${describe(c.retryMode)}`);
+    }
+  }
   if (problems.length > 0) {
     throw new ConfigValidationError(`invalid flakefinder config:
   - ${problems.join("\n  - ")}`);
@@ -155,6 +162,7 @@ function resolveConfig(config = {}, overrides = {}) {
     quarantineFile: "flakefinder.quarantine.json",
     runner: "auto",
     failOnFlakes: false,
+    retryMode: "auto",
     ...config,
     ...overrides
   };
@@ -2836,6 +2844,41 @@ function matchGlobs(cwd, patterns) {
   return [...matches].sort();
 }
 
+// src/runner/adapters.ts
+function escapeRegExp2(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function failedNamesOf(records) {
+  const names = /* @__PURE__ */ new Set();
+  for (const r of records) {
+    for (const t of r.results) {
+      if (t.status === "fail" || t.status === "error") names.add(t.name);
+    }
+  }
+  return [...names];
+}
+function failedOnlyArgs(runner, failedNames, quarantinedNames = []) {
+  if (failedNames.length === 0) return null;
+  switch (runner) {
+    case "jest":
+    case "mocha": {
+      const include = failedNames.map(escapeRegExp2).join("|");
+      const exclude = [...new Set(quarantinedNames.map(escapeRegExp2))];
+      const pattern = exclude.length > 0 ? `(?=.*(?:${include}))(?!.*(?:${exclude.join("|")}))` : `^(?:.*(?:${include}))$`;
+      return runner === "jest" ? ["-t", pattern] : ["--grep", pattern];
+    }
+    case "go": {
+      const parents = new Set(failedNames.map((n) => n.includes("/") ? n.split("/")[0] : n));
+      const pattern = `^(${[...parents].map(escapeRegExp2).join("|")})$`;
+      return ["-run", pattern];
+    }
+    case "pytest":
+      return ["--lf"];
+    default:
+      return null;
+  }
+}
+
 // src/runner/wrap.ts
 function hashFile(file) {
   try {
@@ -2851,6 +2894,18 @@ function snapshotReports(cwd, cfg) {
 }
 function needsShell(command) {
   return command.some((t) => /[<>|&]/.test(t) || t === "&&" || t === "||");
+}
+function insertRunnerArgs(command, args) {
+  if (args.length === 0) return { cmd: [...command], quoteIdx: [] };
+  const separator = isPackageManagerWrapper(command) ? ["--"] : [];
+  const opIdx = command.findIndex((t) => /[<>|&]/.test(t));
+  const insertAt = opIdx === -1 ? command.length : opIdx;
+  const base = insertAt + separator.length;
+  const quoteIdx = args.map((_arg, i) => i % 2 === 1 ? base + i : -1).filter((i) => i >= 0);
+  return {
+    cmd: [...command.slice(0, insertAt), ...separator, ...args, ...command.slice(insertAt)],
+    quoteIdx
+  };
 }
 function spawnCommand(command, cwd, quoteIdx = []) {
   const shellArgv = command.map((t, i) => quoteIdx.includes(i) ? shellQuote(t) : t);
@@ -2902,26 +2957,14 @@ async function runLive(command, cfg, opts) {
   let commitSha;
   const git = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
   if (git.status === 0) commitSha = git.stdout.trim();
-  let effectiveCommand = command;
-  let quarantineQuoteIdx = [];
   const runner = cfg.runner === "auto" ? detectRunner(cwd) : cfg.runner;
+  let quarantineFlags = [];
   if (opts.applyQuarantine) {
     if (runner === "pytest" || runner === "jest" || runner === "mocha") {
       const qm = new QuarantineManager(path5.resolve(cwd, cfg.quarantineFile));
       const entries = qm.list();
       if (entries.length > 0) {
-        const separator = isPackageManagerWrapper(command) ? ["--"] : [];
-        const flags = exclusionArgs(runner, entries);
-        const opIdx = command.findIndex((t) => /[<>|&]/.test(t));
-        const insertAt = opIdx === -1 ? command.length : opIdx;
-        const base = insertAt + separator.length;
-        quarantineQuoteIdx = flags.map((_arg, i) => i % 2 === 1 ? base + i : -1).filter((i) => i >= 0);
-        effectiveCommand = [
-          ...command.slice(0, insertAt),
-          ...separator,
-          ...flags,
-          ...command.slice(insertAt)
-        ];
+        quarantineFlags = exclusionArgs(runner, entries);
         console.log(
           `flakefinder: quarantine active \u2014 excluding ${entries.length} quarantined test(s) via runner flags`
         );
@@ -2946,10 +2989,30 @@ async function runLive(command, cfg, opts) {
   let snapshot = snapshotReports(cwd, cfg);
   const maxAttempts = Math.max(1, opts.retries + 1);
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    let extraArgs = quarantineFlags;
+    let note = "";
+    if (attempt > 1 && cfg.retryMode !== "full") {
+      const failed = failedNamesOf(attempts);
+      const targeted = failedOnlyArgs(runner, failed);
+      if (targeted) {
+        extraArgs = targeted;
+        note = `targeted: re-running ${failed.length} failed test(s)`;
+      } else {
+        if (cfg.retryMode === "failed") {
+          console.warn(
+            `flakefinder: no targeted-rerun adapter for runner "${runner}" \u2014 falling back to a full re-run`
+          );
+        }
+        note = "full re-run (no targeted adapter or no failures recorded)";
+      }
+    }
+    const built = insertRunnerArgs(command, extraArgs);
     console.log(
-      dim(`flakefinder: attempt ${attempt}/${maxAttempts} \u2192 ${effectiveCommand.join(" ")}`)
+      dim(
+        `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ""} \u2192 ${built.cmd.join(" ")}`
+      )
     );
-    const code = await spawnCommand(effectiveCommand, cwd, quarantineQuoteIdx);
+    const code = await spawnCommand(built.cmd, cwd, built.quoteIdx);
     if (code === 127 || code === 9009) {
       console.error(
         `flakefinder: exit ${code} usually means the command was not found \u2014 check spelling and PATH`
@@ -3146,7 +3209,10 @@ async function main(argv) {
     console.log(`created ${configPath} (runner: ${runner})`);
     printSetupHints(runner);
   });
-  program.command("run").description("run a test command with automatic retry-based flake detection").allowUnknownOption().option("-R, --retries <n>", "extra attempts after the first (default: config.liveRetries)").option("--fail-on-flake", "exit non-zero when flakes (not just failures) are detected").option("--no-quarantine", "run everything, ignoring the quarantine list").argument("<command...>", "the test command, placed after --").action(
+  program.command("run").description("run a test command with automatic retry-based flake detection").allowUnknownOption().option("-R, --retries <n>", "extra attempts after the first (default: config.liveRetries)").option("--fail-on-flake", "exit non-zero when flakes (not just failures) are detected").option("--no-quarantine", "run everything, ignoring the quarantine list").option(
+    "--retry-mode <mode>",
+    "auto (targeted re-runs when possible) | failed (force targeted) | full (always re-run everything)"
+  ).argument("<command...>", "the test command, placed after --").action(
     async (command, opts) => {
       const g = globals();
       const retries = opts.retries != null ? Number.parseInt(opts.retries, 10) : void 0;

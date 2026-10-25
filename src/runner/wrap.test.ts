@@ -328,3 +328,79 @@ process.exit(n === 1 ? 1 : 0);
     expect(argv).toContain('^(?!.*(?:test_x))');
   }, 60_000);
 });
+
+describe('targeted failed-only re-runs (B1)', () => {
+  it('attempt 2 re-runs ONLY the failed tests via runner selector, and a rescue is detected', async () => {
+    const cwd = tmpCwd();
+    // "runner": attempt 1 runs all 3 tests (flaky fails), writes report, exits 1.
+    // attempt 2 (targeted): jest -t pattern arrives; run only flaky (now passing).
+    const script = `
+const fs = require('fs');
+let n = 0;
+try { n = parseInt(fs.readFileSync('c5.txt', 'utf8'), 10) || 0; } catch {}
+n++;
+fs.writeFileSync('c5.txt', String(n));
+const mk = (title, status) => ({ title, fullName: title, status, ancestorTitles: [], duration: 3, failureMessages: status === 'failed' ? [title + ' broke'] : [] });
+let results;
+if (n === 1) {
+  results = [mk('flaky test', 'failed'), mk('stable test', 'passed')];
+} else {
+  const argv = process.argv.slice(2);
+  const hasTargeted = argv.includes('-t') && argv.some((a) => a.includes('flaky'));
+  fs.writeFileSync('targeted.txt', hasTargeted ? 'yes' : 'no');
+  if (!hasTargeted) { process.exit(9); } // targeted mode MUST be active on attempt 2
+  results = [mk('flaky test', 'passed')];
+}
+const failed = results.some((r) => r.status === 'failed');
+fs.writeFileSync('out.json', JSON.stringify({ testResults: [{ name: 's.test.js', status: failed ? 'failed' : 'passed', assertionResults: results }] }));
+process.exit(failed ? 1 : 0);
+`;
+    writeFileSync(path.join(cwd, 'script.js'), script, 'utf8');
+    writeFileSync(
+      path.join(cwd, 'package.json'),
+      JSON.stringify({ devDependencies: { jest: '^29' } }),
+      'utf8',
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await runLive(['node', 'script.js'], cfg({ minRuns: 1 }), {
+      retries: 2,
+      cwd,
+      applyQuarantine: false,
+    });
+    expect(readFileSync(path.join(cwd, 'targeted.txt'), 'utf8')).toBe('yes');
+    const flaky = result.verdicts.find((v) => v.name === 'flaky test')!;
+    expect(flaky.retryRescues).toBeGreaterThanOrEqual(1);
+    expect(flaky.classification.startsWith('flaky-')).toBe(true);
+    expect(result.finalExitCode).toBe(0); // only failure was a rescued flake
+  }, 60_000);
+
+  it('retry-mode full never injects selector flags', async () => {
+    const cwd = tmpCwd();
+    const script = `
+const fs = require('fs');
+let n = 0;
+try { n = parseInt(fs.readFileSync('c6.txt', 'utf8'), 10) || 0; } catch {}
+n++;
+fs.writeFileSync('c6.txt', String(n));
+fs.writeFileSync('argv.json', JSON.stringify(process.argv.slice(2)));
+const mk = (title, status) => ({ title, fullName: title, status, ancestorTitles: [], duration: 3, failureMessages: [] });
+const results = n === 1
+  ? [mk('flaky test', 'failed'), mk('stable test', 'passed')]
+  : [mk('flaky test', 'passed'), mk('stable test', 'passed')];
+const failed = results.some((r) => r.status === 'failed');
+fs.writeFileSync('out.json', JSON.stringify({ testResults: [{ name: 's.test.js', status: failed ? 'failed' : 'passed', assertionResults: results }] }));
+process.exit(failed ? 1 : 0);
+`;
+    writeFileSync(path.join(cwd, 'script.js'), script, 'utf8');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await runLive(['node', 'script.js'], cfg({ minRuns: 1, retryMode: 'full' }), {
+      retries: 1,
+      cwd,
+      applyQuarantine: false,
+    });
+    const argv = JSON.parse(readFileSync(path.join(cwd, 'argv.json'), 'utf8')) as string[];
+    expect(argv).toEqual([]); // no -t/--grep/-run/--lf injection in full mode
+  }, 60_000);
+});

@@ -14,6 +14,7 @@ const cfg = {
   quarantineFile: 'flakefinder.quarantine.json',
   runner: 'auto',
   failOnFlakes: false,
+  retryMode: 'auto',
 } as ResolvedConfig;
 
 function verdict(over: Partial<TestVerdict> = {}): TestVerdict {

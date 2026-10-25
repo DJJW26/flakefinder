@@ -1,0 +1,72 @@
+/**
+ * Runner-native "re-run only the failed tests" adapters (PLAN §8, B1).
+ *
+ * Targeted re-runs turn a 3×(20-minute suite) retry loop into one full run
+ * plus two ~1-minute re-runs of just the failures. Selection is NAME-based
+ * (not cache-based) so it works identically for jest AND vitest, and leaves
+ * no dependency on a runner's internal cache state.
+ *
+ * Caveat (documented in USAGE): order-dependent flakes may not reproduce in
+ * a targeted re-run because neighboring tests no longer run around them —
+ * that is a trade-off, not a bug; `--retry-mode full` restores v0.2 behavior.
+ */
+import type { RunnerKind, TestCaseResult } from '../types.js';
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/** Extract the failing tests from one attempt's records, deduped by name. */
+export function failedNamesOf(records: Array<{ results: TestCaseResult[] }>): string[] {
+  const names = new Set<string>();
+  for (const r of records) {
+    for (const t of r.results) {
+      if (t.status === 'fail' || t.status === 'error') names.add(t.name);
+    }
+  }
+  return [...names];
+}
+
+/**
+ * Selector args that re-run only `failedNames`, excluding `quarantinedNames`
+ * where the runner supports both in one selector. Returns null when the
+ * runner has no adapter — the caller must fall back to a full re-run.
+ */
+export function failedOnlyArgs(
+  runner: Exclude<RunnerKind, 'auto'>,
+  failedNames: string[],
+  quarantinedNames: string[] = [],
+): string[] | null {
+  if (failedNames.length === 0) return null;
+  switch (runner) {
+    case 'jest':
+    case 'mocha': {
+      // one positive lookahead for failures; jest -t / mocha --grep match it
+      // against the full test name. A negative lookahead keeps quarantined
+      // tests out of the re-run in the SAME selector (two -t flags would
+      // override each other).
+      const include = failedNames.map(escapeRegExp).join('|');
+      const exclude = [...new Set(quarantinedNames.map(escapeRegExp))];
+      const pattern =
+        exclude.length > 0
+          ? `(?=.*(?:${include}))(?!.*(?:${exclude.join('|')}))`
+          : `^(?:.*(?:${include}))$`;
+      return runner === 'jest' ? ['-t', pattern] : ['--grep', pattern];
+    }
+    case 'go': {
+      // go -run matches top-level test names; subtests (TestX/sub) rerun via
+      // their parent segment.
+      const parents = new Set(failedNames.map((n) => (n.includes('/') ? n.split('/')[0]! : n)));
+      const pattern = `^(${[...parents].map(escapeRegExp).join('|')})$`;
+      return ['-run', pattern];
+    }
+    case 'pytest':
+      // pytest --lf re-runs the last-failed set from attempt 1's own cache —
+      // the only per-test selector pytest has that respects node ids.
+      // Quarantined tests never entered last-failed: attempt 1 already
+      // deselected them.
+      return ['--lf'];
+    default:
+      return null; // generic: no adapter — full re-run
+  }
+}

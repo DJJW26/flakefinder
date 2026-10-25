@@ -9,6 +9,7 @@ import { exclusionArgs, QuarantineManager } from '../quarantine/manager.js';
 import { HistoryStore } from '../store/history-store.js';
 import type { ResolvedConfig, RunRecord, TestVerdict } from '../types.js';
 import { matchGlobs } from '../util/glob.js';
+import { failedNamesOf, failedOnlyArgs } from './adapters.js';
 
 export interface LiveRunResult {
   attempts: RunRecord[];
@@ -35,6 +36,29 @@ function snapshotReports(cwd: string, cfg: ResolvedConfig): Map<string, string |
 /** Tokens that only a shell can interpret (redirects, pipes, command chaining). */
 function needsShell(command: string[]): boolean {
   return command.some((t) => /[<>|&]/.test(t) || t === '&&' || t === '||');
+}
+
+/**
+ * Insert runner args (flag/value pairs) into the command: package-manager
+ * wrappers get a `--` separator first, and shell operators split the command
+ * into segments — the args must join the RUNNER's segment (the first one),
+ * not the last shell word. Value positions (odd indices) are returned for
+ * shell-mode quoting.
+ */
+function insertRunnerArgs(
+  command: string[],
+  args: string[],
+): { cmd: string[]; quoteIdx: number[] } {
+  if (args.length === 0) return { cmd: [...command], quoteIdx: [] };
+  const separator = isPackageManagerWrapper(command) ? ['--'] : [];
+  const opIdx = command.findIndex((t) => /[<>|&]/.test(t));
+  const insertAt = opIdx === -1 ? command.length : opIdx;
+  const base = insertAt + separator.length;
+  const quoteIdx = args.map((_arg, i) => (i % 2 === 1 ? base + i : -1)).filter((i) => i >= 0);
+  return {
+    cmd: [...command.slice(0, insertAt), ...separator, ...args, ...command.slice(insertAt)],
+    quoteIdx,
+  };
 }
 
 /**
@@ -111,30 +135,14 @@ export async function runLive(
   const git = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
   if (git.status === 0) commitSha = git.stdout.trim();
 
-  let effectiveCommand = command;
-  let quarantineQuoteIdx: number[] = [];
   const runner = cfg.runner === 'auto' ? detectRunner(cwd) : cfg.runner;
+  let quarantineFlags: string[] = [];
   if (opts.applyQuarantine) {
     if (runner === 'pytest' || runner === 'jest' || runner === 'mocha') {
       const qm = new QuarantineManager(path.resolve(cwd, cfg.quarantineFile));
       const entries = qm.list();
       if (entries.length > 0) {
-        const separator = isPackageManagerWrapper(command) ? ['--'] : [];
-        const flags = exclusionArgs(runner, entries);
-        // Shell operators split the command into segments; the flags must join
-        // the RUNNER's segment (the first one), not the last shell word.
-        const opIdx = command.findIndex((t) => /[<>|&]/.test(t));
-        const insertAt = opIdx === -1 ? command.length : opIdx;
-        const base = insertAt + separator.length;
-        quarantineQuoteIdx = flags
-          .map((_arg, i) => (i % 2 === 1 ? base + i : -1))
-          .filter((i) => i >= 0);
-        effectiveCommand = [
-          ...command.slice(0, insertAt),
-          ...separator,
-          ...flags,
-          ...command.slice(insertAt),
-        ];
+        quarantineFlags = exclusionArgs(runner, entries);
         console.log(
           `flakefinder: quarantine active — excluding ${entries.length} quarantined test(s) via runner flags`,
         );
@@ -162,10 +170,33 @@ export async function runLive(
   const maxAttempts = Math.max(1, opts.retries + 1);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Attempt 1 runs the full suite (with quarantine exclusions). Attempts 2+
+    // re-run ONLY the failed tests via runner-native selectors when an adapter
+    // exists and retryMode allows it — otherwise the full command again.
+    let extraArgs = quarantineFlags;
+    let note = '';
+    if (attempt > 1 && cfg.retryMode !== 'full') {
+      const failed = failedNamesOf(attempts);
+      const targeted = failedOnlyArgs(runner, failed);
+      if (targeted) {
+        extraArgs = targeted;
+        note = `targeted: re-running ${failed.length} failed test(s)`;
+      } else {
+        if (cfg.retryMode === 'failed') {
+          console.warn(
+            `flakefinder: no targeted-rerun adapter for runner "${runner}" — falling back to a full re-run`,
+          );
+        }
+        note = 'full re-run (no targeted adapter or no failures recorded)';
+      }
+    }
+    const built = insertRunnerArgs(command, extraArgs);
     console.log(
-      dim(`flakefinder: attempt ${attempt}/${maxAttempts} → ${effectiveCommand.join(' ')}`),
+      dim(
+        `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ''} → ${built.cmd.join(' ')}`,
+      ),
     );
-    const code = await spawnCommand(effectiveCommand, cwd, quarantineQuoteIdx);
+    const code = await spawnCommand(built.cmd, cwd, built.quoteIdx);
     if (code === 127 || code === 9009) {
       console.error(
         `flakefinder: exit ${code} usually means the command was not found — check spelling and PATH`,

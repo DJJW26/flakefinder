@@ -236,6 +236,7 @@ Tags:
 | `quarantineFile` | `"flakefinder.quarantine.json"` | quarantine path |
 | `runner` | `"auto"` | `auto|pytest|jest|mocha|go|generic` |
 | `failOnFlakes` | `false` | flakes make `run`/action exit non-zero |
+| `retryMode` | `"auto"` | `run` retry strategy: `auto` = attempt 1 full, attempts 2+ re-run only failed tests via runner-native selectors (fall back to full when no adapter/no failures recorded); `failed` = force targeted (warn + full when impossible); `full` = always re-run everything |
 
 Note on globs: implement a minimal brace-free glob (`**`, `*`, `?`) matcher in
 `src/util/glob.ts` **(Agent C owns this file)** walking `cwd` (skip `node_modules`, `.git`,
@@ -272,7 +273,13 @@ reports (jest-junit config / `pytest --junitxml=...` / `go test -json > test-out
 
 1. Resolve report globs from `cwd`; snapshot `path → sha256` of existing matches.
 2. `attempt = 1..retries+1`: spawn the command (stdio inherit so the user sees their test
-   output; `cwd` set), stopping early after exit 0. Spawn strategy: **no shell by default**
+   output; `cwd` set), stopping early after exit 0. TARGETED RE-RUNS (v0.3.0): attempts 2+
+   re-run only the failed tests of the previous attempt(s) via `src/runner/adapters.ts` —
+   jest `-t` / mocha `--grep` positive name patterns, go `-run` anchored regex (top-level
+   parents of subtests), pytest `--lf` — inserted with the same operator-aware, wrapper-aware
+   mechanism as quarantine flags. No adapter (generic) or no failures recorded → full re-run.
+   Correctness invariant: a "rescue" requires an explicit PASS observation of a previously
+   failing test, so selectors that match nothing can never fake a rescue. Spawn strategy: **no shell by default**
    (argv passes verbatim — no quoting hazards for quarantine patterns); fall back to shell
    mode, with our injected values shell-quoted, when the command contains shell operators
    (`>`, `|`, `&&`) or the direct spawn is refused (Windows blocks `.cmd` shims like npm

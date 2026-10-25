@@ -67,6 +67,7 @@ const KNOWN_KEYS: ReadonlySet<string> = new Set([
   'quarantineFile',
   'runner',
   'failOnFlakes',
+  'retryMode',
 ]);
 
 const VALID_RUNNERS: readonly RunnerKind[] = ['auto', 'pytest', 'jest', 'mocha', 'go', 'generic'];
@@ -155,6 +156,12 @@ export function validateConfig(config: FlakefinderConfig): void {
   if (c.failOnFlakes !== undefined && typeof c.failOnFlakes !== 'boolean') {
     problems.push(`failOnFlakes: expected boolean, got ${describe(c.failOnFlakes)}`);
   }
+  if (c.retryMode !== undefined) {
+    const modes: readonly string[] = ['auto', 'failed', 'full'];
+    if (typeof c.retryMode !== 'string' || !modes.includes(c.retryMode)) {
+      problems.push(`retryMode: expected one of ${modes.join('|')}, got ${describe(c.retryMode)}`);
+    }
+  }
 
   if (problems.length > 0) {
     throw new ConfigValidationError(`invalid flakefinder config:\n  - ${problems.join('\n  - ')}`);
@@ -183,6 +190,7 @@ export function resolveConfig(
     quarantineFile: 'flakefinder.quarantine.json',
     runner: 'auto',
     failOnFlakes: false,
+    retryMode: 'auto',
     ...config,
     ...overrides,
   };
@@ -222,7 +230,7 @@ export function loadConfig(cwd: string): { config: FlakefinderConfig; path: stri
  * Best-effort test-runner detection from project files. vitest is mapped to
  * `jest` (its --reporter=json output is Jest-shaped).
  */
-export function detectRunner(cwd: string): RunnerKind {
+export function detectRunner(cwd: string): Exclude<RunnerKind, 'auto'> {
   const has = (f: string): boolean => {
     try {
       statSync(path.join(cwd, f));

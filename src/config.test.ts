@@ -38,6 +38,7 @@ describe('resolveConfig defaults (PLAN §6)', () => {
       quarantineFile: 'flakefinder.quarantine.json',
       runner: 'auto',
       failOnFlakes: false,
+      retryMode: 'auto',
     });
   });
   it('merges defaults < file < overrides', () => {

@@ -105,6 +105,13 @@ export interface TestVerdict {
 
 export type RunnerKind = 'auto' | 'pytest' | 'jest' | 'mocha' | 'go' | 'generic';
 
+/** How `run` re-executes failing attempts (PLAN §8).
+ * - `auto`: attempt 1 full suite; attempts 2+ re-run only the failed tests
+ *   via runner-native selectors when an adapter exists, else full re-run.
+ * - `failed`: force targeted re-runs (error when no adapter applies).
+ * - `full`: always re-run the whole command (v0.2 behavior). */
+export type RetryMode = 'auto' | 'failed' | 'full';
+
 /** User-facing config (flakefinder.config.json). All fields optional. */
 export interface FlakefinderConfig {
   /** Report file globs relative to cwd (e.g. "junit*.xml", "test-results/*.json"). */
@@ -120,6 +127,8 @@ export interface FlakefinderConfig {
   quarantineFile?: string;
   runner?: RunnerKind;
   failOnFlakes?: boolean;
+  /** Retry strategy for `run` (see RetryMode). */
+  retryMode?: RetryMode;
 }
 
 export type ResolvedConfig = Required<FlakefinderConfig>;
