@@ -1,0 +1,3134 @@
+#!/usr/bin/env node
+
+// src/cli/index.ts
+import { spawn as spawn2, spawnSync as spawnSync2 } from "child_process";
+import { randomUUID as randomUUID2 } from "crypto";
+import { existsSync as existsSync4, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "fs";
+import path6 from "path";
+import { Command } from "commander";
+
+// src/config.ts
+import { existsSync, readFileSync, statSync } from "fs";
+import path from "path";
+var CONFIG_FILE_NAME = "flakefinder.config.json";
+function stripJsonComments(text) {
+  let out = "";
+  let i = 0;
+  let inString = false;
+  let quote = "";
+  while (i < text.length) {
+    const c = text[i];
+    const next = text[i + 1];
+    if (inString) {
+      if (c === "\\") {
+        out += c + (next ?? "");
+        i += 2;
+        continue;
+      }
+      if (c === quote) inString = false;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = true;
+      quote = c;
+      out += c;
+      i++;
+      continue;
+    }
+    if (c === "/" && next === "/") {
+      while (i < text.length && text[i] !== "\n") i++;
+      continue;
+    }
+    if (c === "/" && next === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i += 2;
+      continue;
+    }
+    out += c;
+    i++;
+  }
+  return out.replace(/,(\s*[}\]])/g, "$1");
+}
+function resolveConfig(config = {}, overrides = {}) {
+  return {
+    reports: [],
+    storeDir: ".flakefinder",
+    maxRuns: 300,
+    minRuns: 3,
+    liveRetries: 2,
+    flakeScoreThreshold: 40,
+    slowThresholdMs: 1e4,
+    slowMultiplier: 5,
+    quarantineFile: "flakefinder.quarantine.json",
+    runner: "auto",
+    failOnFlakes: false,
+    ...config,
+    ...overrides
+  };
+}
+function loadConfig(cwd) {
+  let dir = path.resolve(cwd);
+  for (let depth = 0; depth <= 3; depth++) {
+    const candidate = path.join(dir, CONFIG_FILE_NAME);
+    if (existsSync(candidate)) {
+      let raw;
+      try {
+        raw = readFileSync(candidate, "utf8");
+      } catch (err) {
+        throw new Error(`cannot read ${candidate}: ${err.message}`);
+      }
+      try {
+        const parsed = JSON.parse(stripJsonComments(raw));
+        return { config: parsed, path: candidate };
+      } catch (err) {
+        throw new Error(`invalid config in ${candidate}: ${err.message}`);
+      }
+    }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  return { config: {}, path: null };
+}
+function detectRunner(cwd) {
+  const has = (f) => {
+    try {
+      statSync(path.join(cwd, f));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (has("package.json")) {
+    try {
+      const pkg = JSON.parse(readFileSync(path.join(cwd, "package.json"), "utf8"));
+      const deps = { ...pkg.dependencies, ...pkg.devDependencies };
+      const scripts = JSON.stringify(pkg.scripts ?? {});
+      if (deps.jest || deps.vitest || /\b(jest|vitest)\b/.test(scripts)) return "jest";
+      if (deps.mocha || /\bmocha\b/.test(scripts)) return "mocha";
+    } catch {
+    }
+  }
+  if (has("pyproject.toml") || has("pytest.ini") || has("setup.py") || has("setup.cfg"))
+    return "pytest";
+  if (has(".mocharc.yml") || has(".mocharc.json") || has(".mocharc.js") || has(".mocharc.cjs"))
+    return "mocha";
+  if (has("go.mod")) return "go";
+  return "generic";
+}
+
+// src/engine/stats.ts
+function median(values) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
+}
+function p95(values) {
+  return percentile(values, 95);
+}
+function percentile(values, p) {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(p / 100 * sorted.length) - 1));
+  return sorted[idx];
+}
+function durationStats(obs) {
+  const vals = obs.map((o) => o.durationMs).filter((v) => typeof v === "number");
+  return { medianMs: median(vals), p95Ms: p95(vals) };
+}
+
+// src/engine/classify.ts
+var GONE_AFTER_RUNS = 30;
+var RECENT_WINDOW = 5;
+var FAIL_FAMILY = /* @__PURE__ */ new Set(["fail", "error"]);
+function isFail(status) {
+  return FAIL_FAMILY.has(status);
+}
+function sortRuns(runs) {
+  return [...runs].sort((a, b) => {
+    if (a.timestamp !== b.timestamp) return a.timestamp < b.timestamp ? -1 : 1;
+    return a.attempt - b.attempt;
+  });
+}
+function buildHistories(runs) {
+  const byId = /* @__PURE__ */ new Map();
+  for (const run of sortRuns(runs)) {
+    for (const r of run.results) {
+      let h = byId.get(r.testId);
+      if (!h) {
+        h = { testId: r.testId, suite: r.suite, name: r.name, observations: [] };
+        byId.set(r.testId, h);
+      }
+      h.suite = r.suite;
+      h.name = r.name;
+      h.observations.push({
+        runId: run.runId,
+        timestamp: run.timestamp,
+        status: r.status,
+        attempt: run.attempt,
+        commitSha: run.commitSha,
+        message: r.message,
+        durationMs: r.durationMs ?? void 0
+      });
+    }
+  }
+  return [...byId.values()];
+}
+function collapsePerAttempt(nonSkip) {
+  const perAttempt = /* @__PURE__ */ new Map();
+  for (const o of nonSkip) {
+    perAttempt.set(`${o.runId}\0${o.attempt}`, o);
+  }
+  return [...perAttempt.values()];
+}
+function countSameShaFlips(collapsed) {
+  const perSha = /* @__PURE__ */ new Map();
+  for (const o of collapsed) {
+    if (!o.commitSha) continue;
+    const entry = perSha.get(o.commitSha) ?? { hasPass: false, hasFail: false };
+    if (isFail(o.status)) entry.hasFail = true;
+    else entry.hasPass = true;
+    perSha.set(o.commitSha, entry);
+  }
+  let flips = 0;
+  for (const e of perSha.values()) {
+    if (e.hasPass && e.hasFail) flips++;
+  }
+  return flips;
+}
+function countRetryRescues(collapsed) {
+  let rescues = 0;
+  for (let i = 1; i < collapsed.length; i++) {
+    const prev = collapsed[i - 1];
+    const cur = collapsed[i];
+    if (prev.runId === cur.runId && cur.attempt === prev.attempt + 1 && isFail(prev.status) && !isFail(cur.status)) {
+      rescues++;
+    }
+  }
+  return rescues;
+}
+function countDirectionChanges(collapsed) {
+  const commitFamily = /* @__PURE__ */ new Map();
+  for (const o of collapsed) {
+    if (!o.commitSha) continue;
+    commitFamily.set(o.commitSha, isFail(o.status));
+  }
+  const families = [...commitFamily.values()];
+  let changes = 0;
+  for (let i = 1; i < families.length; i++) {
+    if (families[i] !== families[i - 1]) changes++;
+  }
+  return changes;
+}
+function trailingConsecutiveFails(nonSkip) {
+  let n = 0;
+  for (let i = nonSkip.length - 1; i >= 0; i--) {
+    if (isFail(nonSkip[i].status)) n++;
+    else break;
+  }
+  return n;
+}
+function recencyMultiplier(lastFail) {
+  if (!lastFail) return 0.3;
+  const ts = Date.parse(lastFail.timestamp);
+  if (Number.isNaN(ts)) return 1;
+  const ageDays = (Date.now() - ts) / 864e5;
+  if (ageDays <= 14) return 1;
+  if (ageDays <= 30) return 0.6;
+  return 0.3;
+}
+function flakeScore(opts) {
+  let score = Math.min(50, opts.sameShaFlips * 50);
+  score += Math.min(40, opts.retryRescues * 40);
+  score += Math.min(24, opts.directionChanges * 8 * recencyMultiplier(opts.lastFail));
+  if (opts.runsObserved >= 10) score += 10;
+  return Math.min(100, Math.round(score));
+}
+function classify(opts) {
+  const { nonSkip, collapsed, cfg } = opts;
+  if (!opts.seenRecently) return "gone";
+  if (nonSkip.length === 0) return "skipped";
+  const observed = collapsed;
+  const bothFamilies = collapsed.some((o) => isFail(o.status)) && collapsed.some((o) => !isFail(o.status));
+  if (opts.sameShaFlips > 0) return "flaky-confirmed";
+  if (opts.retryRescues > 0) return "flaky-retry";
+  if (opts.directionChanges >= 2 && observed.length >= cfg.minRuns && bothFamilies)
+    return "flaky-suspected";
+  const lastWindow = observed.slice(-RECENT_WINDOW);
+  if (lastWindow.every((o) => isFail(o.status)) && observed.length >= cfg.minRuns) return "failing";
+  const last = observed[observed.length - 1];
+  if (isFail(last.status)) return "new-failure";
+  return "passing";
+}
+function confidenceFor(classification, observed, cfg) {
+  const totalFails = observed.filter((o) => isFail(o.status)).length;
+  switch (classification) {
+    case "flaky-confirmed":
+    case "flaky-retry":
+      return 100;
+    case "flaky-suspected":
+      return Math.min(70, Math.round(35 * observed.length / Math.max(1, cfg.minRuns)));
+    case "failing":
+      return Math.min(95, 25 + 5 * trailingConsecutiveFails(observed));
+    case "new-failure":
+      return Math.min(50, 10 + 5 * totalFails);
+    default:
+      return 100;
+  }
+}
+function classifyAll(runs, cfg) {
+  if (runs.length === 0) return [];
+  const sorted = sortRuns(runs);
+  const recentRunIds = new Set(sorted.slice(-GONE_AFTER_RUNS).map((r) => r.runId));
+  const histories = buildHistories(sorted);
+  const verdicts = histories.map((h) => {
+    const nonSkip = h.observations.filter((o) => o.status !== "skip");
+    const collapsed = collapsePerAttempt(nonSkip);
+    const lastObs = h.observations[h.observations.length - 1];
+    const observed = collapsed;
+    const sameShaFlips = countSameShaFlips(collapsed);
+    const retryRescues = countRetryRescues(collapsed);
+    const directionChanges = countDirectionChanges(collapsed);
+    const seenRecently = h.observations.some((o) => recentRunIds.has(o.runId));
+    const bothFamilies = collapsed.some((o) => isFail(o.status)) && collapsed.some((o) => !isFail(o.status));
+    const classification = classify({
+      seenRecently,
+      nonSkip,
+      collapsed,
+      sameShaFlips,
+      retryRescues,
+      directionChanges,
+      cfg
+    });
+    const lastFail = [...observed].reverse().find((o) => isFail(o.status));
+    const score = bothFamilies ? flakeScore({
+      sameShaFlips,
+      retryRescues,
+      directionChanges,
+      runsObserved: observed.length,
+      lastFail
+    }) : 0;
+    const { medianMs, p95Ms } = durationStats(observed);
+    const passes = observed.filter((o) => !isFail(o.status)).length;
+    const tags = [];
+    if (!seenRecently) tags.push("long-unseen");
+    const firstHalf = observed.slice(0, Math.floor(observed.length / 2));
+    const lastWindow = observed.slice(-RECENT_WINDOW);
+    if (firstHalf.some((o) => isFail(o.status)) && lastWindow.length > 0 && lastWindow.every((o) => !isFail(o.status))) {
+      tags.push("recently-fixed");
+    }
+    return {
+      testId: h.testId,
+      suite: h.suite,
+      name: h.name,
+      classification,
+      tags,
+      flakeScore: score,
+      confidence: confidenceFor(classification, observed, cfg),
+      passRate: observed.length === 0 ? 0 : passes / observed.length,
+      runsObserved: observed.length,
+      lastStatus: lastObs.status,
+      lastSeen: lastObs.timestamp,
+      lastMessage: lastFail?.message,
+      medianDurationMs: medianMs,
+      p95DurationMs: p95Ms,
+      sameShaFlips,
+      retryRescues,
+      directionChanges
+    };
+  });
+  const perSuite = /* @__PURE__ */ new Map();
+  for (const v of verdicts) {
+    if (v.medianDurationMs != null) {
+      const list = perSuite.get(v.suite) ?? [];
+      list.push(v.medianDurationMs);
+      perSuite.set(v.suite, list);
+    }
+  }
+  const suiteMedians = /* @__PURE__ */ new Map();
+  for (const [suite, values] of perSuite) {
+    const m = median(values);
+    if (m != null) suiteMedians.set(suite, m);
+  }
+  for (const v of verdicts) {
+    const suiteMedianMs = suiteMedians.get(v.suite);
+    const slowAbsolute = v.medianDurationMs != null && cfg.slowThresholdMs != null && v.medianDurationMs > cfg.slowThresholdMs;
+    const slowRelative = v.p95DurationMs != null && suiteMedianMs != null && v.p95DurationMs > cfg.slowMultiplier * suiteMedianMs;
+    if (slowAbsolute || slowRelative) v.tags.push("slow");
+  }
+  return verdicts;
+}
+
+// src/util/test-id.ts
+import { createHash } from "crypto";
+function makeTestId(suite, name) {
+  const norm = (s) => s.trim().replace(/\s+/g, " ");
+  return createHash("sha256").update(`${norm(suite)}\0${norm(name)}`).digest("hex").slice(0, 16);
+}
+
+// src/parsers/internal.ts
+function isObj(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function toArray(v) {
+  if (v === void 0 || v === null) return [];
+  return Array.isArray(v) ? v : [v];
+}
+function trimTo(value, max) {
+  if (typeof value !== "string") return void 0;
+  const t = value.trim();
+  if (t === "") return void 0;
+  return t.length > max ? t.slice(0, max) : t;
+}
+function stripAnsi(text) {
+  return text.replace(/\u001b\[[0-9;]*m/g, "");
+}
+function stripBom(content) {
+  return content.startsWith("\uFEFF") ? content.slice(1) : content;
+}
+function errorMessage(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+function firstNonEmptyLine(content) {
+  for (const line of content.split(/\r?\n/)) {
+    if (line.trim() !== "") return line;
+  }
+  return null;
+}
+
+// src/parsers/gotest.ts
+var MAX_MALFORMED_DETAILS = 5;
+var MESSAGE_MAX_CHARS = 500;
+function elapsedToMs(ev) {
+  const raw = ev.elapsed !== void 0 ? ev.elapsed : ev.Elapsed;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return null;
+  return Math.round(raw * 1e3);
+}
+function messageFromOutputs(outputs) {
+  if (outputs.length === 0) return void 0;
+  const text = stripAnsi(outputs.join("")).split(/\r?\n/).filter((line) => line.trim() !== "").join("\n");
+  if (text === "") return void 0;
+  return text.length > MESSAGE_MAX_CHARS ? text.slice(-MESSAGE_MAX_CHARS) : text;
+}
+var goTestParser = {
+  name: "go",
+  sniff(content) {
+    const first = firstNonEmptyLine(stripBom(content));
+    if (first === null) return false;
+    try {
+      const ev = JSON.parse(first);
+      return isObj(ev) && "Action" in ev && "Package" in ev;
+    } catch {
+      return false;
+    }
+  },
+  parse(content, sourcePath) {
+    const results = [];
+    const warnings = [];
+    const tests = /* @__PURE__ */ new Map();
+    let malformed = 0;
+    const lines = stripBom(content).split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (line === void 0 || line.trim() === "") continue;
+      let ev;
+      try {
+        ev = JSON.parse(line);
+      } catch (err) {
+        malformed++;
+        if (malformed <= MAX_MALFORMED_DETAILS) {
+          warnings.push(`go: ${sourcePath}: line ${i + 1}: invalid JSON (${errorMessage(err)})`);
+        }
+        continue;
+      }
+      if (!isObj(ev)) continue;
+      const pkg = typeof ev.Package === "string" ? ev.Package : "";
+      const test = typeof ev.Test === "string" && ev.Test.trim() !== "" ? ev.Test : null;
+      if (pkg === "" || test === null) continue;
+      const key = `${pkg}\0${test}`;
+      let acc = tests.get(key);
+      if (acc === void 0) {
+        acc = { pkg, test, durationMs: null, outputs: [] };
+        tests.set(key, acc);
+      }
+      const action = ev.Action;
+      if (action === "pass" || action === "fail" || action === "skip") {
+        acc.status = action;
+        acc.durationMs = elapsedToMs(ev);
+      } else if (action === "output") {
+        const out = ev.Output !== void 0 ? ev.Output : ev.output;
+        if (typeof out === "string") acc.outputs.push(out);
+      }
+    }
+    if (malformed > MAX_MALFORMED_DETAILS) {
+      warnings.push(`\u2026and ${malformed - MAX_MALFORMED_DETAILS} more malformed lines`);
+    }
+    for (const acc of tests.values()) {
+      if (acc.status === void 0) continue;
+      const result = {
+        testId: makeTestId(acc.pkg, acc.test),
+        suite: acc.pkg,
+        name: acc.test,
+        status: acc.status,
+        durationMs: acc.durationMs
+      };
+      const message = messageFromOutputs(acc.outputs);
+      if (message !== void 0) result.message = message;
+      results.push(result);
+    }
+    return { results, warnings };
+  }
+};
+
+// src/parsers/jest.ts
+var SUITE_PLACEHOLDER = "(suite)";
+function statusOf(status) {
+  switch (status) {
+    case "passed":
+      return "pass";
+    case "failed":
+      return "fail";
+    case "pending":
+    case "todo":
+      return "skip";
+    default:
+      return null;
+  }
+}
+function tryParseJson(content) {
+  try {
+    return { doc: JSON.parse(stripBom(content)) };
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+}
+var jestParser = {
+  name: "jest",
+  sniff(content) {
+    const parsed = tryParseJson(content);
+    if (!("doc" in parsed)) return false;
+    const doc = parsed.doc;
+    if (!isObj(doc) || !Array.isArray(doc.testResults)) return false;
+    return doc.testResults.some((file) => isObj(file) && Array.isArray(file.assertionResults));
+  },
+  parse(content, sourcePath) {
+    const results = [];
+    const warnings = [];
+    const parsed = tryParseJson(content);
+    if (!("doc" in parsed)) {
+      return { results, warnings: [`jest: ${sourcePath}: invalid JSON: ${parsed.error}`] };
+    }
+    const doc = parsed.doc;
+    if (!isObj(doc) || !Array.isArray(doc.testResults)) {
+      return { results, warnings: [`jest: ${sourcePath}: missing testResults[] array`] };
+    }
+    for (const file of doc.testResults) {
+      if (!isObj(file)) {
+        warnings.push(`jest: ${sourcePath}: skipping non-object entry in testResults[]`);
+        continue;
+      }
+      const filePath = typeof file.name === "string" && file.name.trim() !== "" ? file.name.replace(/\\/g, "/") : "(unknown file)";
+      const assertions = toArray(file.assertionResults);
+      for (const assertion of assertions) {
+        if (!isObj(assertion)) {
+          warnings.push(`jest: ${sourcePath}: skipping non-object entry in assertionResults[]`);
+          continue;
+        }
+        const status = statusOf(assertion.status);
+        if (status === null) {
+          warnings.push(
+            `jest: ${sourcePath}: unknown assertion status ${JSON.stringify(assertion.status)}`
+          );
+          continue;
+        }
+        const ancestors = Array.isArray(assertion.ancestorTitles) ? assertion.ancestorTitles.filter(
+          (title) => typeof title === "string" && title.trim() !== ""
+        ) : [];
+        const suite = ancestors.length > 0 ? ancestors.join(" > ") : filePath;
+        const name = typeof assertion.title === "string" && assertion.title.trim() !== "" ? assertion.title : typeof assertion.fullName === "string" && assertion.fullName.trim() !== "" ? assertion.fullName : "(unnamed)";
+        const durationMs = typeof assertion.duration === "number" && Number.isFinite(assertion.duration) ? assertion.duration : null;
+        const message = trimTo(toArray(assertion.failureMessages)[0], 500);
+        const result = {
+          testId: makeTestId(suite, name),
+          suite,
+          name,
+          status,
+          durationMs
+        };
+        if (message !== void 0) result.message = message;
+        results.push(result);
+      }
+      if (assertions.length === 0 && file.status === "failed") {
+        const message = trimTo(file.message, 500);
+        const result = {
+          testId: makeTestId(filePath, SUITE_PLACEHOLDER),
+          suite: filePath,
+          name: SUITE_PLACEHOLDER,
+          status: "fail",
+          durationMs: null
+        };
+        if (message !== void 0) result.message = message;
+        results.push(result);
+      }
+    }
+    return { results, warnings };
+  }
+};
+
+// src/parsers/junit.ts
+import { XMLParser } from "fast-xml-parser";
+var xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: "@_" });
+function attr(node, name) {
+  const v = node[name];
+  return typeof v === "string" && v.trim() !== "" ? v : void 0;
+}
+function textOf(node) {
+  if (typeof node === "string") return node;
+  if (isObj(node)) {
+    const t = node["#text"];
+    if (typeof t === "string") return t;
+    if (Array.isArray(t)) return t.filter((part) => typeof part === "string").join("");
+  }
+  return void 0;
+}
+function durationOf(timeAttr) {
+  if (timeAttr === void 0) return null;
+  const seconds = Number.parseFloat(timeAttr);
+  return Number.isFinite(seconds) && seconds >= 0 ? Math.round(seconds * 1e3) : null;
+}
+function mapTestCase(tc, suiteName, ctx) {
+  if (!isObj(tc)) return;
+  const name = attr(tc, "@_name");
+  if (name === void 0) {
+    ctx.warnings.push(`junit: ${ctx.sourcePath}: skipping <testcase> without a name attribute`);
+    return;
+  }
+  const suite = attr(tc, "@_classname") ?? suiteName;
+  let status = "pass";
+  let detail;
+  if (tc.failure !== void 0) {
+    status = "fail";
+    detail = tc.failure;
+  } else if (tc.error !== void 0) {
+    status = "error";
+    detail = tc.error;
+  } else if (tc.skipped !== void 0) {
+    status = "skip";
+  }
+  const result = {
+    testId: makeTestId(suite, name),
+    suite,
+    name,
+    status,
+    durationMs: durationOf(attr(tc, "@_time"))
+  };
+  if (detail !== void 0) {
+    const detailMessage = isObj(detail) ? attr(detail, "@_message") : void 0;
+    const message = trimTo(detailMessage, 500) ?? trimTo(textOf(detail), 500);
+    const stack = trimTo(textOf(detail), 1e3);
+    if (message !== void 0) result.message = message;
+    if (stack !== void 0) result.stack = stack;
+  }
+  ctx.results.push(result);
+}
+function walk(el, inheritedSuite, ctx) {
+  if (!isObj(el)) return;
+  const ownSuite = attr(el, "@_name") ?? inheritedSuite;
+  for (const tc of toArray(el.testcase)) mapTestCase(tc, ownSuite, ctx);
+  for (const ts of toArray(el.testsuite)) walk(ts, ownSuite, ctx);
+}
+var junitParser = {
+  name: "junit",
+  sniff(content) {
+    const trimmed = stripBom(content).trimStart();
+    return trimmed.startsWith("<") && content.includes("<testsuit");
+  },
+  parse(content, sourcePath) {
+    const ctx = { sourcePath, results: [], warnings: [] };
+    const body = stripBom(content);
+    if (body.trim() === "") {
+      ctx.warnings.push(`junit: ${sourcePath}: file is empty`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    if (!body.trimEnd().endsWith(">")) {
+      ctx.warnings.push(`junit: ${sourcePath}: content appears truncated (does not end with '>')`);
+    }
+    let doc;
+    try {
+      doc = xml.parse(body);
+    } catch (err) {
+      ctx.warnings.push(`junit: ${sourcePath}: failed to parse XML: ${errorMessage(err)}`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    if (!isObj(doc)) {
+      ctx.warnings.push(`junit: ${sourcePath}: XML did not parse to a document object`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    const root = doc.testsuites !== void 0 ? doc.testsuites : doc.testsuite;
+    if (root === void 0) {
+      ctx.warnings.push(`junit: ${sourcePath}: no <testsuites> or <testsuite> root element found`);
+      return { results: ctx.results, warnings: ctx.warnings };
+    }
+    walk(root, "unknown", ctx);
+    return { results: ctx.results, warnings: ctx.warnings };
+  }
+};
+
+// src/parsers/mocha.ts
+function fullTitleSet(arr) {
+  const set = /* @__PURE__ */ new Set();
+  for (const entry of arr) {
+    if (isObj(entry) && typeof entry.fullTitle === "string" && entry.fullTitle !== "") {
+      set.add(entry.fullTitle);
+    }
+  }
+  return set;
+}
+function deriveSuite(entry, title, fullTitle) {
+  if (fullTitle !== "" && fullTitle !== title && fullTitle.endsWith(title)) {
+    const chain = fullTitle.slice(0, fullTitle.length - title.length).trim();
+    if (chain !== "") return chain;
+  }
+  if (typeof entry.file === "string" && entry.file.trim() !== "") {
+    return entry.file.trim().replace(/\\/g, "/");
+  }
+  return fullTitle !== "" ? fullTitle : "unknown";
+}
+function tryParseJson2(content) {
+  try {
+    return { doc: JSON.parse(stripBom(content)) };
+  } catch (err) {
+    return { error: errorMessage(err) };
+  }
+}
+var mochaParser = {
+  name: "mocha",
+  sniff(content) {
+    const parsed = tryParseJson2(content);
+    if (!("doc" in parsed)) return false;
+    const doc = parsed.doc;
+    if (!isObj(doc)) return false;
+    const hasTestList = Array.isArray(doc.results) || Array.isArray(doc.tests);
+    if (hasTestList && doc.stats !== void 0) return true;
+    return Array.isArray(doc.passes) && Array.isArray(doc.failures);
+  },
+  parse(content, sourcePath) {
+    const results = [];
+    const warnings = [];
+    const parsed = tryParseJson2(content);
+    if (!("doc" in parsed)) {
+      return { results, warnings: [`mocha: ${sourcePath}: invalid JSON: ${parsed.error}`] };
+    }
+    const doc = parsed.doc;
+    if (!isObj(doc)) {
+      return { results, warnings: [`mocha: ${sourcePath}: not a JSON object`] };
+    }
+    const all = Array.isArray(doc.results) ? doc.results : Array.isArray(doc.tests) ? doc.tests : null;
+    if (all === null) {
+      return { results, warnings: [`mocha: ${sourcePath}: missing "tests"/"results" array`] };
+    }
+    const passes = Array.isArray(doc.passes) ? doc.passes : [];
+    const failures = Array.isArray(doc.failures) ? doc.failures : [];
+    const pending = Array.isArray(doc.pending) ? doc.pending : [];
+    const passTitles = fullTitleSet(passes);
+    const failTitles = fullTitleSet(failures);
+    const pendingTitles = fullTitleSet(pending);
+    for (const entry of all) {
+      if (!isObj(entry)) {
+        warnings.push(`mocha: ${sourcePath}: skipping non-object test entry`);
+        continue;
+      }
+      const fullTitle = typeof entry.fullTitle === "string" ? entry.fullTitle.trim() : "";
+      const title = typeof entry.title === "string" && entry.title.trim() !== "" ? entry.title.trim() : fullTitle !== "" ? fullTitle : "(unnamed)";
+      let status = null;
+      if (failures.includes(entry) || fullTitle !== "" && failTitles.has(fullTitle)) {
+        status = "fail";
+      } else if (pending.includes(entry) || fullTitle !== "" && pendingTitles.has(fullTitle)) {
+        status = "skip";
+      } else if (passes.includes(entry) || fullTitle !== "" && passTitles.has(fullTitle)) {
+        status = "pass";
+      } else if (entry.state === "failed") {
+        status = "fail";
+      } else if (entry.state === "pending") {
+        status = "skip";
+      }
+      const finalStatus = status ?? "pass";
+      const suite = deriveSuite(entry, title, fullTitle);
+      const durationMs = typeof entry.duration === "number" && Number.isFinite(entry.duration) ? entry.duration : null;
+      const result = {
+        testId: makeTestId(suite, title),
+        suite,
+        name: title,
+        status: finalStatus,
+        durationMs
+      };
+      const err = entry.err;
+      if (typeof err === "string") {
+        const message = trimTo(err, 500);
+        if (message !== void 0) result.message = message;
+      } else if (isObj(err) && Object.keys(err).length > 0) {
+        const message = trimTo(err.message, 500);
+        const stack = trimTo(err.stack, 1e3);
+        if (message !== void 0) result.message = message;
+        if (stack !== void 0) result.stack = stack;
+      }
+      results.push(result);
+    }
+    return { results, warnings };
+  }
+};
+
+// src/parsers/index.ts
+var parsers = [junitParser, jestParser, mochaParser, goTestParser];
+function detectParser(content) {
+  for (const parser of parsers) {
+    try {
+      if (parser.sniff(content)) return parser;
+    } catch {
+    }
+  }
+  return null;
+}
+
+// src/quarantine/manager.ts
+import { existsSync as existsSync2, readFileSync as readFileSync2, writeFileSync } from "fs";
+import path2 from "path";
+var EMPTY = { version: 1, entries: [] };
+var QuarantineManager = class {
+  filePath;
+  file;
+  constructor(filePath) {
+    this.filePath = filePath;
+    this.file = this.load();
+  }
+  load() {
+    if (!existsSync2(this.filePath)) return { ...EMPTY, entries: [] };
+    try {
+      const parsed = JSON.parse(readFileSync2(this.filePath, "utf8"));
+      if (!Array.isArray(parsed.entries)) throw new Error('missing "entries" array');
+      return { version: 1, entries: parsed.entries };
+    } catch (err) {
+      throw new Error(`invalid quarantine file ${this.filePath}: ${err.message}`);
+    }
+  }
+  list() {
+    return [...this.file.entries];
+  }
+  /** Add or replace an entry (same testId). */
+  add(entry) {
+    this.file.entries = this.file.entries.filter((e) => e.testId !== entry.testId);
+    this.file.entries.push(entry);
+  }
+  remove(testId) {
+    const before = this.file.entries.length;
+    this.file.entries = this.file.entries.filter((e) => e.testId !== testId);
+    return this.file.entries.length < before;
+  }
+  /**
+   * Drop entries that no longer deserve quarantine. Deliberately
+   * conservative: quarantined tests are excluded from runs, so "not seen
+   * lately" is NOT evidence of health (that would silently un-quarantine
+   * everything). An entry leaves quarantine only on positive evidence —
+   * the test ran (quarantine disabled or full-suite run) and passed stably —
+   * or when the entry is older than 90 days and the test is gone from
+   * history. Returns the removed entries.
+   */
+  prune(verdicts, maxAgeDays = 90) {
+    if (verdicts.length === 0) return [];
+    const byId = new Map(verdicts.map((v) => [v.testId, v]));
+    const removed = [];
+    const kept = [];
+    for (const entry of this.file.entries) {
+      const v = byId.get(entry.testId);
+      const healthy = v !== void 0 && v.classification === "passing" && v.runsObserved >= 10;
+      const quarantinedMs = Date.parse(entry.quarantinedAt);
+      const agedOut = v?.classification === "gone" && !Number.isNaN(quarantinedMs) && Date.now() - quarantinedMs > maxAgeDays * 864e5;
+      if (healthy || agedOut) removed.push(entry);
+      else kept.push(entry);
+    }
+    this.file.entries = kept;
+    return removed;
+  }
+  save() {
+    writeFileSync(this.filePath, `${JSON.stringify(this.file, null, 2)}
+`, "utf8");
+  }
+};
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function exclusionArgs(runner, entries) {
+  if (entries.length === 0) return [];
+  switch (runner) {
+    case "pytest": {
+      const args = [];
+      for (const e of entries) args.push("--deselect", `${e.suite}::${e.name}`);
+      return args;
+    }
+    case "jest":
+    case "mocha": {
+      const names = [...new Set(entries.map((e) => escapeRegExp(e.name)))];
+      const flag = runner === "jest" ? "-t" : "--grep";
+      return [flag, `^(?!.*(?:${names.join("|")}))`];
+    }
+    // go / generic: no per-test exclusion — callers must warn
+    default:
+      return [];
+  }
+}
+
+// src/report/html.ts
+function embedJson(data) {
+  return JSON.stringify(data).replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "<\\!--");
+}
+function renderDashboard(data) {
+  const json = embedJson(data);
+  const hasVerdicts = data.verdicts.length > 0;
+  const hasRuns = data.runs.length > 0;
+  const css = String.raw`
+  *, *::before, *::after { box-sizing: border-box; }
+  :root, [data-theme='dark'] {
+    color-scheme: dark;
+    --bg: #0d1117;
+    --bg-elev: #161b22;
+    --bg-inset: #010409;
+    --border: #30363d;
+    --border-soft: #21262d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-faint: #6e7681;
+    --brand: #f78166;
+    --accent: #4493f8;
+    --pass: #3fb950;
+    --fail: #f85149;
+    --fail-deep: #da3633;
+    --error: #b62324;
+    --skip: #8b949e;
+    --warn: #d29922;
+    --suspect: #e3b341;
+    --info: #39c5cf;
+    --fixed: #2dd4bf;
+    --violet: #a371f7;
+    --pink: #db61a2;
+    --mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+    --shadow: 0 1px 3px rgba(1,4,9,.45), 0 8px 24px rgba(1,4,9,.35);
+  }
+  [data-theme='light'] {
+    color-scheme: light;
+    --bg: #f6f8fa;
+    --bg-elev: #ffffff;
+    --bg-inset: #f6f8fa;
+    --border: #d0d7de;
+    --border-soft: #eaeef2;
+    --text: #1f2328;
+    --text-dim: #59636e;
+    --text-faint: #818b98;
+    --brand: #cf4b36;
+    --accent: #0969da;
+    --pass: #1a7f37;
+    --fail: #cf222e;
+    --fail-deep: #a40e26;
+    --error: #82071e;
+    --skip: #57606a;
+    --warn: #9a6700;
+    --suspect: #bf8700;
+    --info: #1b7c83;
+    --fixed: #0f766e;
+    --violet: #8250df;
+    --pink: #bf3989;
+    --shadow: 0 1px 3px rgba(31,35,40,.1), 0 8px 24px rgba(31,35,40,.07);
+  }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--text);
+    background: var(--bg);
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background:
+      radial-gradient(1100px 480px at 18% -8%, color-mix(in srgb, var(--brand) 7%, transparent), transparent 62%),
+      radial-gradient(900px 420px at 92% -10%, color-mix(in srgb, var(--accent) 6%, transparent), transparent 58%);
+  }
+  h1, h2, h3, p { margin: 0; }
+  button { font: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+  code, kbd {
+    font-family: var(--mono);
+    font-size: 12px;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 2px 6px;
+    color: var(--text);
+  }
+  kbd { font-size: 11px; border-bottom-width: 2px; color: var(--text-dim); padding: 0 5px; }
+  .page { max-width: 1280px; margin: 0 auto; padding: 0 28px 56px; }
+
+  /* ---------- header ---------- */
+  .ff-header {
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 14px 0 12px;
+    margin-bottom: 4px;
+    background: color-mix(in srgb, var(--bg) 86%, transparent);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .logo {
+    font-size: 22px;
+    line-height: 1;
+    color: var(--brand);
+    text-shadow: 0 0 20px color-mix(in srgb, var(--brand) 55%, transparent);
+  }
+  .wordmark {
+    font-size: 19px;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    background: linear-gradient(115deg, var(--text) 30%, var(--brand));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  .ver {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 1px 9px;
+  }
+  .spacer { flex: 1 1 auto; }
+  .meta { text-align: right; color: var(--text-dim); font-size: 12.5px; }
+  .meta b { color: var(--text); font-weight: 600; }
+
+  /* ---------- buttons ---------- */
+  .btn {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color .15s, color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn:active { transform: translateY(1px); }
+  .btn.copied { color: var(--pass); border-color: var(--pass); }
+  .btn.sm { padding: 4px 10px; font-size: 12px; }
+  #ff-toggle { display: inline-flex; align-items: center; gap: 7px; border-radius: 999px; padding: 6px 14px; }
+  .icon-btn {
+    font-size: 15px;
+    line-height: 1;
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+  .icon-btn:hover { color: var(--text); border-color: var(--text-dim); }
+
+  /* ---------- cards & sections ---------- */
+  .card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+  }
+  .section-head { display: flex; align-items: baseline; gap: 12px; margin: 26px 2px 10px; flex-wrap: wrap; }
+  .section-title {
+    font-size: 12.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    color: var(--text-dim);
+  }
+  .section-sub { color: var(--text-faint); font-size: 12px; }
+  .dim-note { color: var(--text-dim); font-size: 13px; margin: 4px 2px 0; }
+
+  /* ---------- chips ---------- */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px 14px; margin-top: 18px; }
+  .chip {
+    --bc: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 12px 5px 11px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .chip::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--bc);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--bc) 55%, transparent);
+    flex: none;
+  }
+  .chip:hover { border-color: color-mix(in srgb, var(--bc) 55%, transparent); }
+  .chip .cnt { font-weight: 700; font-size: 14px; font-variant-numeric: tabular-nums; }
+  .chip .lbl { color: var(--text-dim); font-size: 12.5px; }
+  .chip.active { border-color: var(--bc); background: color-mix(in srgb, var(--bc) 13%, transparent); }
+  .chip.active .lbl { color: var(--text); }
+  .chip-sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; flex: none; }
+  .k-total { --bc: var(--accent); }
+  .k-confirmed { --bc: var(--fail); }
+  .k-retry { --bc: var(--warn); }
+  .k-suspected { --bc: var(--suspect); }
+  .k-failing { --bc: var(--fail-deep); }
+  .k-newfail { --bc: var(--pink); }
+  .k-passing { --bc: var(--pass); }
+  .k-skipped { --bc: var(--skip); }
+  .k-gone { --bc: var(--text-faint); }
+  .k-slow { --bc: var(--info); }
+  .k-fixed { --bc: var(--fixed); }
+  .k-long { --bc: var(--violet); }
+
+  /* ---------- runs strip ---------- */
+  .legend { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12px; }
+  .legend .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-left: 6px; }
+  .legend .dot:first-child { margin-left: 0; }
+  .dot.pass { background: var(--pass); }
+  .dot.fail { background: var(--fail); }
+  .strip-card { padding: 18px 18px 12px; }
+  .runs { display: flex; align-items: flex-end; gap: 3px; height: 148px; }
+  .run-col {
+    position: relative;
+    flex: 1 1 0;
+    min-width: 3px;
+    max-width: 26px;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    border-radius: 4px;
+    padding: 0 1px;
+  }
+  .run-col:hover { background: color-mix(in srgb, var(--text) 6%, transparent); }
+  .run-bar {
+    width: 100%;
+    border-radius: 3px 3px 0 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 5px;
+    transition: filter .12s;
+  }
+  .run-col:hover .run-bar { filter: brightness(1.3) saturate(1.1); }
+  .seg { width: 100%; }
+  .seg-pass { flex: 1 1 auto; background: var(--pass); }
+  .seg-fail {
+    background: var(--fail);
+    min-height: 3px;
+    box-shadow: 0 0 8px color-mix(in srgb, var(--fail) 55%, transparent);
+  }
+  .axis {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 8px;
+    color: var(--text-faint);
+    font-size: 10.5px;
+    text-transform: uppercase;
+    letter-spacing: .09em;
+  }
+  .tip {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-inset);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    padding: 8px 10px;
+    font-size: 12px;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity .12s ease .04s;
+    z-index: 40;
+    text-align: left;
+  }
+  .run-col:hover .tip { opacity: 1; visibility: visible; }
+  .run-col:first-child .tip { left: 0; transform: none; }
+  .run-col:last-child .tip { left: auto; right: 0; transform: none; }
+  .tip-ts { font-weight: 600; }
+  .tip-sha { color: var(--text-dim); font-family: var(--mono); font-size: 11.5px; margin: 1px 0 2px; }
+  .tip-counts { display: flex; gap: 8px; }
+  .tc-pass { color: var(--pass); font-weight: 600; }
+  .tc-fail { color: var(--fail); font-weight: 600; }
+  .tc-ok { color: var(--text-dim); }
+
+  /* ---------- table ---------- */
+  .toolbar { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .filter {
+    flex: 1 1 220px;
+    max-width: 380px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 12px;
+    color: var(--text);
+    font: inherit;
+    font-size: 13px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .filter::placeholder { color: var(--text-faint); }
+  .filter:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+  .toolbar-hint { margin-left: auto; color: var(--text-faint); font-size: 12px; }
+  .tbl-wrap { max-height: 620px; overflow: auto; border-radius: 0 0 11px 11px; }
+  table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; min-width: 940px; }
+  thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: var(--bg-elev);
+    color: var(--text-dim);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    user-select: none;
+  }
+  thead th.sortable { cursor: pointer; }
+  thead th.sortable:hover { color: var(--text); }
+  thead th .arrow { display: inline-block; width: 14px; color: var(--accent); font-size: 11px; }
+  th.num-h { text-align: right; }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border-soft); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr { cursor: pointer; transition: background .1s; }
+  tbody tr:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+  tbody tr.selected { background: color-mix(in srgb, var(--accent) 14%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .score-cell { display: inline-flex; align-items: center; gap: 8px; }
+  .score-num { font-weight: 700; min-width: 22px; }
+  .score-bar, .rate-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--text) 10%, transparent);
+    overflow: hidden;
+  }
+  .score-bar { width: 52px; }
+  .rate-bar { width: 56px; }
+  .score-bar i, .rate-bar i, .hbar-fill { display: block; height: 100%; border-radius: 3px; }
+  .s-hi { background: var(--fail); }
+  .s-mid { background: var(--warn); }
+  .s-lo { background: var(--pass); }
+  .s-conf { background: var(--accent); }
+  .rate-cell { display: inline-flex; align-items: center; gap: 8px; }
+  .rate-num { color: var(--text-dim); min-width: 34px; }
+  .td-name { max-width: 460px; }
+  .tname { display: flex; align-items: baseline; gap: 6px; white-space: nowrap; overflow: hidden; max-width: 460px; }
+  .tname .suite { color: var(--text-dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+  .tname .nm { font-weight: 600; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; }
+  .td-tags { white-space: nowrap; }
+  .tag {
+    display: inline-block;
+    font-size: 11px;
+    line-height: 1.6;
+    padding: 0 8px;
+    margin: 1px 3px 1px 0;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    color: var(--text-dim);
+    white-space: nowrap;
+  }
+  .tag-slow { color: var(--info); border-color: color-mix(in srgb, var(--info) 40%, transparent); background: color-mix(in srgb, var(--info) 9%, transparent); }
+  .tag-fixed { color: var(--fixed); border-color: color-mix(in srgb, var(--fixed) 40%, transparent); background: color-mix(in srgb, var(--fixed) 9%, transparent); }
+  .tag-long { color: var(--violet); border-color: color-mix(in srgb, var(--violet) 40%, transparent); background: color-mix(in srgb, var(--violet) 9%, transparent); }
+  .tag.none { border-color: transparent; color: var(--text-faint); }
+
+  /* ---------- badges (classification / status lookups) ---------- */
+  .badge {
+    --bc: var(--text-dim);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 1px 9px 1px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+    line-height: 1.7;
+    color: var(--bc);
+    background: color-mix(in srgb, var(--bc) 12%, transparent);
+    border: 1px solid color-mix(in srgb, var(--bc) 35%, transparent);
+    white-space: nowrap;
+  }
+  .badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--bc); flex: none; }
+  .badge.ghost { background: transparent; border-color: var(--border); --bc: var(--text-dim); }
+  .c-confirmed { --bc: var(--fail); }
+  .c-retry { --bc: var(--warn); }
+  .c-suspected { --bc: var(--suspect); }
+  .c-failing { --bc: var(--fail-deep); }
+  .c-newfail { --bc: var(--pink); }
+  .c-passing { --bc: var(--pass); }
+  .c-skipped { --bc: var(--skip); }
+  .c-gone { --bc: var(--text-faint); }
+  .st-pass { --bc: var(--pass); }
+  .st-fail { --bc: var(--fail); }
+  .st-error { --bc: var(--error); }
+  .st-skip { --bc: var(--skip); }
+
+  /* ---------- drawer ---------- */
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    background: color-mix(in srgb, #010409 55%, transparent);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .2s ease;
+    z-index: 60;
+  }
+  .backdrop.open { opacity: 1; pointer-events: auto; }
+  #ff-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(460px, 92vw);
+    z-index: 70;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg-elev);
+    border-left: 1px solid var(--border);
+    box-shadow: -16px 0 48px color-mix(in srgb, #010409 55%, transparent);
+    transform: translateX(103%);
+    transition: transform .28s cubic-bezier(.2, .8, .25, 1);
+  }
+  #ff-drawer.open { transform: translateX(0); }
+  .dr-head {
+    --bc: var(--border);
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 16px 20px 13px;
+    border-bottom: 1px solid var(--border);
+    border-top: 3px solid var(--bc);
+  }
+  .dr-title { font-size: 15px; font-weight: 700; }
+  .dr-hint { color: var(--text-faint); font-size: 11.5px; margin-top: 3px; }
+  .dr-body { flex: 1 1 auto; overflow-y: auto; padding: 18px 20px 24px; }
+  .dr-suite { color: var(--text-dim); font-size: 12px; font-family: var(--mono); word-break: break-all; }
+  .dr-name { margin: 3px 0 12px; font-size: 16.5px; line-height: 1.35; word-break: break-word; }
+  .dr-idrow { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  #ff-dr-id {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text-dim);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    word-break: break-all;
+  }
+  .dr-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; align-items: center; }
+  .stats-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    background: color-mix(in srgb, var(--bg-inset) 55%, var(--bg-elev));
+  }
+  .stats-top { display: flex; align-items: center; gap: 18px; }
+  .donut { flex: none; }
+  .donut-bg { fill: none; stroke: color-mix(in srgb, var(--text) 10%, transparent); stroke-width: 5; }
+  .donut-fg { fill: none; stroke: var(--pass); stroke-width: 5; stroke-linecap: round; transition: stroke-dasharray .4s ease; }
+  .donut-fg.warn { stroke: var(--suspect); }
+  .donut-fg.bad { stroke: var(--fail); }
+  .donut-num { fill: var(--text); font-size: 11px; font-weight: 700; text-anchor: middle; }
+  .donut-lbl { fill: var(--text-faint); font-size: 6.5px; text-anchor: middle; letter-spacing: .08em; text-transform: uppercase; }
+  .bars { flex: 1; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .bar-row { display: grid; grid-template-columns: 84px 1fr 28px; align-items: center; gap: 8px; font-size: 12px; }
+  .bar-lbl { color: var(--text-dim); }
+  .hbar { height: 7px; border-radius: 4px; background: color-mix(in srgb, var(--text) 9%, transparent); overflow: hidden; }
+  .hbar-fill { border-radius: 4px; transition: width .35s ease; }
+  .bar-val { text-align: right; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 16px; }
+  .tile { border: 1px solid var(--border-soft); border-radius: 10px; padding: 9px 10px 7px; background: var(--bg-elev); }
+  .tile span { display: block; color: var(--text-faint); font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; }
+  .tile b { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tile.hot { border-color: color-mix(in srgb, var(--hot, var(--fail)) 45%, transparent); }
+  .tile.hot b { color: var(--hot, var(--fail)); }
+  .tile.accent-red { --hot: var(--fail); }
+  .tile.accent-orange { --hot: var(--warn); }
+  .tile.accent-yellow { --hot: var(--suspect); }
+  .dr-msg-block h3 { margin: 18px 0 8px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-dim); }
+  #ff-dr-msg {
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 240px;
+    overflow: auto;
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--fail);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.55;
+    color: var(--text-dim);
+  }
+  .dr-foot { border-top: 1px solid var(--border); padding: 14px 20px 16px; }
+  .dr-foot-lbl { font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--text-faint); margin-bottom: 7px; }
+  .dr-foot-row { display: flex; gap: 8px; align-items: stretch; }
+  #ff-dr-cmd {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 11.5px;
+    color: var(--text);
+    background: var(--bg-inset);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 10px;
+    word-break: break-all;
+    align-self: center;
+  }
+
+  /* ---------- empty state / footer ---------- */
+  .empty-wrap { display: flex; justify-content: center; padding-top: 9vh; }
+  .empty-card { max-width: 560px; text-align: center; padding: 52px 44px; }
+  .empty-logo {
+    font-size: 44px;
+    color: var(--brand);
+    text-shadow: 0 0 30px color-mix(in srgb, var(--brand) 50%, transparent);
+    margin-bottom: 14px;
+  }
+  .empty-card h2 { margin-bottom: 10px; font-size: 21px; letter-spacing: -0.01em; }
+  .empty-card p { color: var(--text-dim); margin-bottom: 10px; }
+  .ff-foot {
+    margin-top: 34px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border-soft);
+    color: var(--text-faint);
+    font-size: 12px;
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .tbl-wrap, .dr-body, #ff-dr-msg { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+
+  @media (max-width: 768px) {
+    .page { padding: 0 14px 48px; }
+    #ff-drawer { width: 100vw; border-left: none; }
+    .stats-top { flex-direction: column; }
+    .tbl-wrap { max-height: 65vh; }
+    .meta { text-align: left; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; }
+  }
+`;
+  const chips = String.raw`
+<nav id="ff-chips" class="chips card" aria-label="Summary filters">
+  <button type="button" class="chip k-total" data-clear="1" aria-pressed="false"><span class="cnt" id="cnt-total">0</span><span class="lbl">Tests tracked</span></button>
+  <button type="button" class="chip k-confirmed" data-cls="flaky-confirmed" aria-pressed="false"><span class="cnt" id="cnt-flaky-confirmed">0</span><span class="lbl">Flaky (confirmed)</span></button>
+  <button type="button" class="chip k-retry" data-cls="flaky-retry" aria-pressed="false"><span class="cnt" id="cnt-flaky-retry">0</span><span class="lbl">Flaky (retry-rescued)</span></button>
+  <button type="button" class="chip k-suspected" data-cls="flaky-suspected" aria-pressed="false"><span class="cnt" id="cnt-flaky-suspected">0</span><span class="lbl">Flaky (suspected)</span></button>
+  <button type="button" class="chip k-failing" data-cls="failing" aria-pressed="false"><span class="cnt" id="cnt-failing">0</span><span class="lbl">Failing</span></button>
+  <button type="button" class="chip k-newfail" data-cls="new-failure" aria-pressed="false"><span class="cnt" id="cnt-new-failure">0</span><span class="lbl">New failure</span></button>
+  <button type="button" class="chip k-passing" data-cls="passing" aria-pressed="false"><span class="cnt" id="cnt-passing">0</span><span class="lbl">Passing</span></button>
+  <button type="button" class="chip k-skipped" data-cls="skipped" aria-pressed="false"><span class="cnt" id="cnt-skipped">0</span><span class="lbl">Skipped</span></button>
+  <button type="button" class="chip k-gone" data-cls="gone" aria-pressed="false"><span class="cnt" id="cnt-gone">0</span><span class="lbl">Gone</span></button>
+  <span class="chip-sep" aria-hidden="true"></span>
+  <button type="button" class="chip k-slow" data-tag="slow" aria-pressed="false"><span class="cnt" id="cnt-slow">0</span><span class="lbl">Slow</span></button>
+  <button type="button" class="chip k-fixed" data-tag="recently-fixed" aria-pressed="false"><span class="cnt" id="cnt-recently-fixed">0</span><span class="lbl">Recently fixed</span></button>
+  <button type="button" class="chip k-long" data-tag="long-unseen" aria-pressed="false"><span class="cnt" id="cnt-long-unseen">0</span><span class="lbl">Long unseen</span></button>
+</nav>
+`;
+  const stripCard = String.raw`
+<div class="card strip-card">
+  <div id="ff-runs" class="runs" role="img" aria-label="Pass and fail counts per run, oldest to newest"></div>
+  <div class="axis"><span>oldest</span><span>latest</span></div>
+</div>
+`;
+  const runsNote = String.raw`
+<p class="dim-note">No runs recorded yet — the run history chart appears once flakefinder has ingested CI runs.</p>
+`;
+  const runsSection = String.raw`
+<section class="ff-section" aria-label="Run history">
+  <div class="section-head">
+    <h2 class="section-title">Run history</h2>
+    <span class="section-sub" id="ff-runs-sub"></span>
+    <span class="legend"><i class="dot pass"></i>pass<i class="dot fail"></i>fail</span>
+  </div>
+  ${hasRuns ? stripCard : runsNote}
+</section>
+`;
+  const tableSection = String.raw`
+<section class="ff-section" aria-label="Tests">
+  <div class="section-head">
+    <h2 class="section-title">Tests</h2>
+    <span class="section-sub" id="ff-showing"></span>
+  </div>
+  <div class="card">
+    <div class="toolbar">
+      <input id="ff-filter" class="filter" type="search" placeholder="Filter by suite or test name&hellip;" aria-label="Filter tests" autocomplete="off" spellcheck="false">
+      <button type="button" id="ff-clear" class="btn sm" hidden>Clear filters</button>
+      <span class="toolbar-hint">Click a row for details</span>
+    </div>
+    <div class="tbl-wrap">
+      <table id="ff-table">
+        <thead>
+          <tr>
+            <th class="sortable num-h" data-key="score" scope="col">Score<span class="arrow" aria-hidden="true"></span></th>
+            <th class="sortable num-h" data-key="conf" scope="col">Conf %<span class="arrow" aria-hidden="true"></span></th>
+            <th class="sortable num-h" data-key="runs" scope="col">Runs<span class="arrow" aria-hidden="true"></span></th>
+            <th class="sortable num-h" data-key="pass" scope="col">Pass rate<span class="arrow" aria-hidden="true"></span></th>
+            <th class="sortable num-h" data-key="median" scope="col">Median<span class="arrow" aria-hidden="true"></span></th>
+            <th class="sortable" data-key="class" scope="col">Class<span class="arrow" aria-hidden="true"></span></th>
+            <th class="sortable" data-key="name" scope="col">Test<span class="arrow" aria-hidden="true"></span></th>
+            <th scope="col">Tags</th>
+          </tr>
+        </thead>
+        <tbody id="ff-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+`;
+  const drawerMarkup = String.raw`
+<div id="ff-backdrop" class="backdrop" aria-hidden="true"></div>
+<aside id="ff-drawer" role="dialog" aria-modal="true" aria-label="Test detail" aria-hidden="true">
+  <div class="dr-head">
+    <div>
+      <div class="dr-title">Test detail</div>
+      <div class="dr-hint"><kbd>Esc</kbd> close &middot; <kbd>&larr;</kbd><kbd>&rarr;</kbd> move between tests</div>
+    </div>
+    <button type="button" id="ff-dr-close" class="icon-btn" aria-label="Close details">&#10005;</button>
+  </div>
+  <div class="dr-body">
+    <div class="dr-suite" id="ff-dr-suite"></div>
+    <h2 class="dr-name" id="ff-dr-name"></h2>
+    <div class="dr-idrow">
+      <code id="ff-dr-id" title="test id"></code>
+      <button type="button" class="btn sm" id="ff-dr-copy-id">Copy ID</button>
+    </div>
+    <div class="dr-badges">
+      <span class="badge" id="ff-dr-cls"></span>
+      <span class="badge" id="ff-dr-status"></span>
+      <span class="badge ghost" id="ff-dr-seen"></span>
+    </div>
+    <div class="stats-card">
+      <div class="stats-top">
+        <svg class="donut" viewBox="0 0 48 48" width="84" height="84" aria-hidden="true">
+          <circle class="donut-bg" cx="24" cy="24" r="19"></circle>
+          <circle class="donut-fg" id="ff-dr-donut" cx="24" cy="24" r="19" transform="rotate(-90 24 24)"></circle>
+          <text class="donut-num" id="ff-dr-donut-v" x="24" y="27">&ndash;</text>
+          <text class="donut-lbl" x="24" y="37">pass rate</text>
+        </svg>
+        <div class="bars">
+          <div class="bar-row">
+            <span class="bar-lbl">Flake score</span>
+            <div class="hbar"><i class="hbar-fill s-lo" id="ff-dr-score-bar"></i></div>
+            <b class="bar-val" id="ff-dr-score-v">0</b>
+          </div>
+          <div class="bar-row">
+            <span class="bar-lbl">Confidence</span>
+            <div class="hbar"><i class="hbar-fill s-conf" id="ff-dr-conf-bar"></i></div>
+            <b class="bar-val" id="ff-dr-conf-v">0</b>
+          </div>
+        </div>
+      </div>
+      <div class="tiles">
+        <div class="tile"><span>Runs</span><b id="ff-dr-runs">0</b></div>
+        <div class="tile"><span>Median</span><b id="ff-dr-med">&ndash;</b></div>
+        <div class="tile"><span>P95</span><b id="ff-dr-p95">&ndash;</b></div>
+        <div class="tile accent-red"><span>Same-SHA flips</span><b id="ff-dr-flips">0</b></div>
+        <div class="tile accent-orange"><span>Retry rescues</span><b id="ff-dr-resc">0</b></div>
+        <div class="tile accent-yellow"><span>Direction &Delta;</span><b id="ff-dr-dirs">0</b></div>
+      </div>
+    </div>
+    <div class="dr-msg-block" id="ff-dr-msg-block">
+      <h3>Last failure message</h3>
+      <pre id="ff-dr-msg"></pre>
+    </div>
+  </div>
+  <div class="dr-foot">
+    <div class="dr-foot-lbl">Quarantine this test</div>
+    <div class="dr-foot-row">
+      <code id="ff-dr-cmd"></code>
+      <button type="button" class="btn sm" id="ff-dr-copy-cmd">Copy</button>
+    </div>
+  </div>
+</aside>
+`;
+  const emptyState = String.raw`
+<div class="empty-wrap">
+  <div class="card empty-card">
+    <div class="empty-logo" aria-hidden="true">&#10052;</div>
+    <h2>No test history yet</h2>
+    <p>flakefinder learns your suite's health as runs accumulate — this dashboard fills in automatically.</p>
+    <p class="empty-hint">Run <code>npx flakefinder run -- npm test</code> a few times locally or in CI, then regenerate with <code>npx flakefinder html</code>.</p>
+  </div>
+</div>
+`;
+  const appJs = String.raw`
+(function () {
+  'use strict';
+
+  // ---------- embedded data ----------
+  function readData() {
+    var node = document.getElementById('ff-data');
+    var text = node ? (node.textContent || '') : '{}';
+    // Undo the safety escape applied by renderDashboard before parsing.
+    // The escaped end-tag form is already valid JSON and needs no reversal.
+    return JSON.parse(text.replace(/<\\!/g, '<!'));
+  }
+
+  var data = readData();
+  var verdicts = Array.isArray(data.verdicts) ? data.verdicts : [];
+  var runs = Array.isArray(data.runs) ? data.runs : [];
+
+  // ---------- lookup maps ----------
+  var CLS = {
+    'flaky-confirmed': { label: 'Flaky (confirmed)', short: 'Flaky', color: 'confirmed' },
+    'flaky-retry': { label: 'Flaky (retry-rescued)', short: 'Retry-rescued', color: 'retry' },
+    'flaky-suspected': { label: 'Flaky (suspected)', short: 'Suspected', color: 'suspected' },
+    'failing': { label: 'Failing', short: 'Failing', color: 'failing' },
+    'new-failure': { label: 'New failure', short: 'New failure', color: 'newfail' },
+    'passing': { label: 'Passing', short: 'Passing', color: 'passing' },
+    'skipped': { label: 'Skipped', short: 'Skipped', color: 'skipped' },
+    'gone': { label: 'Gone', short: 'Gone', color: 'gone' }
+  };
+  var RANK = { 'flaky-confirmed': 0, 'flaky-retry': 1, 'flaky-suspected': 2, 'failing': 3, 'new-failure': 4, 'passing': 5, 'skipped': 6, 'gone': 7 };
+  var TAG_CLS = { slow: 'tag-slow', 'recently-fixed': 'tag-fixed', 'long-unseen': 'tag-long' };
+  var STATUS_CLS = { pass: 'st-pass', fail: 'st-fail', error: 'st-error', skip: 'st-skip' };
+
+  // ---------- helpers ----------
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function fmtDateTime(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString(undefined, { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  }
+  function fmtDur(ms) {
+    if (ms === null || ms === undefined || !isFinite(ms)) return '\u2014';
+    if (ms < 1000) return Math.round(ms) + ' ms';
+    if (ms < 60000) {
+      var s = ms / 1000;
+      var str = s >= 100 ? s.toFixed(0) : (s >= 10 ? s.toFixed(1) : s.toFixed(2));
+      return str + ' s';
+    }
+    var m = Math.floor(ms / 60000);
+    if (m >= 60) {
+      var h = Math.floor(m / 60);
+      return h + 'h ' + (m % 60) + 'm';
+    }
+    return m + 'm ' + Math.round((ms - m * 60000) / 1000) + 's';
+  }
+  function pct(x) { return Math.round(x * 100) + '%'; }
+  function clamp01(x) { return Math.max(0, Math.min(1, isFinite(x) ? x : 0)); }
+  function clamp100(x) { return Math.max(0, Math.min(100, isFinite(x) ? x : 0)); }
+  function scoreCls(n) { return n >= 70 ? 's-hi' : (n >= 40 ? 's-mid' : 's-lo'); }
+  function rateCls(r) { return r >= 0.9 ? 's-lo' : (r >= 0.5 ? 's-mid' : 's-hi'); }
+  function confCls(n) { return n >= 70 ? 's-conf' : (n >= 40 ? 's-mid' : 's-hi'); }
+  function midTrunc(s, max) {
+    s = String(s);
+    if (s.length <= max) return s;
+    var keep = max - 1;
+    var head = Math.ceil(keep / 2);
+    var tail = keep - head;
+    return s.slice(0, head) + '\u2026' + s.slice(s.length - tail);
+  }
+  function shortSha(s) { return s ? String(s).slice(0, 7) : ''; }
+
+  // ---------- theme toggle ----------
+  var themeBtn = $('ff-toggle');
+  var theme = 'dark';
+  try {
+    var stored = window.localStorage && window.localStorage.getItem('ff-theme');
+    if (stored === 'light' || stored === 'dark') theme = stored;
+  } catch (err) { /* storage unavailable (private mode / file origin) */ }
+  function applyTheme() {
+    document.documentElement.setAttribute('data-theme', theme);
+    if (!themeBtn) return;
+    var ico = $('ff-toggle-ico');
+    var lbl = $('ff-toggle-lbl');
+    if (ico) ico.textContent = theme === 'dark' ? '\u2600' : '\u263E';
+    if (lbl) lbl.textContent = theme === 'dark' ? 'Light' : 'Dark';
+    themeBtn.setAttribute('aria-label', 'Switch to ' + (theme === 'dark' ? 'light' : 'dark') + ' theme');
+  }
+  applyTheme();
+  if (themeBtn) {
+    themeBtn.addEventListener('click', function () {
+      theme = theme === 'dark' ? 'light' : 'dark';
+      try { window.localStorage.setItem('ff-theme', theme); } catch (err) { /* ignore */ }
+      applyTheme();
+    });
+  }
+
+  // ---------- header ----------
+  var gen = $('ff-generated');
+  if (gen) gen.textContent = fmtDateTime(data.generatedAt);
+  var ver = $('ff-version');
+  if (ver) ver.textContent = 'v' + (data.flakefinderVersion || '');
+
+  // ---------- summary chip counts ----------
+  var clsCounts = {};
+  var tagCounts = {};
+  var idx;
+  for (idx = 0; idx < verdicts.length; idx++) {
+    var item = verdicts[idx];
+    clsCounts[item.classification] = (clsCounts[item.classification] || 0) + 1;
+    var itemTags = item.tags || [];
+    var t;
+    for (t = 0; t < itemTags.length; t++) {
+      tagCounts[itemTags[t]] = (tagCounts[itemTags[t]] || 0) + 1;
+    }
+  }
+  function setCount(id, n) {
+    var e = $(id);
+    if (e) e.textContent = String(n);
+  }
+  setCount('cnt-total', verdicts.length);
+  Object.keys(CLS).forEach(function (k) { setCount('cnt-' + k, clsCounts[k] || 0); });
+  setCount('cnt-slow', tagCounts.slow || 0);
+  setCount('cnt-recently-fixed', tagCounts['recently-fixed'] || 0);
+  setCount('cnt-long-unseen', tagCounts['long-unseen'] || 0);
+
+  // ---------- table state ----------
+  var state = { q: '', cls: null, tag: null, sortKey: 'score', sortDir: 'desc' };
+  var GETTERS = {
+    score: function (x) { return x.flakeScore; },
+    conf: function (x) { return x.confidence; },
+    runs: function (x) { return x.runsObserved; },
+    pass: function (x) { return clamp01(x.passRate); },
+    median: function (x) { return x.medianDurationMs == null ? -1 : x.medianDurationMs; },
+    'class': function (x) { return RANK[x.classification] !== undefined ? RANK[x.classification] : 99; },
+    name: function (x) { return (x.suite + ' / ' + x.name).toLowerCase(); }
+  };
+  function currentRows() {
+    var out = [];
+    var j;
+    for (j = 0; j < verdicts.length; j++) {
+      var x = verdicts[j];
+      if (state.cls && x.classification !== state.cls) continue;
+      if (state.tag && (x.tags || []).indexOf(state.tag) === -1) continue;
+      if (state.q) {
+        var hay = (x.suite + ' ' + x.name).toLowerCase();
+        if (hay.indexOf(state.q) === -1) continue;
+      }
+      out.push(x);
+    }
+    var getter = GETTERS[state.sortKey] || GETTERS.score;
+    var dir = state.sortDir === 'asc' ? 1 : -1;
+    out.sort(function (a, b) {
+      var va = getter(a);
+      var vb = getter(b);
+      if (va < vb) return -dir;
+      if (va > vb) return dir;
+      var na = (a.suite + ' / ' + a.name).toLowerCase();
+      var nb = (b.suite + ' / ' + b.name).toLowerCase();
+      if (na < nb) return -1;
+      if (na > nb) return 1;
+      return 0;
+    });
+    return out;
+  }
+
+  // ---------- table rendering ----------
+  var tbody = $('ff-tbody');
+  var showingEl = $('ff-showing');
+  var clearBtn = $('ff-clear');
+
+  function rowEl(rows, v, rowIdx) {
+    var tr = document.createElement('tr');
+    tr.setAttribute('data-idx', String(rowIdx));
+    tr.tabIndex = 0;
+    var td;
+
+    td = el('td', 'num');
+    var scoreCell = el('div', 'score-cell');
+    scoreCell.appendChild(el('span', 'score-num', String(Math.round(v.flakeScore))));
+    var scoreBar = el('div', 'score-bar');
+    var scoreFill = el('i', scoreCls(v.flakeScore));
+    scoreFill.style.width = clamp100(v.flakeScore) + '%';
+    scoreBar.appendChild(scoreFill);
+    scoreCell.appendChild(scoreBar);
+    td.appendChild(scoreCell);
+    tr.appendChild(td);
+
+    tr.appendChild(el('td', 'num', Math.round(v.confidence) + '%'));
+
+    tr.appendChild(el('td', 'num', String(v.runsObserved)));
+
+    td = el('td', 'num');
+    var rate = clamp01(v.passRate);
+    var rateCell = el('div', 'rate-cell');
+    var rateBar = el('div', 'rate-bar');
+    var rateFill = el('i', rateCls(rate));
+    rateFill.style.width = Math.round(rate * 100) + '%';
+    rateBar.appendChild(rateFill);
+    rateCell.appendChild(rateBar);
+    rateCell.appendChild(el('span', 'rate-num', pct(rate)));
+    td.appendChild(rateCell);
+    tr.appendChild(td);
+
+    tr.appendChild(el('td', 'num', fmtDur(v.medianDurationMs)));
+
+    var meta = CLS[v.classification] || CLS.passing;
+    tr.appendChild(el('td', null)).appendChild(el('span', 'badge c-' + meta.color, meta.short));
+
+    td = el('td', 'td-name');
+    var nameDiv = el('div', 'tname');
+    nameDiv.title = v.suite + ' :: ' + v.name;
+    nameDiv.appendChild(el('span', 'suite', midTrunc(v.suite, 46) + ' ::'));
+    nameDiv.appendChild(el('span', 'nm', midTrunc(v.name, 56)));
+    td.appendChild(nameDiv);
+    tr.appendChild(td);
+
+    td = el('td', 'td-tags');
+    var tags = v.tags || [];
+    var k;
+    for (k = 0; k < tags.length; k++) {
+      td.appendChild(el('span', 'tag ' + (TAG_CLS[tags[k]] || ''), tags[k]));
+    }
+    if (!tags.length) td.appendChild(el('span', 'tag none', '\u2014'));
+    tr.appendChild(td);
+
+    tr.addEventListener('click', function () { openDrawer(rows, rowIdx); });
+    tr.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        openDrawer(rows, rowIdx);
+      }
+    });
+    return tr;
+  }
+
+  function updateSortHeads() {
+    var heads = document.querySelectorAll('#ff-table thead th[data-key]');
+    Array.prototype.forEach.call(heads, function (th) {
+      var key = th.getAttribute('data-key');
+      var arrow = th.querySelector('.arrow');
+      var active = key === state.sortKey;
+      if (arrow) arrow.textContent = active ? (state.sortDir === 'asc' ? '\u2191' : '\u2193') : '';
+      if (active) th.setAttribute('aria-sort', state.sortDir === 'asc' ? 'ascending' : 'descending');
+      else th.removeAttribute('aria-sort');
+    });
+  }
+
+  function renderTable() {
+    var rows = currentRows();
+    var frag = document.createDocumentFragment();
+    var j;
+    for (j = 0; j < rows.length; j++) frag.appendChild(rowEl(rows, rows[j], j));
+    if (tbody) tbody.replaceChildren(frag);
+    if (showingEl) showingEl.textContent = 'Showing ' + rows.length + ' of ' + verdicts.length + ' tests';
+    if (clearBtn) clearBtn.hidden = !(state.q || state.cls || state.tag);
+    updateSortHeads();
+  }
+
+  function wireSort() {
+    var heads = document.querySelectorAll('#ff-table thead th[data-key]');
+    Array.prototype.forEach.call(heads, function (th) {
+      th.addEventListener('click', function () {
+        var key = th.getAttribute('data-key');
+        if (state.sortKey === key) {
+          state.sortDir = state.sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          state.sortKey = key;
+          state.sortDir = (key === 'name' || key === 'class') ? 'asc' : 'desc';
+        }
+        renderTable();
+      });
+    });
+  }
+
+  // ---------- filter input + chips ----------
+  var filterInput = $('ff-filter');
+  var debounceTimer = 0;
+  if (filterInput) {
+    filterInput.addEventListener('input', function () {
+      window.clearTimeout(debounceTimer);
+      var value = filterInput.value;
+      debounceTimer = window.setTimeout(function () {
+        state.q = value.trim().toLowerCase();
+        renderTable();
+      }, 150);
+    });
+  }
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function () {
+      state.q = '';
+      state.cls = null;
+      state.tag = null;
+      if (filterInput) filterInput.value = '';
+      syncChipActive();
+      renderTable();
+    });
+  }
+
+  function chipFilterOf(chip) {
+    if (chip.getAttribute('data-clear') !== null) return { cls: null, tag: null };
+    var c = chip.getAttribute('data-cls');
+    if (c) return { cls: c, tag: null };
+    var t = chip.getAttribute('data-tag');
+    if (t) return { cls: null, tag: t };
+    return null;
+  }
+  function syncChipActive() {
+    var chips = document.querySelectorAll('#ff-chips .chip');
+    Array.prototype.forEach.call(chips, function (chip) {
+      var f = chipFilterOf(chip);
+      var on = false;
+      if (f) {
+        if (f.cls) on = f.cls === state.cls && !state.tag;
+        else if (f.tag) on = f.tag === state.tag && !state.cls;
+        else on = !state.cls && !state.tag;
+      }
+      chip.classList.toggle('active', on);
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  function wireChips() {
+    var chips = document.querySelectorAll('#ff-chips .chip');
+    Array.prototype.forEach.call(chips, function (chip) {
+      chip.addEventListener('click', function () {
+        var f = chipFilterOf(chip);
+        if (!f) return;
+        if (!f.cls && !f.tag) {
+          state.cls = null;
+          state.tag = null;
+        } else if (f.cls && f.cls === state.cls && !state.tag) {
+          state.cls = null;
+        } else if (f.tag && f.tag === state.tag && !state.cls) {
+          state.tag = null;
+        } else {
+          state.cls = f.cls;
+          state.tag = f.tag;
+        }
+        syncChipActive();
+        renderTable();
+      });
+    });
+    syncChipActive();
+  }
+
+  // ---------- runs strip chart ----------
+  function renderRuns() {
+    var wrap = $('ff-runs');
+    if (!wrap) return;
+    var list = runs.slice().sort(function (a, b) {
+      if (a.timestamp < b.timestamp) return -1;
+      if (a.timestamp > b.timestamp) return 1;
+      return 0;
+    }).slice(-50);
+    var sub = $('ff-runs-sub');
+    if (sub) {
+      sub.textContent = list.length + (list.length === 1 ? ' run' : ' runs') + (runs.length > 50 ? ' \u00B7 showing last 50' : '');
+    }
+    var max = 1;
+    var j;
+    for (j = 0; j < list.length; j++) {
+      var total0 = list[j].passCount + list[j].failCount;
+      if (total0 > max) max = total0;
+    }
+    for (j = 0; j < list.length; j++) {
+      var r = list[j];
+      var total = Math.max(1, r.passCount + r.failCount);
+      var col = el('div', 'run-col');
+      var bar = el('div', 'run-bar');
+      bar.style.height = Math.max(6, Math.round((total / max) * 100)) + '%';
+      if (r.failCount > 0) {
+        var segFail = el('div', 'seg seg-fail');
+        segFail.style.height = Math.max(6, Math.round((r.failCount / total) * 100)) + '%';
+        bar.appendChild(segFail);
+      }
+      bar.appendChild(el('div', 'seg seg-pass'));
+      col.appendChild(bar);
+
+      var tip = el('div', 'tip');
+      tip.appendChild(el('div', 'tip-ts', fmtDateTime(r.timestamp)));
+      tip.appendChild(el('div', 'tip-sha', r.commitSha ? shortSha(r.commitSha) : 'no commit sha'));
+      var counts = el('div', 'tip-counts');
+      counts.appendChild(el('span', 'tc-pass', r.passCount + ' pass'));
+      if (r.failCount > 0) counts.appendChild(el('span', 'tc-fail', r.failCount + ' fail'));
+      else counts.appendChild(el('span', 'tc-ok', 'all green'));
+      tip.appendChild(counts);
+      col.appendChild(tip);
+      wrap.appendChild(col);
+    }
+  }
+
+  // ---------- detail drawer ----------
+  var drawer = $('ff-drawer');
+  var backdrop = $('ff-backdrop');
+  var drawerRows = [];
+  var drawerIdx = -1;
+  var current = null;
+  var DONUT_C = 2 * Math.PI * 19;
+
+  function setHBar(barId, valId, n, cls) {
+    var bar = $(barId);
+    var val = $(valId);
+    if (bar) {
+      bar.style.width = clamp100(n) + '%';
+      bar.className = 'hbar-fill ' + cls;
+    }
+    if (val) val.textContent = String(Math.round(n));
+  }
+  function tile(id, text, hot) {
+    var e = $(id);
+    if (e) {
+      e.textContent = text;
+      if (e.parentElement) e.parentElement.classList.toggle('hot', !!hot);
+    }
+  }
+
+  function renderDrawer(v) {
+    current = v;
+    var meta = CLS[v.classification] || CLS.passing;
+
+    var suiteEl = $('ff-dr-suite');
+    if (suiteEl) { suiteEl.textContent = v.suite; suiteEl.title = v.suite; }
+    var nameEl = $('ff-dr-name');
+    if (nameEl) { nameEl.textContent = v.name; nameEl.title = v.name; }
+    var idEl = $('ff-dr-id');
+    if (idEl) idEl.textContent = v.testId;
+
+    var clsEl = $('ff-dr-cls');
+    if (clsEl) { clsEl.textContent = meta.label; clsEl.className = 'badge c-' + meta.color; }
+    var head = drawer ? drawer.querySelector('.dr-head') : null;
+    if (head) head.className = 'dr-head c-' + meta.color;
+
+    var stEl = $('ff-dr-status');
+    if (stEl) {
+      stEl.textContent = 'last: ' + v.lastStatus;
+      stEl.className = 'badge ' + (STATUS_CLS[v.lastStatus] || 'st-pass');
+    }
+    var seenEl = $('ff-dr-seen');
+    if (seenEl) seenEl.textContent = 'last seen ' + fmtDateTime(v.lastSeen);
+
+    var rate = clamp01(v.passRate);
+    var arc = $('ff-dr-donut');
+    if (arc) {
+      arc.setAttribute('stroke-dasharray', (rate * DONUT_C).toFixed(2) + ' ' + DONUT_C.toFixed(2));
+      arc.setAttribute('class', 'donut-fg ' + (rate >= 0.9 ? 'ok' : (rate >= 0.5 ? 'warn' : 'bad')));
+    }
+    var donutVal = $('ff-dr-donut-v');
+    if (donutVal) donutVal.textContent = pct(rate);
+
+    setHBar('ff-dr-score-bar', 'ff-dr-score-v', v.flakeScore, scoreCls(v.flakeScore));
+    setHBar('ff-dr-conf-bar', 'ff-dr-conf-v', v.confidence, confCls(v.confidence));
+
+    tile('ff-dr-runs', String(v.runsObserved), false);
+    tile('ff-dr-med', fmtDur(v.medianDurationMs), false);
+    tile('ff-dr-p95', fmtDur(v.p95DurationMs), false);
+    tile('ff-dr-flips', String(v.sameShaFlips || 0), (v.sameShaFlips || 0) > 0);
+    tile('ff-dr-resc', String(v.retryRescues || 0), (v.retryRescues || 0) > 0);
+    tile('ff-dr-dirs', String(v.directionChanges || 0), (v.directionChanges || 0) > 0);
+
+    var msgBlock = $('ff-dr-msg-block');
+    var msgPre = $('ff-dr-msg');
+    if (msgBlock && msgPre) {
+      if (v.lastMessage) {
+        msgBlock.style.display = '';
+        msgPre.textContent = v.lastMessage;
+      } else {
+        msgBlock.style.display = 'none';
+      }
+    }
+    var cmd = $('ff-dr-cmd');
+    if (cmd) cmd.textContent = 'flakefinder quarantine add ' + v.testId;
+  }
+
+  function highlightDrawerRow() {
+    if (!tbody) return;
+    var prev = tbody.querySelector('tr.selected');
+    if (prev) prev.classList.remove('selected');
+    var cur = tbody.querySelector('tr[data-idx="' + drawerIdx + '"]');
+    if (cur) cur.classList.add('selected');
+  }
+  function openDrawer(rows, rowIdx) {
+    if (!drawer || !rows.length) return;
+    drawerRows = rows;
+    drawerIdx = rowIdx;
+    renderDrawer(rows[rowIdx]);
+    drawer.classList.add('open');
+    drawer.setAttribute('aria-hidden', 'false');
+    if (backdrop) backdrop.classList.add('open');
+    highlightDrawerRow();
+    var closeBtn = $('ff-dr-close');
+    if (closeBtn) closeBtn.focus();
+  }
+  function closeDrawer() {
+    if (drawer) {
+      drawer.classList.remove('open');
+      drawer.setAttribute('aria-hidden', 'true');
+    }
+    if (backdrop) backdrop.classList.remove('open');
+    if (tbody) {
+      var prev = tbody.querySelector('tr.selected');
+      if (prev) prev.classList.remove('selected');
+    }
+  }
+  function stepDrawer(delta) {
+    if (!drawerRows.length) return;
+    drawerIdx = (drawerIdx + delta + drawerRows.length) % drawerRows.length;
+    renderDrawer(drawerRows[drawerIdx]);
+    highlightDrawerRow();
+  }
+  function isTypingTarget(e) {
+    var t = e.target;
+    return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable === true);
+  }
+  document.addEventListener('keydown', function (e) {
+    var open = drawer && drawer.classList.contains('open');
+    if (e.key === 'Escape') {
+      if (open) closeDrawer();
+      return;
+    }
+    if (!open) return;
+    if (e.key === 'ArrowRight' && !isTypingTarget(e)) { e.preventDefault(); stepDrawer(1); }
+    else if (e.key === 'ArrowLeft' && !isTypingTarget(e)) { e.preventDefault(); stepDrawer(-1); }
+  });
+
+  // ---------- clipboard ----------
+  function flashCopied(btn) {
+    if (!btn) return;
+    var original = btn.getAttribute('data-label') || btn.textContent;
+    btn.setAttribute('data-label', original);
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    window.setTimeout(function () {
+      btn.textContent = original;
+      btn.classList.remove('copied');
+    }, 1400);
+  }
+  function copyText(text, btn) {
+    function fallback() {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      try { document.execCommand('copy'); } catch (err) { /* ignore */ }
+      document.body.removeChild(ta);
+      flashCopied(btn);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(function () { flashCopied(btn); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+  function wireCopy(btnId, getText) {
+    var btn = $(btnId);
+    if (btn) btn.addEventListener('click', function () { copyText(getText(), btn); });
+  }
+  wireCopy('ff-dr-copy-id', function () { return current ? current.testId : ''; });
+  wireCopy('ff-dr-copy-cmd', function () { return current ? 'flakefinder quarantine add ' + current.testId : ''; });
+  var drClose = $('ff-dr-close');
+  if (drClose) drClose.addEventListener('click', closeDrawer);
+  if (backdrop) backdrop.addEventListener('click', closeDrawer);
+
+  // ---------- init ----------
+  if ($('ff-table')) {
+    wireChips();
+    wireSort();
+    renderRuns();
+    renderTable();
+  }
+})();
+`;
+  return String.raw`<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="flakefinder">
+<title>flakefinder dashboard</title>
+<style>${css}</style>
+</head>
+<body>
+<div class="page">
+  <header class="ff-header">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">&#10052;</span>
+      <span class="wordmark">flakefinder</span>
+      <span class="ver" id="ff-version"></span>
+    </div>
+    <div class="spacer"></div>
+    <div class="meta">Generated <b id="ff-generated"></b></div>
+    <button type="button" id="ff-toggle" class="btn" aria-label="Toggle color theme"><span id="ff-toggle-ico" aria-hidden="true"></span><span id="ff-toggle-lbl"></span></button>
+  </header>
+  ${hasVerdicts ? chips : ""}
+  ${hasVerdicts ? runsSection : ""}
+  ${hasVerdicts ? tableSection : ""}
+  ${hasVerdicts ? "" : emptyState}
+  <footer class="ff-foot">
+    <span>Self-contained offline dashboard &mdash; data embedded at generation time, no network requests.</span>
+    <span>flakefinder</span>
+  </footer>
+</div>
+${hasVerdicts ? drawerMarkup : ""}
+<script id="ff-data" type="application/json">${json}</script>
+<script>${appJs}</script>
+</body>
+</html>`;
+}
+
+// src/types.ts
+var FLAKEFINDER_VERSION = "0.1.0";
+
+// src/report/json.ts
+function renderJson(verdicts, cfg) {
+  const payload = {
+    generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+    flakefinderVersion: FLAKEFINDER_VERSION,
+    config: cfg,
+    verdicts
+  };
+  return JSON.stringify(payload, null, 2);
+}
+
+// src/report/markdown.ts
+var FLAKY_CLASSES = ["flaky-confirmed", "flaky-retry", "flaky-suspected"];
+function isFlaky(v) {
+  return FLAKY_CLASSES.includes(v.classification);
+}
+function cell(s, max = 80) {
+  if (!s) return "";
+  const oneLine = s.replace(/\r?\n/g, " ");
+  const out = oneLine.length > max ? `${oneLine.slice(0, max - 1)}\u2026` : oneLine;
+  return out.replace(/\|/g, "\\|");
+}
+function classLabel(v) {
+  switch (v.classification) {
+    case "flaky-confirmed":
+      return "flaky \u2705\u274C";
+    case "flaky-retry":
+      return "flaky \u{1F501}";
+    case "flaky-suspected":
+      return "flaky \u2753";
+    case "failing":
+      return "failing";
+    case "new-failure":
+      return "new failure";
+    case "passing":
+      return "passing";
+    case "skipped":
+      return "skipped";
+    case "gone":
+      return "gone";
+  }
+}
+function table(rows) {
+  const lines = [
+    "| Test | Suite | Class | Score | Conf | \u0394 |",
+    "| --- | --- | --- | --- | --- | --- |"
+  ];
+  for (const { v, delta } of rows) {
+    lines.push(
+      `| ${cell(v.name, 60)} | ${cell(v.suite, 40)} | ${classLabel(v)} | ${v.flakeScore} | ${v.confidence}% | ${delta} |`
+    );
+  }
+  return lines.join("\n");
+}
+function flakeRows(verdicts) {
+  return verdicts.filter(isFlaky).sort((a, b) => b.flakeScore - a.flakeScore).map((v) => ({ v, delta: "" }));
+}
+function renderMarkdown(verdicts, opts) {
+  const flaky = flakeRows(verdicts);
+  const failing = verdicts.filter(
+    (v) => v.classification === "failing" || v.classification === "new-failure"
+  );
+  const sections = ["## flakefinder report", ""];
+  if (flaky.length > 0) {
+    sections.push(`**Flaky tests: ${flaky.length}**`, "", table(flaky), "");
+  } else {
+    sections.push("\u2705 no flakes detected", "");
+  }
+  if (failing.length > 0) {
+    sections.push(
+      `**Deterministic failures: ${failing.length}**`,
+      "",
+      table(failing.map((v) => ({ v, delta: "" }))),
+      ""
+    );
+  }
+  if (!opts.flakesOnly) {
+    const passing = verdicts.filter((v) => v.classification === "passing").length;
+    sections.push(`_tracked: ${verdicts.length} tests \xB7 ${passing} passing_`, "");
+  }
+  return sections.join("\n");
+}
+
+// src/report/terminal.ts
+var CLASS_META = {
+  "flaky-confirmed": { label: "FLAKY (confirmed)", colorCode: "31" },
+  "flaky-retry": { label: "FLAKY (retry-rescued)", colorCode: "33" },
+  "flaky-suspected": { label: "FLAKY (suspected)", colorCode: "33" },
+  failing: { label: "FAILING", colorCode: "31" },
+  "new-failure": { label: "NEW FAILURE", colorCode: "35" },
+  passing: { label: "PASSING", colorCode: "32" },
+  skipped: { label: "SKIPPED", colorCode: "90" },
+  gone: { label: "GONE", colorCode: "90" }
+};
+var PROBLEM_CLASSES = [
+  "flaky-confirmed",
+  "flaky-retry",
+  "flaky-suspected",
+  "failing",
+  "new-failure"
+];
+function makeColor(enabled) {
+  return (code, s) => enabled ? `\x1B[${code}m${s}\x1B[0m` : s;
+}
+function fmtMs(ms) {
+  if (ms == null) return "\u2014";
+  if (ms >= 6e4) return `${(ms / 6e4).toFixed(1)}m`;
+  if (ms >= 1e3) return `${(ms / 1e3).toFixed(1)}s`;
+  return `${Math.round(ms)}ms`;
+}
+function truncateMiddle(s, max) {
+  if (s.length <= max) return s;
+  const half = Math.floor((max - 1) / 2);
+  return `${s.slice(0, half)}\u2026${s.slice(s.length - half)}`;
+}
+function renderTerminal(verdicts, opts) {
+  const color = makeColor(opts.color);
+  const bold = (s) => color("1", s);
+  const dim2 = (s) => color("2", s);
+  const lines = [];
+  const byClass = /* @__PURE__ */ new Map();
+  for (const v of verdicts) {
+    const list = byClass.get(v.classification) ?? [];
+    list.push(v);
+    byClass.set(v.classification, list);
+  }
+  for (const [, list] of byClass) {
+    list.sort((a, b) => b.flakeScore - a.flakeScore || a.name.localeCompare(b.name));
+  }
+  const problemCount = PROBLEM_CLASSES.reduce((n, c) => n + (byClass.get(c)?.length ?? 0), 0);
+  if (verdicts.length === 0) {
+    lines.push(
+      `${bold("flakefinder")} \u2014 no test history yet.`,
+      "",
+      "Collect history first:",
+      `  ${color("36", "flakefinder run -- <test command>")}    run with retry-based flake detection`,
+      `  ${color("36", "flakefinder ingest <report files>")}    ingest existing report files`
+    );
+    return lines.join("\n");
+  }
+  lines.push(
+    bold(`flakefinder \u2014 ${verdicts.length} tracked test(s), ${problemCount} need attention`),
+    ""
+  );
+  for (const cls of PROBLEM_CLASSES) {
+    const list = byClass.get(cls);
+    if (!list || list.length === 0) continue;
+    const meta = CLASS_META[cls];
+    lines.push(color(meta.colorCode, bold(`${meta.label} \u2014 ${list.length}`)));
+    for (const v of list) {
+      const score = String(v.flakeScore).padStart(3);
+      const conf = `${v.confidence}%`.padStart(4);
+      const runs = String(v.runsObserved).padStart(3);
+      const pass = `${Math.round(v.passRate * 100)}%`.padStart(4);
+      const med = fmtMs(v.medianDurationMs).padStart(6);
+      const tags = v.tags.length > 0 ? dim2(` [${v.tags.join(", ")}]`) : "";
+      lines.push(
+        `  ${color(meta.colorCode, score)}  conf ${conf}  runs ${runs}  pass ${pass}  med ${med}  ${v.suite} ${dim2("::")} ${bold(truncateMiddle(v.name, 48))}${tags}`
+      );
+    }
+    lines.push("");
+  }
+  if (opts.allRows) {
+    for (const cls of ["passing", "skipped", "gone"]) {
+      const list = byClass.get(cls);
+      if (!list || list.length === 0) continue;
+      const meta = CLASS_META[cls];
+      lines.push(dim2(`${meta.label} \u2014 ${list.length}`));
+      const shown = cls === "passing" ? list.slice(0, 20) : list;
+      for (const v of shown) {
+        const med = fmtMs(v.medianDurationMs).padStart(6);
+        const tags = v.tags.length > 0 ? dim2(` [${v.tags.join(", ")}]`) : "";
+        lines.push(
+          `  ${dim2(String(v.flakeScore).padStart(3))}  runs ${String(v.runsObserved).padStart(3)}  med ${med}  ${v.suite} ${dim2("::")} ${truncateMiddle(v.name, 48)}${tags}`
+        );
+      }
+      if (cls === "passing" && list.length > 20) lines.push(dim2(`  \u2026and ${list.length - 20} more`));
+      lines.push("");
+    }
+  }
+  if (!opts.flakesOnly) {
+    const passing = byClass.get("passing")?.length ?? 0;
+    const skipped = byClass.get("skipped")?.length ?? 0;
+    const gone = byClass.get("gone")?.length ?? 0;
+    lines.push(
+      dim2(`ok: ${passing} passing \xB7 ${skipped} skipped \xB7 ${gone} gone from recent runs`),
+      ""
+    );
+  }
+  const flaky = PROBLEM_CLASSES.slice(0, 3).reduce((n, c) => n + (byClass.get(c)?.length ?? 0), 0);
+  if (flaky > 0) {
+    const worst = [...byClass.entries()].flatMap(([c, vs]) => PROBLEM_CLASSES.slice(0, 3).includes(c) ? vs : []).sort((a, b) => b.flakeScore - a.flakeScore)[0];
+    lines.push("next steps:");
+    if (worst) {
+      lines.push(`  ${dim2("\u2022")} quarantine the worst offender:`);
+      lines.push(`      ${color("36", `flakefinder quarantine add ${worst.testId}`)}`);
+    }
+    lines.push(`  ${dim2("\u2022")} full interactive report: ${color("36", "flakefinder html")}`);
+  }
+  return lines.join("\n");
+}
+
+// src/runner/wrap.ts
+import { spawn, spawnSync } from "child_process";
+import { createHash as createHash2, randomUUID } from "crypto";
+import { readFileSync as readFileSync4 } from "fs";
+import path5 from "path";
+
+// src/store/history-store.ts
+import {
+  appendFileSync,
+  existsSync as existsSync3,
+  mkdirSync,
+  readFileSync as readFileSync3,
+  renameSync,
+  writeFileSync as writeFileSync2
+} from "fs";
+import path3 from "path";
+function snapshotPath(storeDir) {
+  return path3.join(storeDir, "verdicts-snapshot.json");
+}
+var HistoryStore = class {
+  path;
+  warnings = [];
+  loaded = false;
+  records = [];
+  constructor(storeDir) {
+    mkdirSync(storeDir, { recursive: true });
+    this.path = path3.join(storeDir, "history.jsonl");
+  }
+  ensureLoaded() {
+    if (this.loaded) return;
+    this.loaded = true;
+    if (!existsSync3(this.path)) return;
+    const lines = readFileSync3(this.path, "utf8").split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      try {
+        this.records.push(JSON.parse(line));
+      } catch {
+        if (this.warnings.length < 10) {
+          this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
+        }
+      }
+    }
+  }
+  loadAll() {
+    this.ensureLoaded();
+    return [...this.records];
+  }
+  runs() {
+    this.ensureLoaded();
+    return [...this.records];
+  }
+  append(run) {
+    this.ensureLoaded();
+    appendFileSync(this.path, `${JSON.stringify(run)}
+`, "utf8");
+    this.records.push(run);
+  }
+  /** Keep only the last `maxRuns` records; rewrite the file atomically. */
+  prune(maxRuns) {
+    this.ensureLoaded();
+    if (this.records.length <= maxRuns) return;
+    this.records = this.records.slice(-maxRuns);
+    const tmp = `${this.path}.tmp`;
+    writeFileSync2(tmp, `${this.records.map((r) => JSON.stringify(r)).join("\n")}
+`, "utf8");
+    renameSync(tmp, this.path);
+  }
+};
+
+// src/util/glob.ts
+import { readdirSync } from "fs";
+import path4 from "path";
+var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", "dist", "coverage"]);
+function globToRegExp(pattern, caseInsensitive) {
+  const parts = pattern.split("/").filter((p) => p.length > 0);
+  let re = "^";
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part === "**") {
+      re += "(?:[^/]+/)*";
+      if (i === parts.length - 1) re += "[^/]*";
+      continue;
+    }
+    let seg = "";
+    for (const ch of part) {
+      if (ch === "*") seg += "[^/]*";
+      else if (ch === "?") seg += "[^/]";
+      else seg += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+    re += seg;
+    if (i < parts.length - 1) re += "/";
+  }
+  if (!re.endsWith("$")) re += "$";
+  return new RegExp(re, caseInsensitive ? "i" : void 0);
+}
+function matchGlobs(cwd, patterns) {
+  if (patterns.length === 0) return [];
+  const caseInsensitive = process.platform === "win32";
+  const normalized = patterns.map((p) => {
+    const posix = p.replace(/\\/g, "/").replace(/^\.\//, "");
+    return posix.includes("/") ? posix : `**/${posix}`;
+  });
+  const regexps = normalized.map((p) => globToRegExp(p, caseInsensitive));
+  const matches = /* @__PURE__ */ new Set();
+  const walk2 = (dir, rel) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+        walk2(path4.join(dir, entry.name), relPath);
+      } else if (entry.isFile()) {
+        if (regexps.some((re) => re.test(relPath))) matches.add(path4.join(dir, entry.name));
+      }
+    }
+  };
+  walk2(cwd, "");
+  return [...matches].sort();
+}
+
+// src/runner/wrap.ts
+function hashFile(file) {
+  try {
+    return createHash2("sha256").update(readFileSync4(file)).digest("hex");
+  } catch {
+    return null;
+  }
+}
+function snapshotReports(cwd, cfg) {
+  const snapshot = /* @__PURE__ */ new Map();
+  for (const file of matchGlobs(cwd, cfg.reports)) snapshot.set(file, hashFile(file));
+  return snapshot;
+}
+function spawnCommand(command, cwd) {
+  return new Promise((resolve) => {
+    const child = spawn(command[0], command.slice(1), { shell: true, cwd, stdio: "inherit" });
+    child.on("error", (err) => {
+      console.error(`flakefinder: failed to start command: ${err.message}`);
+      resolve(2);
+    });
+    child.on("close", (code) => resolve(code ?? 1));
+  });
+}
+async function runLive(command, cfg, opts) {
+  const cwd = path5.resolve(opts.cwd);
+  const runId = randomUUID();
+  let commitSha;
+  const git = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+  if (git.status === 0) commitSha = git.stdout.trim();
+  let effectiveCommand = command;
+  const runner = cfg.runner === "auto" ? detectRunner(cwd) : cfg.runner;
+  if (opts.applyQuarantine) {
+    if (runner === "pytest" || runner === "jest" || runner === "mocha") {
+      const qm = new QuarantineManager(path5.resolve(cwd, cfg.quarantineFile));
+      const entries = qm.list();
+      if (entries.length > 0) {
+        effectiveCommand = [...command, ...exclusionArgs(runner, entries)];
+        console.log(
+          `flakefinder: quarantine active \u2014 excluding ${entries.length} quarantined test(s) via runner flags`
+        );
+      }
+    } else if (runner === "go" || runner === "generic") {
+      const qm = new QuarantineManager(path5.resolve(cwd, cfg.quarantineFile));
+      if (qm.list().length > 0) {
+        console.log(
+          `flakefinder: quarantine has entries but runner "${runner}" has no per-test exclusion \u2014 report only`
+        );
+      }
+    }
+  }
+  if (cfg.reports.length === 0) {
+    console.warn(
+      `flakefinder: no report globs configured \u2014 per-test detection disabled. Run ${"`flakefinder init`"} to set up report parsing.`
+    );
+  }
+  const attempts = [];
+  const usedReportFiles = /* @__PURE__ */ new Set();
+  const exitCodes = [];
+  let snapshot = snapshotReports(cwd, cfg);
+  const maxAttempts = Math.max(1, opts.retries + 1);
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    console.log(
+      dim(`flakefinder: attempt ${attempt}/${maxAttempts} \u2192 ${effectiveCommand.join(" ")}`)
+    );
+    const code = await spawnCommand(effectiveCommand, cwd);
+    exitCodes.push(code);
+    const after = snapshotReports(cwd, cfg);
+    for (const [file, hash] of after) {
+      if (snapshot.get(file) === hash) continue;
+      let content;
+      try {
+        content = readFileSync4(file, "utf8");
+      } catch (err) {
+        console.warn(`flakefinder: cannot read report ${file}: ${err.message}`);
+        continue;
+      }
+      const parser = detectParser(content);
+      if (!parser) {
+        console.warn(`flakefinder: unrecognized report format \u2014 skipped ${file}`);
+        continue;
+      }
+      const { results, warnings } = parser.parse(content, file);
+      for (const w of warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
+      attempts.push({
+        runId,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        source: "live",
+        parsedFrom: parser.name,
+        attempt,
+        commitSha,
+        results
+      });
+      usedReportFiles.add(file);
+    }
+    snapshot = after;
+    if (code === 0) break;
+  }
+  const store = new HistoryStore(path5.resolve(cwd, cfg.storeDir));
+  for (const record of attempts) store.append(record);
+  store.prune(cfg.maxRuns);
+  const all = classifyAll(store.runs(), cfg);
+  const invocationIds = new Set(attempts.flatMap((r) => r.results.map((t) => t.testId)));
+  const verdicts = all.filter((v) => invocationIds.has(v.testId));
+  const suiteFlake = usedReportFiles.size === 0 && exitCodes.some((c) => c === 0) && exitCodes.some((c) => c !== 0);
+  if (suiteFlake) {
+    console.warn(
+      "flakefinder: no report files matched \u2014 suite-level verdict only (exits varied across attempts)."
+    );
+  }
+  const finalAttempt = exitCodes.length;
+  const finalAttemptIds = new Set(
+    attempts.filter((r) => r.attempt === finalAttempt).flatMap((r) => r.results.map((t) => t.testId))
+  );
+  const lastExit = exitCodes[exitCodes.length - 1] ?? 1;
+  const deterministicFail = verdicts.some(
+    (v) => finalAttemptIds.has(v.testId) && (v.classification === "failing" || v.classification === "new-failure") && (v.lastStatus === "fail" || v.lastStatus === "error")
+  );
+  let finalExitCode = deterministicFail || lastExit !== 0 ? 1 : 0;
+  if (cfg.failOnFlakes && verdicts.some((v) => v.classification.startsWith("flaky-"))) {
+    finalExitCode = 1;
+  }
+  return {
+    attempts,
+    finalExitCode,
+    verdicts,
+    usedReportFiles: [...usedReportFiles],
+    suiteFlake
+  };
+}
+function dim(s) {
+  return process.stdout.isTTY ? `\x1B[2m${s}\x1B[0m` : s;
+}
+
+// src/cli/index.ts
+var PROBLEM_ALWAYS = ["flaky-confirmed", "flaky-retry", "failing", "new-failure"];
+function resolveCfg(g, overrides = {}) {
+  if (g.config) {
+    let raw;
+    try {
+      raw = readFileSync5(g.config, "utf8");
+    } catch (err) {
+      throw new Error(`cannot read config ${g.config}: ${err.message}`);
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(stripJsonComments(raw));
+    } catch (err) {
+      throw new Error(`invalid config ${g.config}: ${err.message}`);
+    }
+    return resolveConfig(parsed, overrides);
+  }
+  const { config } = loadConfig(g.cwd);
+  return resolveConfig(config, overrides);
+}
+function gitSha(cwd) {
+  const r = spawnSync2("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+  return r.status === 0 ? r.stdout.trim() : void 0;
+}
+function storeFor(g, cfg) {
+  return new HistoryStore(path6.resolve(g.cwd, cfg.storeDir));
+}
+function filterVerdicts(verdicts, opts, cfg) {
+  if (opts.all) return verdicts;
+  const threshold = opts.threshold ?? cfg.flakeScoreThreshold;
+  return verdicts.filter((v) => {
+    if (PROBLEM_ALWAYS.includes(v.classification)) return true;
+    if (v.classification === "flaky-suspected") return v.flakeScore >= threshold;
+    return false;
+  });
+}
+function defaultReportsFor(runner) {
+  switch (runner) {
+    case "pytest":
+      return ["junit*.xml"];
+    case "jest":
+      return ["junit.xml", "test-results/junit*.xml"];
+    case "mocha":
+      return ["test-results/report.json", "mocha-report.json"];
+    case "go":
+      return ["test-output.jsonl"];
+    default:
+      return [];
+  }
+}
+function printSetupHints(runner) {
+  const hint = {
+    auto: '  configure "reports" globs in flakefinder.config.json',
+    pytest: `  pytest: ensure reports are written, e.g. in pytest.ini:
+    [pytest]
+    addopts = --junitxml=junit.xml`,
+    jest: `  jest: add the jest-junit reporter (npm i -D jest-junit), jest.config:
+    reporters: ['default', ['jest-junit', { outputDirectory: '.', outputName: 'junit.xml' }]]`,
+    mocha: `  mocha: emit JSON reports:
+    mocha --reporter json --reporter-options output=test-results/report.json`,
+    go: `  go: write the JSON stream to the expected file:
+    go test -json ./... > test-output.jsonl`,
+    generic: '  configure "reports" globs in flakefinder.config.json'
+  };
+  console.log(
+    `
+next step \u2014 make your runner emit machine-readable reports:
+${hint[runner] ?? hint.generic}`
+  );
+}
+function openInBrowser(file) {
+  try {
+    if (process.platform === "win32") {
+      spawn2("cmd", ["/c", "start", "", file], { detached: true, stdio: "ignore" });
+    } else if (process.platform === "darwin") {
+      spawn2("open", [file], { detached: true, stdio: "ignore" });
+    } else {
+      spawn2("xdg-open", [file], { detached: true, stdio: "ignore" });
+    }
+  } catch {
+  }
+}
+function ghEscape(s) {
+  return s.replace(/%/g, "%25").replace(/\r/g, "%0D").replace(/\n/g, "%0A");
+}
+async function main(argv) {
+  let exitCode = 0;
+  const program = new Command();
+  program.name("flakefinder").description("Detect, track, and quarantine flaky tests \u2014 locally and in CI.").version(FLAKEFINDER_VERSION).option("--config <path>", "explicit path to flakefinder.config.json").option("--cwd <dir>", "working directory (where config/reports live)", process.cwd()).option("--no-color", "disable ANSI colors").exitOverride();
+  const globals = () => {
+    const o = program.opts();
+    return { config: o.config, cwd: o.cwd ?? process.cwd(), color: o.color !== false };
+  };
+  program.command("init").description("detect your test runner and create flakefinder.config.json").option("--force", "overwrite an existing config").option("--runner <runner>", "explicit runner: pytest|jest|mocha|go|generic").action((opts) => {
+    const g = globals();
+    const runner = opts.runner ?? detectRunner(g.cwd);
+    if (!runner || runner === "generic" && !opts.runner) {
+      console.error(
+        "flakefinder: could not detect a test runner \u2014 re-run with --runner <pytest|jest|mocha|go|generic>"
+      );
+      exitCode = 2;
+      return;
+    }
+    const configPath = path6.join(g.cwd, CONFIG_FILE_NAME);
+    if (existsSync4(configPath) && !opts.force) {
+      console.error(`flakefinder: ${configPath} already exists (use --force to overwrite)`);
+      exitCode = 2;
+      return;
+    }
+    const cfg = { reports: defaultReportsFor(runner), runner };
+    writeFileSync3(configPath, `${JSON.stringify(cfg, null, 2)}
+`, "utf8");
+    console.log(`created ${configPath} (runner: ${runner})`);
+    printSetupHints(runner);
+  });
+  program.command("run").description("run a test command with automatic retry-based flake detection").allowUnknownOption().option("-R, --retries <n>", "extra attempts after the first (default: config.liveRetries)").option("--fail-on-flake", "exit non-zero when flakes (not just failures) are detected").option("--no-quarantine", "run everything, ignoring the quarantine list").argument("<command...>", "the test command, placed after --").action(
+    async (command, opts) => {
+      const g = globals();
+      const retries = opts.retries != null ? Number.parseInt(opts.retries, 10) : void 0;
+      if (opts.retries != null && (Number.isNaN(retries) || retries < 0)) {
+        console.error("flakefinder: --retries must be a non-negative integer");
+        exitCode = 2;
+        return;
+      }
+      const overrides = {};
+      if (opts.failOnFlake) overrides.failOnFlakes = true;
+      if (retries != null) overrides.liveRetries = retries;
+      const cfg = resolveCfg(g, overrides);
+      const result = await runLive(command, cfg, {
+        retries: retries ?? cfg.liveRetries,
+        cwd: g.cwd,
+        applyQuarantine: opts.quarantine !== false
+      });
+      console.log(
+        renderTerminal(result.verdicts, {
+          color: g.color && process.stdout.isTTY === true,
+          flakesOnly: false
+        })
+      );
+      exitCode = result.finalExitCode;
+    }
+  );
+  program.command("ingest").description("parse report files into the history store").argument("[files...]", "report files (omit to use configured globs)").option("--attempt <n>", "attempt number to record", "1").option("--source <source>", "live | report | action", "report").action((files, opts) => {
+    const g = globals();
+    const cfg = resolveCfg(g);
+    const attempt = Number.parseInt(opts.attempt, 10) || 1;
+    if (!["live", "report", "action"].includes(opts.source)) {
+      console.error(`flakefinder: --source must be live|report|action (got ${opts.source})`);
+      exitCode = 2;
+      return;
+    }
+    const targets = files.length > 0 ? files.map((f) => path6.resolve(g.cwd, f)) : matchGlobs(g.cwd, cfg.reports);
+    if (targets.length === 0) {
+      console.error(
+        'flakefinder: no report files matched \u2014 pass files explicitly or set "reports" globs (see flakefinder init)'
+      );
+      exitCode = 2;
+      return;
+    }
+    const runId = randomUUID2();
+    const store = storeFor(g, cfg);
+    let total = 0;
+    let used = 0;
+    let warnings = 0;
+    for (const file of targets) {
+      let content;
+      try {
+        content = readFileSync5(file, "utf8");
+      } catch (err) {
+        console.warn(`flakefinder: cannot read ${file}: ${err.message}`);
+        warnings++;
+        continue;
+      }
+      const parser = detectParser(content);
+      if (!parser) {
+        console.warn(`flakefinder: unrecognized report format \u2014 skipped ${file}`);
+        warnings++;
+        continue;
+      }
+      const parsed = parser.parse(content, file);
+      warnings += parsed.warnings.length;
+      for (const w of parsed.warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
+      const record = {
+        runId,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        source: opts.source,
+        parsedFrom: parser.name,
+        attempt,
+        commitSha: gitSha(g.cwd),
+        results: parsed.results
+      };
+      store.append(record);
+      total += parsed.results.length;
+      used++;
+    }
+    store.prune(cfg.maxRuns);
+    console.log(
+      `ingested ${total} test result(s) from ${used}/${targets.length} file(s) (${warnings} warning(s)) \u2192 ${store.path}`
+    );
+  });
+  program.command("report").description("show flake verdicts from accumulated history").option("--format <fmt>", "table | json | md", "table").option("--flakes-only", "problem classes only").option("--all", "include passing/skipped/gone entries").option("--threshold <n>", "minimum score for suspected flakes", void 0).action((opts) => {
+    const g = globals();
+    const cfg = resolveCfg(g);
+    const verdicts = classifyAll(storeFor(g, cfg).runs(), cfg);
+    const threshold = opts.threshold != null ? Number.parseInt(opts.threshold, 10) : void 0;
+    if (opts.format === "json") {
+      console.log(renderJson(verdicts, cfg));
+      return;
+    }
+    if (opts.format === "md") {
+      console.log(
+        renderMarkdown(filterVerdicts(verdicts, { all: opts.all, threshold }, cfg), {
+          flakesOnly: !opts.all
+        })
+      );
+      return;
+    }
+    if (opts.format !== "table") {
+      console.error(`flakefinder: unknown format "${opts.format}" (table|json|md)`);
+      exitCode = 2;
+      return;
+    }
+    console.log(
+      renderTerminal(verdicts, {
+        color: g.color && process.stdout.isTTY === true,
+        flakesOnly: opts.flakesOnly === true,
+        allRows: opts.all === true
+      })
+    );
+  });
+  program.command("html").description("generate the self-contained HTML dashboard").option("-o, --out <file>", "output file", "flakefinder-report.html").option("--open", "open the dashboard in your browser").action((opts) => {
+    const g = globals();
+    const cfg = resolveCfg(g);
+    const store = storeFor(g, cfg);
+    const verdicts = classifyAll(store.runs(), cfg);
+    const runs = store.runs().slice(-50).map((r) => ({
+      runId: r.runId,
+      timestamp: r.timestamp,
+      commitSha: r.commitSha,
+      passCount: r.results.filter((t) => t.status === "pass").length,
+      failCount: r.results.filter((t) => t.status === "fail" || t.status === "error").length
+    }));
+    const html = renderDashboard({
+      generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      flakefinderVersion: FLAKEFINDER_VERSION,
+      verdicts,
+      runs
+    });
+    const out = path6.resolve(g.cwd, opts.out);
+    writeFileSync3(out, html, "utf8");
+    console.log(`dashboard written \u2192 ${out} (${verdicts.length} tests, ${runs.length} runs)`);
+    if (opts.open) openInBrowser(out);
+  });
+  program.command("quarantine").description("manage the quarantine list (tests excluded from runs)").argument("<action>", "list | add | remove | prune").argument("[testId]", "testId for add/remove").option("--reason <text>", "reason recorded with the entry", "flaky").action((action, testId, opts) => {
+    const g = globals();
+    const cfg = resolveCfg(g);
+    const qPath = path6.resolve(g.cwd, cfg.quarantineFile);
+    const qm = new QuarantineManager(qPath);
+    if (action === "list") {
+      const entries = qm.list();
+      if (entries.length === 0) {
+        console.log("quarantine is empty");
+        return;
+      }
+      console.log(`${entries.length} quarantined test(s):`);
+      for (const e of entries) {
+        console.log(
+          `  ${e.testId}  ${e.suite} :: ${e.name}  (score ${e.flakeScore}, ${e.reason})`
+        );
+      }
+      const runner = cfg.runner === "auto" ? detectRunner(g.cwd) : cfg.runner;
+      if (runner === "go" || runner === "generic") {
+        console.log(
+          `note: runner "${runner}" has no per-test exclusion \u2014 entries are informational only`
+        );
+      } else {
+        console.log(
+          `next run will add: ${exclusionArgs(runner, entries).join(" ")}`
+        );
+      }
+      return;
+    }
+    if (action === "add") {
+      if (!testId) {
+        console.error("flakefinder: quarantine add requires a testId (see flakefinder report)");
+        exitCode = 2;
+        return;
+      }
+      const verdicts = classifyAll(storeFor(g, cfg).runs(), cfg);
+      const v = verdicts.find((x) => x.testId === testId);
+      if (!v) {
+        console.error(
+          `flakefinder: testId ${testId} not in history \u2014 run "flakefinder report --format json" to list testIds`
+        );
+        exitCode = 2;
+        return;
+      }
+      qm.add({
+        testId,
+        suite: v.suite,
+        name: v.name,
+        reason: opts.reason,
+        quarantinedAt: (/* @__PURE__ */ new Date()).toISOString(),
+        flakeScore: v.flakeScore
+      });
+      qm.save();
+      console.log(
+        `quarantined ${v.suite} :: ${v.name} (${v.classification}, score ${v.flakeScore})`
+      );
+      console.log(`quarantine list: ${qPath}`);
+      return;
+    }
+    if (action === "remove") {
+      if (!testId) {
+        console.error("flakefinder: quarantine remove requires a testId");
+        exitCode = 2;
+        return;
+      }
+      if (qm.remove(testId)) {
+        qm.save();
+        console.log(`removed ${testId} from quarantine`);
+      } else {
+        console.error(`flakefinder: ${testId} is not quarantined`);
+        exitCode = 2;
+      }
+      return;
+    }
+    if (action === "prune") {
+      const verdicts = classifyAll(storeFor(g, cfg).runs(), cfg);
+      const removed = qm.prune(verdicts);
+      qm.save();
+      if (removed.length === 0) console.log("nothing to prune");
+      else {
+        console.log(`pruned ${removed.length} entr(y/ies):`);
+        for (const e of removed) console.log(`  ${e.suite} :: ${e.name}`);
+      }
+      return;
+    }
+    console.error(`flakefinder: unknown quarantine action "${action}" (list|add|remove|prune)`);
+    exitCode = 2;
+  });
+  program.command("ci").description(
+    "CI one-shot: ingest configured reports, report, GitHub annotations, snapshot diff"
+  ).option(
+    "--fail-on-new-flakes",
+    "exit 1 when flakes appear that were not flaky in the previous snapshot"
+  ).action((opts) => {
+    const g = globals();
+    const cfg = resolveCfg(g);
+    const targets = matchGlobs(g.cwd, cfg.reports);
+    if (targets.length === 0) {
+      console.error(
+        'flakefinder ci: no report files matched \u2014 configure "reports" globs (flakefinder init)'
+      );
+      exitCode = 2;
+      return;
+    }
+    const store = storeFor(g, cfg);
+    const runId = randomUUID2();
+    const commitSha = gitSha(g.cwd);
+    for (const file of targets) {
+      let content;
+      try {
+        content = readFileSync5(file, "utf8");
+      } catch (err) {
+        console.warn(`flakefinder: cannot read ${file}: ${err.message}`);
+        continue;
+      }
+      const parser = detectParser(content);
+      if (!parser) {
+        console.warn(`flakefinder: unrecognized report format \u2014 skipped ${file}`);
+        continue;
+      }
+      const parsed = parser.parse(content, file);
+      for (const w of parsed.warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
+      store.append({
+        runId,
+        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+        source: "action",
+        parsedFrom: parser.name,
+        attempt: 1,
+        commitSha,
+        results: parsed.results
+      });
+    }
+    store.prune(cfg.maxRuns);
+    const verdicts = classifyAll(store.runs(), cfg);
+    console.log(renderTerminal(verdicts, { color: false, flakesOnly: false }));
+    for (const v of verdicts.filter((x) => x.classification.startsWith("flaky-"))) {
+      console.log(
+        `::warning title=flakefinder::${ghEscape(`${v.suite} :: ${v.name} (${v.classification}, score ${v.flakeScore})`)}`
+      );
+    }
+    const reportPath = path6.resolve(g.cwd, "flakefinder-report.json");
+    writeFileSync3(reportPath, renderJson(verdicts, cfg), "utf8");
+    console.log(`json report \u2192 ${reportPath}`);
+    const snap = snapshotPath(path6.resolve(g.cwd, cfg.storeDir));
+    let previous = null;
+    if (existsSync4(snap)) {
+      try {
+        previous = JSON.parse(readFileSync5(snap, "utf8"));
+      } catch {
+        previous = null;
+      }
+    }
+    const prevFlaky = new Set(
+      (previous ?? []).filter((v) => v.classification.startsWith("flaky-")).map((v) => v.testId)
+    );
+    const newFlakes = verdicts.filter(
+      (v) => v.classification.startsWith("flaky-") && !prevFlaky.has(v.testId)
+    );
+    writeFileSync3(snap, JSON.stringify(verdicts), "utf8");
+    if (opts.failOnNewFlakes && newFlakes.length > 0) {
+      console.error(`flakefinder ci: ${newFlakes.length} NEW flake(s):`);
+      for (const v of newFlakes)
+        console.error(`  ${v.suite} :: ${v.name} (score ${v.flakeScore})`);
+      exitCode = 1;
+    }
+  });
+  program.command("version").description("print the flakefinder version").action(() => {
+    console.log(FLAKEFINDER_VERSION);
+  });
+  try {
+    await program.parseAsync(argv, { from: "user" });
+  } catch (err) {
+    const e = err;
+    if (e.code === "commander.help" || e.code === "commander.version" || e.code === "commander.helpDisplayed") {
+      return 0;
+    }
+    console.error(`flakefinder: ${e.message ?? "unknown error"}`);
+    return 2;
+  }
+  return exitCode;
+}
+main(process.argv.slice(2)).then((code) => {
+  if (code !== 0) process.exitCode = code;
+}).catch((err) => {
+  console.error(`flakefinder: ${err.message}`);
+  process.exitCode = 2;
+});
+export {
+  main
+};
+//# sourceMappingURL=cli.js.map
