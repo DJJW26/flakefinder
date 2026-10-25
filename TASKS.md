@@ -121,3 +121,15 @@ file.** Agents report completion in their final message; the integrator ticks bo
   --retry-mode wiring (was dead), quarantine-aware boundary-anchored selectors, whole-token operator detection + quote-all shell model, fallback message split, pytest --lf caveat documented
 - ✅ P9.6 Pipeline: 230 tests / 21 files, tsc, biome, e2e 10/10, perf 90/98 ms
 - ✅ P9.7 Release v0.3.0
+
+## Phase 10 — Watchdog continuation: Phase C → v1.0.0
+
+- ✅ P10.0 Watchdog run started (cron automation, lock-guarded); v0.3.0 CI confirmed green on first check
+- ✅ P10.1 C1 store advisory write lock (serialize appends/prune across CI shards; stale-lock steal; busy error) + 3 tests
+- ✅ P10.2 C2 per-attempt --timeout with process-tree kill (exit 124) + SIGINT/SIGTERM handling (exit 130) + PLAN §6/§8 + USAGE + test
+- ✅ P10.3 C3 flakefinder doctor (config/runner/reports/history/git/quarantine checks, actionable hints, exit 1 on FAIL) + 4 tests
+- ✅ P10.4 C5 ingest --run-id (cross-invocation retry pairs) + USAGE recipe
+- ✅ P10.5 C4 release automation: scripts/release.mjs (two-place bump, changelog stub, full pipeline, tag, --push) + release.yml (npm publish w/ NPM_TOKEN guard + GitHub Release)
+- 🔄 P10.6 v1.0.0 release
+- ⬜ P10.7 Phase D polish (D1 action slim, D2 dashboard cap, D3 TRX/TAP, D5 community files)
+- ⬜ P10.8 docs/CLOUD_SCALING.md research → OVERNIGHT_DONE

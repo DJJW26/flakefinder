@@ -127534,7 +127534,8 @@ var KNOWN_KEYS = /* @__PURE__ */ new Set([
   "quarantineFile",
   "runner",
   "failOnFlakes",
-  "retryMode"
+  "retryMode",
+  "timeoutSeconds"
 ]);
 var VALID_RUNNERS = ["auto", "pytest", "jest", "mocha", "go", "generic"];
 function describe(v) {
@@ -127601,6 +127602,11 @@ function validateConfig(config) {
       problems.push(`retryMode: expected one of ${modes.join("|")}, got ${describe(c.retryMode)}`);
     }
   }
+  if (c.timeoutSeconds !== void 0 && c.timeoutSeconds !== null && (typeof c.timeoutSeconds !== "number" || !Number.isFinite(c.timeoutSeconds) || c.timeoutSeconds <= 0)) {
+    problems.push(
+      `timeoutSeconds: expected positive number or null, got ${describe(c.timeoutSeconds)}`
+    );
+  }
   if (problems.length > 0) {
     throw new ConfigValidationError(`invalid flakefinder config:
   - ${problems.join("\n  - ")}`);
@@ -127622,6 +127628,7 @@ function resolveConfig(config = {}, overrides = {}) {
     runner: "auto",
     failOnFlakes: false,
     retryMode: "auto",
+    timeoutSeconds: null,
     ...config,
     ...overrides
   };
@@ -129056,7 +129063,7 @@ ${hasVerdicts ? drawerMarkup : ""}
 }
 
 // src/types.ts
-var FLAKEFINDER_VERSION = "0.3.0";
+var FLAKEFINDER_VERSION = "1.0.0";
 
 // src/report/json.ts
 function renderJson(verdicts, cfg) {
@@ -129245,6 +129252,47 @@ var HistoryStore = class {
 `, "utf8");
     this.formatVersion = STORE_FORMAT_VERSION;
   }
+  get lockPath() {
+    return `${this.path}.lock`;
+  }
+  /**
+   * Advisory lock around writes (append/prune). Two CI matrix shards writing
+   * multi-KB records can interleave in one append and corrupt a line — the
+   * lock serializes them. Busy-waits in ≤50 ms slices (Atomics.wait) up to 2 s
+   * before giving up with an actionable error; a lock older than 30 s is
+   * treated as abandoned by a dead process and stolen.
+   */
+  acquireLock() {
+    const deadline = Date.now() + 2e3;
+    for (; ; ) {
+      try {
+        (0, import_node_fs4.writeFileSync)(this.lockPath, JSON.stringify({ pid: process.pid, epoch: Date.now() }), {
+          flag: "wx"
+        });
+        return;
+      } catch {
+        let ageMs = Infinity;
+        try {
+          const holder = JSON.parse((0, import_node_fs4.readFileSync)(this.lockPath, "utf8"));
+          if (typeof holder.epoch === "number") ageMs = Date.now() - holder.epoch;
+        } catch {
+        }
+        if (ageMs > 3e4) {
+          (0, import_node_fs4.rmSync)(this.lockPath, { force: true });
+          continue;
+        }
+        if (Date.now() >= deadline) {
+          throw new Error(
+            `history store is busy (held by another flakefinder process for >2s): ${this.lockPath}. Run ingest steps serially, or give each CI shard its own storeDir.`
+          );
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      }
+    }
+  }
+  releaseLock() {
+    (0, import_node_fs4.rmSync)(this.lockPath, { force: true });
+  }
   loadAll() {
     this.ensureLoaded();
     return [...this.records];
@@ -129255,26 +129303,36 @@ var HistoryStore = class {
   }
   append(run) {
     this.ensureLoaded();
-    this.ensureHeader();
-    (0, import_node_fs4.appendFileSync)(this.path, `${JSON.stringify(run)}
+    this.acquireLock();
+    try {
+      this.ensureHeader();
+      (0, import_node_fs4.appendFileSync)(this.path, `${JSON.stringify(run)}
 `, "utf8");
-    this.records.push(run);
+      this.records.push(run);
+    } finally {
+      this.releaseLock();
+    }
   }
   /** Keep only the last `maxRuns` records; rewrite the file atomically. */
   prune(maxRuns) {
     this.ensureLoaded();
     if (this.records.length <= maxRuns) return;
-    this.records = this.records.slice(-maxRuns);
-    const tmp = `${this.path}.tmp`;
-    const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+    this.acquireLock();
+    try {
+      this.records = this.records.slice(-maxRuns);
+      const tmp = `${this.path}.tmp`;
+      const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
 ` : "";
-    (0, import_node_fs4.writeFileSync)(
-      tmp,
-      `${header}${this.records.map((r) => JSON.stringify(r)).join("\n")}
+      (0, import_node_fs4.writeFileSync)(
+        tmp,
+        `${header}${this.records.map((r) => JSON.stringify(r)).join("\n")}
 `,
-      "utf8"
-    );
-    (0, import_node_fs4.renameSync)(tmp, this.path);
+        "utf8"
+      );
+      (0, import_node_fs4.renameSync)(tmp, this.path);
+    } finally {
+      this.releaseLock();
+    }
   }
 };
 

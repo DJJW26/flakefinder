@@ -43,6 +43,17 @@ npm run e2e       # fixture end-to-end (needs go/python for those sections; jest
 3. Register in `src/parsers/index.ts` (`parsers` array + `detectParser` sniffing).
 4. Update the format table in README.md and docs/USAGE.md.
 
+## Releasing (maintainers)
+
+```powershell
+node scripts/release.mjs 1.0.0 --push
+```
+Bumps both version locations, inserts a CHANGELOG stub (fill it in BEFORE the
+pipeline runs — edit CHANGELOG.md and re-run without the version argument), runs
+the full pipeline, builds dist, commits, and tags. The `release` workflow then
+publishes to npm with `--provenance` (requires the `NPM_TOKEN` repo secret) and
+opens a GitHub Release.
+
 ## PR checklist
 
 - [ ] `npm run typecheck`, `npm test`, `npm run lint` pass

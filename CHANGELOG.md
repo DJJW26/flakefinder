@@ -1,4 +1,32 @@
+## 1.0.0
+
+- _(fill in before tagging — this stub is created by scripts/release.mjs)_
+
 # Changelog
+
+## 1.0.0
+
+First stable release. Highlights since 0.2.x:
+
+- **feat: `flakefinder doctor`** — one command that checks the setup: config
+  validity, runner detection, report files actually matching, history size
+  and freshness, corruption counts, git metadata, quarantine health — each
+  with an actionable hint. Exit 1 on any failure, so CI can gate on it.
+- **feat: store write lock.** Appends and prunes serialize across concurrent
+  CI shards via an advisory lock (stale locks stolen after 30 s); a busy
+  store fails with instructions instead of corrupting a line.
+- **feat: `run --timeout <seconds>` / `timeoutSeconds` config.** An attempt
+  exceeding the limit gets its whole process tree killed (Windows:
+  `taskkill /T /F`) and resolves exit 124 (GNU-timeout convention).
+- **feat: Ctrl-C done right.** SIGINT/SIGTERM kill the current tree, stop the
+  retry loop, keep all evidence ingested so far, and exit 130.
+- **feat: `ingest --run-id`** — share a runId across CI artifacts so a
+  fail→pass across invocations counts as a retry rescue.
+- **feat: release automation** — `scripts/release.mjs` (two-location version
+  bump, changelog stub, full pipeline, tag) and a `release` workflow that
+  publishes to npm with provenance when `NPM_TOKEN` is configured.
+- Targeted failed-only re-runs, stat-first change detection, perf smoke and
+  coverage gates shipped in 0.3.0 (see that entry).
 
 ## 0.3.0
 

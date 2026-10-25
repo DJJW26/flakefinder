@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 // src/cli/index.ts
-import { spawn as spawn2, spawnSync as spawnSync2 } from "child_process";
+import { spawn as spawn2, spawnSync as spawnSync3 } from "child_process";
 import { randomUUID as randomUUID2 } from "crypto";
-import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "fs";
-import path6 from "path";
+import { existsSync as existsSync5, mkdirSync as mkdirSync2, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "fs";
+import path7 from "path";
 import { Command } from "commander";
 
 // src/action/diff.ts
@@ -75,7 +75,8 @@ var KNOWN_KEYS = /* @__PURE__ */ new Set([
   "quarantineFile",
   "runner",
   "failOnFlakes",
-  "retryMode"
+  "retryMode",
+  "timeoutSeconds"
 ]);
 var VALID_RUNNERS = ["auto", "pytest", "jest", "mocha", "go", "generic"];
 function describe(v) {
@@ -142,6 +143,11 @@ function validateConfig(config) {
       problems.push(`retryMode: expected one of ${modes.join("|")}, got ${describe(c.retryMode)}`);
     }
   }
+  if (c.timeoutSeconds !== void 0 && c.timeoutSeconds !== null && (typeof c.timeoutSeconds !== "number" || !Number.isFinite(c.timeoutSeconds) || c.timeoutSeconds <= 0)) {
+    problems.push(
+      `timeoutSeconds: expected positive number or null, got ${describe(c.timeoutSeconds)}`
+    );
+  }
   if (problems.length > 0) {
     throw new ConfigValidationError(`invalid flakefinder config:
   - ${problems.join("\n  - ")}`);
@@ -163,6 +169,7 @@ function resolveConfig(config = {}, overrides = {}) {
     runner: "auto",
     failOnFlakes: false,
     retryMode: "auto",
+    timeoutSeconds: null,
     ...config,
     ...overrides
   };
@@ -218,6 +225,432 @@ function detectRunner(cwd) {
     return "mocha";
   if (has("go.mod")) return "go";
   return "generic";
+}
+
+// src/doctor.ts
+import { spawnSync } from "child_process";
+import { existsSync as existsSync4, statSync as statSync3 } from "fs";
+import path5 from "path";
+
+// src/quarantine/manager.ts
+import { existsSync as existsSync2, readFileSync as readFileSync2, writeFileSync } from "fs";
+import path2 from "path";
+var EMPTY = { version: 1, entries: [] };
+var QuarantineManager = class {
+  filePath;
+  file;
+  constructor(filePath) {
+    this.filePath = filePath;
+    this.file = this.load();
+  }
+  load() {
+    if (!existsSync2(this.filePath)) return { ...EMPTY, entries: [] };
+    try {
+      const parsed = JSON.parse(readFileSync2(this.filePath, "utf8"));
+      if (!Array.isArray(parsed.entries)) throw new Error('missing "entries" array');
+      return { version: 1, entries: parsed.entries };
+    } catch (err) {
+      throw new Error(`invalid quarantine file ${this.filePath}: ${err.message}`);
+    }
+  }
+  list() {
+    return [...this.file.entries];
+  }
+  /** Add or replace an entry (same testId). */
+  add(entry) {
+    this.file.entries = this.file.entries.filter((e) => e.testId !== entry.testId);
+    this.file.entries.push(entry);
+  }
+  remove(testId) {
+    const before = this.file.entries.length;
+    this.file.entries = this.file.entries.filter((e) => e.testId !== testId);
+    return this.file.entries.length < before;
+  }
+  /**
+   * Drop entries that no longer deserve quarantine. Deliberately
+   * conservative: quarantined tests are excluded from runs, so "not seen
+   * lately" is NOT evidence of health (that would silently un-quarantine
+   * everything). An entry leaves quarantine only on positive evidence —
+   * the test ran (quarantine disabled or full-suite run) and passed stably —
+   * or when the entry is older than 90 days and the test is gone from
+   * history. Returns the removed entries.
+   */
+  prune(verdicts, maxAgeDays = 90) {
+    if (verdicts.length === 0) return [];
+    const byId = new Map(verdicts.map((v) => [v.testId, v]));
+    const removed = [];
+    const kept = [];
+    for (const entry of this.file.entries) {
+      const v = byId.get(entry.testId);
+      const healthy = v !== void 0 && v.classification === "passing" && v.runsObserved >= 10;
+      const quarantinedMs = Date.parse(entry.quarantinedAt);
+      const agedOut = v?.classification === "gone" && !Number.isNaN(quarantinedMs) && Date.now() - quarantinedMs > maxAgeDays * 864e5;
+      if (healthy || agedOut) removed.push(entry);
+      else kept.push(entry);
+    }
+    this.file.entries = kept;
+    return removed;
+  }
+  save() {
+    writeFileSync(this.filePath, `${JSON.stringify(this.file, null, 2)}
+`, "utf8");
+  }
+};
+function escapeRegExp(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+function exclusionArgs(runner, entries) {
+  if (entries.length === 0) return [];
+  switch (runner) {
+    case "pytest": {
+      const args = [];
+      for (const e of entries) args.push("--deselect", `${e.suite}::${e.name}`);
+      return args;
+    }
+    case "jest":
+    case "mocha": {
+      const names = [...new Set(entries.map((e) => escapeRegExp(e.name)))];
+      const flag = runner === "jest" ? "-t" : "--grep";
+      return [flag, `^(?!.*(?:${names.join("|")}))`];
+    }
+    // go / generic: no per-test exclusion — callers must warn
+    default:
+      return [];
+  }
+}
+
+// src/store/history-store.ts
+import {
+  appendFileSync,
+  existsSync as existsSync3,
+  mkdirSync,
+  readFileSync as readFileSync3,
+  renameSync,
+  rmSync,
+  statSync as statSync2,
+  writeFileSync as writeFileSync2
+} from "fs";
+import path3 from "path";
+function snapshotPath(storeDir) {
+  return path3.join(storeDir, "verdicts-snapshot.json");
+}
+var STORE_FORMAT_VERSION = 1;
+var HistoryStore = class {
+  path;
+  warnings = [];
+  /** Schema version read from the file header; null for legacy header-less stores. */
+  formatVersion = null;
+  loaded = false;
+  records = [];
+  constructor(storeDir) {
+    mkdirSync(storeDir, { recursive: true });
+    this.path = path3.join(storeDir, "history.jsonl");
+  }
+  ensureLoaded() {
+    if (this.loaded) return;
+    this.loaded = true;
+    if (!existsSync3(this.path)) return;
+    const raw = readFileSync3(this.path, "utf8");
+    let start = 0;
+    let lineNo = 0;
+    while (start < raw.length) {
+      let end = raw.indexOf("\n", start);
+      if (end === -1) end = raw.length;
+      const line = raw.slice(start, end).trim();
+      lineNo++;
+      this.processLine(line, lineNo);
+      start = end + 1;
+    }
+    if (this.formatVersion !== null && this.formatVersion > STORE_FORMAT_VERSION) {
+      this.warnings.unshift(
+        `store format v${this.formatVersion} is newer than this flakefinder (v${STORE_FORMAT_VERSION}) \u2014 unknown fields will be preserved`
+      );
+    }
+  }
+  processLine(line, i) {
+    if (!line) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping corrupt line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    if (parsed.runId === void 0 && parsed.results === void 0) {
+      if (typeof parsed.version === "number") {
+        if (i === 1) this.formatVersion = parsed.version;
+        else if (this.warnings.length < 10) {
+          this.warnings.push(`unexpected schema marker at line ${i} \u2014 skipped`);
+        }
+        return;
+      }
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping record-shaped garbage at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping invalid record at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    this.records.push(parsed);
+  }
+  ensureHeader() {
+    if (existsSync3(this.path) && statSync2(this.path).size > 0) return;
+    appendFileSync(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+`, "utf8");
+    this.formatVersion = STORE_FORMAT_VERSION;
+  }
+  get lockPath() {
+    return `${this.path}.lock`;
+  }
+  /**
+   * Advisory lock around writes (append/prune). Two CI matrix shards writing
+   * multi-KB records can interleave in one append and corrupt a line — the
+   * lock serializes them. Busy-waits in ≤50 ms slices (Atomics.wait) up to 2 s
+   * before giving up with an actionable error; a lock older than 30 s is
+   * treated as abandoned by a dead process and stolen.
+   */
+  acquireLock() {
+    const deadline = Date.now() + 2e3;
+    for (; ; ) {
+      try {
+        writeFileSync2(this.lockPath, JSON.stringify({ pid: process.pid, epoch: Date.now() }), {
+          flag: "wx"
+        });
+        return;
+      } catch {
+        let ageMs = Infinity;
+        try {
+          const holder = JSON.parse(readFileSync3(this.lockPath, "utf8"));
+          if (typeof holder.epoch === "number") ageMs = Date.now() - holder.epoch;
+        } catch {
+        }
+        if (ageMs > 3e4) {
+          rmSync(this.lockPath, { force: true });
+          continue;
+        }
+        if (Date.now() >= deadline) {
+          throw new Error(
+            `history store is busy (held by another flakefinder process for >2s): ${this.lockPath}. Run ingest steps serially, or give each CI shard its own storeDir.`
+          );
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
+      }
+    }
+  }
+  releaseLock() {
+    rmSync(this.lockPath, { force: true });
+  }
+  loadAll() {
+    this.ensureLoaded();
+    return [...this.records];
+  }
+  runs() {
+    this.ensureLoaded();
+    return [...this.records];
+  }
+  append(run) {
+    this.ensureLoaded();
+    this.acquireLock();
+    try {
+      this.ensureHeader();
+      appendFileSync(this.path, `${JSON.stringify(run)}
+`, "utf8");
+      this.records.push(run);
+    } finally {
+      this.releaseLock();
+    }
+  }
+  /** Keep only the last `maxRuns` records; rewrite the file atomically. */
+  prune(maxRuns) {
+    this.ensureLoaded();
+    if (this.records.length <= maxRuns) return;
+    this.acquireLock();
+    try {
+      this.records = this.records.slice(-maxRuns);
+      const tmp = `${this.path}.tmp`;
+      const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+` : "";
+      writeFileSync2(
+        tmp,
+        `${header}${this.records.map((r) => JSON.stringify(r)).join("\n")}
+`,
+        "utf8"
+      );
+      renameSync(tmp, this.path);
+    } finally {
+      this.releaseLock();
+    }
+  }
+};
+
+// src/util/glob.ts
+import { readdirSync } from "fs";
+import path4 from "path";
+var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", "dist", "coverage"]);
+function globToRegExp(pattern, caseInsensitive) {
+  const parts = pattern.split("/").filter((p) => p.length > 0);
+  let re = "^";
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (part === "**") {
+      re += "(?:[^/]+/)*";
+      if (i === parts.length - 1) re += "[^/]*";
+      continue;
+    }
+    let seg = "";
+    for (const ch of part) {
+      if (ch === "*") seg += "[^/]*";
+      else if (ch === "?") seg += "[^/]";
+      else seg += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+    }
+    re += seg;
+    if (i < parts.length - 1) re += "/";
+  }
+  if (!re.endsWith("$")) re += "$";
+  return new RegExp(re, caseInsensitive ? "i" : void 0);
+}
+function matchGlobs(cwd, patterns) {
+  if (patterns.length === 0) return [];
+  const caseInsensitive = process.platform === "win32";
+  const normalized = patterns.map((p) => {
+    const posix = p.replace(/\\/g, "/").replace(/^\.\//, "");
+    return posix.includes("/") ? posix : `**/${posix}`;
+  });
+  const regexps = normalized.map((p) => globToRegExp(p, caseInsensitive));
+  const matches = /* @__PURE__ */ new Set();
+  const walk2 = (dir, rel) => {
+    let entries;
+    try {
+      entries = readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+        walk2(path4.join(dir, entry.name), relPath);
+      } else if (entry.isFile()) {
+        if (regexps.some((re) => re.test(relPath))) matches.add(path4.join(dir, entry.name));
+      }
+    }
+  };
+  walk2(cwd, "");
+  return [...matches].sort();
+}
+
+// src/doctor.ts
+var DAY_MS = 864e5;
+function runDoctor(cwd) {
+  const lines = [];
+  let ok = true;
+  let config;
+  try {
+    const { config: cfg, path: configPath } = loadConfig(cwd);
+    config = resolveConfig(cfg);
+    lines.push({
+      status: configPath ? "ok" : "info",
+      message: configPath ? `config: ${configPath}` : `config: none found (defaults in effect) \u2014 create one with flakefinder init`
+    });
+  } catch (err) {
+    ok = false;
+    lines.push({
+      status: "fail",
+      message: `config: invalid \u2014 ${err.message}`,
+      hint: "fix flakefinder.config.json (doctor lists each problem above/below)"
+    });
+    return { lines, ok };
+  }
+  const runner = detectRunner(cwd);
+  lines.push({
+    status: "info",
+    message: `runner: detected "${runner}"${config.runner !== "auto" ? ` (config pins "${config.runner}")` : ""}`
+  });
+  const reportFiles = matchGlobs(cwd, config.reports);
+  if (reportFiles.length === 0) {
+    lines.push({
+      status: "warn",
+      message: `reports: no files match ${config.reports.length > 0 ? config.reports.join(", ") : "(no globs configured)"}`,
+      hint: 'make the test runner emit machine-readable reports, then set "reports" globs \u2014 run: flakefinder init'
+    });
+  } else {
+    lines.push({
+      status: "ok",
+      message: `reports: ${reportFiles.length} file(s) match (${reportFiles.slice(0, 3).map((f) => path5.basename(f)).join(", ")}${reportFiles.length > 3 ? ", \u2026" : ""})`
+    });
+  }
+  const storeDir = path5.resolve(cwd, config.storeDir);
+  if (existsSync4(new HistoryStore(storeDir).path)) {
+    const store = new HistoryStore(storeDir);
+    const runs = store.runs();
+    const sizeKb = Math.round(statSync3(store.path).size / 1024);
+    lines.push({
+      status: "ok",
+      message: `history: ${runs.length} run(s), ${sizeKb} KB${store.formatVersion ? `, format v${store.formatVersion}` : " (legacy, no header)"}`
+    });
+    if (store.warnings.length > 0) {
+      lines.push({
+        status: "warn",
+        message: `history: ${store.warnings.length}+ skipped/corrupt line(s)`,
+        hint: "history is tolerant, but repeated corruption suggests parallel writers \u2014 give each CI shard its own storeDir"
+      });
+    }
+    if (runs.length > 0) {
+      const last = runs[runs.length - 1].timestamp;
+      const ageDays = (Date.now() - Date.parse(last)) / DAY_MS;
+      if (Number.isFinite(ageDays) && ageDays > 7) {
+        lines.push({
+          status: "warn",
+          message: `history: last run ${Math.round(ageDays)} days ago`,
+          hint: "flakefinder only knows what it ingests \u2014 is CI actually calling it?"
+        });
+      }
+    }
+  } else {
+    lines.push({
+      status: "warn",
+      message: `history: empty (${config.storeDir}/history.jsonl does not exist yet)`,
+      hint: "run: flakefinder run -- <test command>  (or flakefinder ingest <report files>)"
+    });
+  }
+  try {
+    const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+    if (r.status === 0) {
+      lines.push({
+        status: "ok",
+        message: "git: commit SHAs available (same-commit flip detection works)"
+      });
+    } else {
+      lines.push({
+        status: "warn",
+        message: "git: no commit SHA (not a repo or git missing)",
+        hint: "same-commit flip detection is disabled \u2014 flip-flop stats fall back to per-run buckets"
+      });
+    }
+  } catch {
+    lines.push({ status: "warn", message: "git: could not check" });
+  }
+  const qPath = path5.resolve(cwd, config.quarantineFile);
+  if (existsSync4(qPath)) {
+    const entries = new QuarantineManager(qPath).list();
+    const unsupported = runner === "go" || runner === "generic";
+    lines.push({
+      status: unsupported ? "warn" : "ok",
+      message: `quarantine: ${entries.length} entr${entries.length === 1 ? "y" : "ies"}${unsupported ? ` \u2014 runner "${runner}" cannot auto-exclude them` : ""}`
+    });
+  } else {
+    lines.push({
+      status: "info",
+      message: "quarantine: none (flakefinder.quarantine.json absent)"
+    });
+  }
+  return { lines, ok };
 }
 
 // src/engine/stats.ts
@@ -958,93 +1391,6 @@ function detectParser(content) {
     }
   }
   return null;
-}
-
-// src/quarantine/manager.ts
-import { existsSync as existsSync2, readFileSync as readFileSync2, writeFileSync } from "fs";
-import path2 from "path";
-var EMPTY = { version: 1, entries: [] };
-var QuarantineManager = class {
-  filePath;
-  file;
-  constructor(filePath) {
-    this.filePath = filePath;
-    this.file = this.load();
-  }
-  load() {
-    if (!existsSync2(this.filePath)) return { ...EMPTY, entries: [] };
-    try {
-      const parsed = JSON.parse(readFileSync2(this.filePath, "utf8"));
-      if (!Array.isArray(parsed.entries)) throw new Error('missing "entries" array');
-      return { version: 1, entries: parsed.entries };
-    } catch (err) {
-      throw new Error(`invalid quarantine file ${this.filePath}: ${err.message}`);
-    }
-  }
-  list() {
-    return [...this.file.entries];
-  }
-  /** Add or replace an entry (same testId). */
-  add(entry) {
-    this.file.entries = this.file.entries.filter((e) => e.testId !== entry.testId);
-    this.file.entries.push(entry);
-  }
-  remove(testId) {
-    const before = this.file.entries.length;
-    this.file.entries = this.file.entries.filter((e) => e.testId !== testId);
-    return this.file.entries.length < before;
-  }
-  /**
-   * Drop entries that no longer deserve quarantine. Deliberately
-   * conservative: quarantined tests are excluded from runs, so "not seen
-   * lately" is NOT evidence of health (that would silently un-quarantine
-   * everything). An entry leaves quarantine only on positive evidence —
-   * the test ran (quarantine disabled or full-suite run) and passed stably —
-   * or when the entry is older than 90 days and the test is gone from
-   * history. Returns the removed entries.
-   */
-  prune(verdicts, maxAgeDays = 90) {
-    if (verdicts.length === 0) return [];
-    const byId = new Map(verdicts.map((v) => [v.testId, v]));
-    const removed = [];
-    const kept = [];
-    for (const entry of this.file.entries) {
-      const v = byId.get(entry.testId);
-      const healthy = v !== void 0 && v.classification === "passing" && v.runsObserved >= 10;
-      const quarantinedMs = Date.parse(entry.quarantinedAt);
-      const agedOut = v?.classification === "gone" && !Number.isNaN(quarantinedMs) && Date.now() - quarantinedMs > maxAgeDays * 864e5;
-      if (healthy || agedOut) removed.push(entry);
-      else kept.push(entry);
-    }
-    this.file.entries = kept;
-    return removed;
-  }
-  save() {
-    writeFileSync(this.filePath, `${JSON.stringify(this.file, null, 2)}
-`, "utf8");
-  }
-};
-function escapeRegExp(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-function exclusionArgs(runner, entries) {
-  if (entries.length === 0) return [];
-  switch (runner) {
-    case "pytest": {
-      const args = [];
-      for (const e of entries) args.push("--deselect", `${e.suite}::${e.name}`);
-      return args;
-    }
-    case "jest":
-    case "mocha": {
-      const names = [...new Set(entries.map((e) => escapeRegExp(e.name)))];
-      const flag = runner === "jest" ? "-t" : "--grep";
-      return [flag, `^(?!.*(?:${names.join("|")}))`];
-    }
-    // go / generic: no per-test exclusion — callers must warn
-    default:
-      return [];
-  }
 }
 
 // src/util/redact.ts
@@ -2450,7 +2796,7 @@ ${hasVerdicts ? drawerMarkup : ""}
 }
 
 // src/types.ts
-var FLAKEFINDER_VERSION = "0.3.0";
+var FLAKEFINDER_VERSION = "1.0.0";
 
 // src/report/json.ts
 function renderJson(verdicts, cfg) {
@@ -2674,184 +3020,10 @@ function renderTerminal(allVerdicts, opts) {
 }
 
 // src/runner/wrap.ts
-import { spawn, spawnSync } from "child_process";
+import { spawn, spawnSync as spawnSync2 } from "child_process";
 import { createHash as createHash2, randomUUID } from "crypto";
-import { readFileSync as readFileSync4, statSync as statSync3 } from "fs";
-import path5 from "path";
-
-// src/store/history-store.ts
-import {
-  appendFileSync,
-  existsSync as existsSync3,
-  mkdirSync,
-  readFileSync as readFileSync3,
-  renameSync,
-  statSync as statSync2,
-  writeFileSync as writeFileSync2
-} from "fs";
-import path3 from "path";
-function snapshotPath(storeDir) {
-  return path3.join(storeDir, "verdicts-snapshot.json");
-}
-var STORE_FORMAT_VERSION = 1;
-var HistoryStore = class {
-  path;
-  warnings = [];
-  /** Schema version read from the file header; null for legacy header-less stores. */
-  formatVersion = null;
-  loaded = false;
-  records = [];
-  constructor(storeDir) {
-    mkdirSync(storeDir, { recursive: true });
-    this.path = path3.join(storeDir, "history.jsonl");
-  }
-  ensureLoaded() {
-    if (this.loaded) return;
-    this.loaded = true;
-    if (!existsSync3(this.path)) return;
-    const raw = readFileSync3(this.path, "utf8");
-    let start = 0;
-    let lineNo = 0;
-    while (start < raw.length) {
-      let end = raw.indexOf("\n", start);
-      if (end === -1) end = raw.length;
-      const line = raw.slice(start, end).trim();
-      lineNo++;
-      this.processLine(line, lineNo);
-      start = end + 1;
-    }
-    if (this.formatVersion !== null && this.formatVersion > STORE_FORMAT_VERSION) {
-      this.warnings.unshift(
-        `store format v${this.formatVersion} is newer than this flakefinder (v${STORE_FORMAT_VERSION}) \u2014 unknown fields will be preserved`
-      );
-    }
-  }
-  processLine(line, i) {
-    if (!line) return;
-    let parsed;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      if (this.warnings.length < 10) {
-        this.warnings.push(`skipping corrupt line ${i} in ${this.path}`);
-      }
-      return;
-    }
-    if (parsed.runId === void 0 && parsed.results === void 0) {
-      if (typeof parsed.version === "number") {
-        if (i === 1) this.formatVersion = parsed.version;
-        else if (this.warnings.length < 10) {
-          this.warnings.push(`unexpected schema marker at line ${i} \u2014 skipped`);
-        }
-        return;
-      }
-      if (this.warnings.length < 10) {
-        this.warnings.push(`skipping record-shaped garbage at line ${i} in ${this.path}`);
-      }
-      return;
-    }
-    if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
-      if (this.warnings.length < 10) {
-        this.warnings.push(`skipping invalid record at line ${i} in ${this.path}`);
-      }
-      return;
-    }
-    this.records.push(parsed);
-  }
-  ensureHeader() {
-    if (existsSync3(this.path) && statSync2(this.path).size > 0) return;
-    appendFileSync(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
-`, "utf8");
-    this.formatVersion = STORE_FORMAT_VERSION;
-  }
-  loadAll() {
-    this.ensureLoaded();
-    return [...this.records];
-  }
-  runs() {
-    this.ensureLoaded();
-    return [...this.records];
-  }
-  append(run) {
-    this.ensureLoaded();
-    this.ensureHeader();
-    appendFileSync(this.path, `${JSON.stringify(run)}
-`, "utf8");
-    this.records.push(run);
-  }
-  /** Keep only the last `maxRuns` records; rewrite the file atomically. */
-  prune(maxRuns) {
-    this.ensureLoaded();
-    if (this.records.length <= maxRuns) return;
-    this.records = this.records.slice(-maxRuns);
-    const tmp = `${this.path}.tmp`;
-    const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
-` : "";
-    writeFileSync2(
-      tmp,
-      `${header}${this.records.map((r) => JSON.stringify(r)).join("\n")}
-`,
-      "utf8"
-    );
-    renameSync(tmp, this.path);
-  }
-};
-
-// src/util/glob.ts
-import { readdirSync } from "fs";
-import path4 from "path";
-var SKIP_DIRS = /* @__PURE__ */ new Set(["node_modules", ".git", "dist", "coverage"]);
-function globToRegExp(pattern, caseInsensitive) {
-  const parts = pattern.split("/").filter((p) => p.length > 0);
-  let re = "^";
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    if (part === "**") {
-      re += "(?:[^/]+/)*";
-      if (i === parts.length - 1) re += "[^/]*";
-      continue;
-    }
-    let seg = "";
-    for (const ch of part) {
-      if (ch === "*") seg += "[^/]*";
-      else if (ch === "?") seg += "[^/]";
-      else seg += ch.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-    }
-    re += seg;
-    if (i < parts.length - 1) re += "/";
-  }
-  if (!re.endsWith("$")) re += "$";
-  return new RegExp(re, caseInsensitive ? "i" : void 0);
-}
-function matchGlobs(cwd, patterns) {
-  if (patterns.length === 0) return [];
-  const caseInsensitive = process.platform === "win32";
-  const normalized = patterns.map((p) => {
-    const posix = p.replace(/\\/g, "/").replace(/^\.\//, "");
-    return posix.includes("/") ? posix : `**/${posix}`;
-  });
-  const regexps = normalized.map((p) => globToRegExp(p, caseInsensitive));
-  const matches = /* @__PURE__ */ new Set();
-  const walk2 = (dir, rel) => {
-    let entries;
-    try {
-      entries = readdirSync(dir, { withFileTypes: true });
-    } catch {
-      return;
-    }
-    for (const entry of entries) {
-      const relPath = rel ? `${rel}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
-        walk2(path4.join(dir, entry.name), relPath);
-      } else if (entry.isFile()) {
-        if (regexps.some((re) => re.test(relPath))) matches.add(path4.join(dir, entry.name));
-      }
-    }
-  };
-  walk2(cwd, "");
-  return [...matches].sort();
-}
+import { readFileSync as readFileSync4, statSync as statSync4 } from "fs";
+import path6 from "path";
 
 // src/runner/adapters.ts
 function escapeRegExp2(s) {
@@ -2891,7 +3063,7 @@ function failedOnlyArgs(runner, failedNames, quarantinedNames = []) {
 // src/runner/wrap.ts
 function statOf(file) {
   try {
-    const s = statSync3(file);
+    const s = statSync4(file);
     return { size: s.size, mtimeMs: s.mtimeMs };
   } catch {
     return null;
@@ -2931,14 +3103,26 @@ function insertRunnerArgs(command, args) {
   const insertAt = opIdx === -1 ? command.length : opIdx;
   return [...command.slice(0, insertAt), ...separator, ...args, ...command.slice(insertAt)];
 }
-function spawnCommand(command, cwd) {
+function killTree(child) {
+  if (child.pid === void 0) return;
+  if (process.platform === "win32") {
+    spawnSync2("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+  } else {
+    child.kill("SIGTERM");
+    const escalated = setTimeout(() => child.kill("SIGKILL"), 3e3);
+    escalated.unref();
+  }
+}
+function spawnCommand(command, cwd, timeoutSeconds, currentChild) {
   const shellArgv = command.map((t) => isShellOperator(t) ? t : shellQuote(t));
   return new Promise((resolve) => {
     const done = (code) => {
+      if (currentChild.ref) currentChild.ref = null;
       resolve(code);
     };
     const start = (argv, useShell2) => {
       let abandoned = false;
+      let timedOut = false;
       let child;
       try {
         child = spawn(argv[0], argv.slice(1), { shell: useShell2, cwd, stdio: "inherit" });
@@ -2951,9 +3135,22 @@ function spawnCommand(command, cwd) {
         done(2);
         return;
       }
+      currentChild.ref = child;
+      const timer = timeoutSeconds != null ? setTimeout(() => {
+        timedOut = true;
+        console.error(
+          `flakefinder: attempt timed out after ${timeoutSeconds}s \u2014 killing the process tree`
+        );
+        killTree(child);
+      }, timeoutSeconds * 1e3) : null;
+      const finish = (code) => {
+        if (timer) clearTimeout(timer);
+        done(timedOut ? 124 : code);
+      };
       child.on("error", (err) => {
         if (!useShell2 && (err.code === "ENOENT" || err.code === "EINVAL")) {
           abandoned = true;
+          if (timer) clearTimeout(timer);
           start(shellArgv, true);
           return;
         }
@@ -2964,11 +3161,11 @@ function spawnCommand(command, cwd) {
         } else {
           console.error(`flakefinder: failed to start command: ${err.message}`);
         }
-        done(2);
+        finish(2);
       });
       child.on("close", (code) => {
         if (abandoned) return;
-        done(code ?? 1);
+        finish(code ?? 1);
       });
     };
     const useShell = needsShell(command);
@@ -2976,17 +3173,17 @@ function spawnCommand(command, cwd) {
   });
 }
 async function runLive(command, cfg, opts) {
-  const cwd = path5.resolve(opts.cwd);
+  const cwd = path6.resolve(opts.cwd);
   const runId = randomUUID();
   let commitSha;
-  const git = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+  const git = spawnSync2("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
   if (git.status === 0) commitSha = git.stdout.trim();
   const runner = cfg.runner === "auto" ? detectRunner(cwd) : cfg.runner;
   let quarantineFlags = [];
   let quarantinedNames = [];
   if (opts.applyQuarantine) {
     if (runner === "pytest" || runner === "jest" || runner === "mocha") {
-      const qm = new QuarantineManager(path5.resolve(cwd, cfg.quarantineFile));
+      const qm = new QuarantineManager(path6.resolve(cwd, cfg.quarantineFile));
       const entries = qm.list();
       if (entries.length > 0) {
         quarantineFlags = exclusionArgs(runner, entries);
@@ -2996,7 +3193,7 @@ async function runLive(command, cfg, opts) {
         );
       }
     } else if (runner === "go" || runner === "generic") {
-      const qm = new QuarantineManager(path5.resolve(cwd, cfg.quarantineFile));
+      const qm = new QuarantineManager(path6.resolve(cwd, cfg.quarantineFile));
       if (qm.list().length > 0) {
         console.log(
           `flakefinder: quarantine has entries but runner "${runner}" has no per-test exclusion \u2014 report only`
@@ -3014,71 +3211,85 @@ async function runLive(command, cfg, opts) {
   const exitCodes = [];
   let snapshot = snapshotReports(cwd, cfg);
   const maxAttempts = Math.max(1, opts.retries + 1);
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    let extraArgs = quarantineFlags;
-    let note = "";
-    if (attempt > 1 && cfg.retryMode !== "full") {
-      const failed = failedNamesOf(attempts).filter((n) => !quarantinedNames.includes(n));
-      const targeted = failedOnlyArgs(runner, failed, quarantinedNames);
-      if (targeted) {
-        extraArgs = targeted;
-        note = `targeted: re-running ${failed.length} failed test(s)`;
-      } else if (failed.length === 0) {
-        note = "full re-run (no failures recorded)";
-      } else {
-        if (cfg.retryMode === "failed") {
-          console.warn(
-            `flakefinder: no targeted-rerun adapter for runner "${runner}" \u2014 falling back to a full re-run`
-          );
+  const currentChild = { ref: null };
+  let interrupted = false;
+  const onInterrupt = () => {
+    interrupted = true;
+    if (currentChild.ref) killTree(currentChild.ref);
+  };
+  process.on("SIGINT", onInterrupt);
+  process.on("SIGTERM", onInterrupt);
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      let extraArgs = quarantineFlags;
+      let note = "";
+      if (attempt > 1 && cfg.retryMode !== "full") {
+        const failed = failedNamesOf(attempts).filter((n) => !quarantinedNames.includes(n));
+        const targeted = failedOnlyArgs(runner, failed, quarantinedNames);
+        if (targeted) {
+          extraArgs = targeted;
+          note = `targeted: re-running ${failed.length} failed test(s)`;
+        } else if (failed.length === 0) {
+          note = "full re-run (no failures recorded)";
+        } else {
+          if (cfg.retryMode === "failed") {
+            console.warn(
+              `flakefinder: no targeted-rerun adapter for runner "${runner}" \u2014 falling back to a full re-run`
+            );
+          }
+          note = "full re-run (no targeted adapter)";
         }
-        note = "full re-run (no targeted adapter)";
       }
-    }
-    const built = insertRunnerArgs(command, extraArgs);
-    console.log(
-      dim(
-        `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ""} \u2192 ${built.join(" ")}`
-      )
-    );
-    const code = await spawnCommand(built, cwd);
-    if (code === 127 || code === 9009) {
-      console.error(
-        `flakefinder: exit ${code} usually means the command was not found \u2014 check spelling and PATH`
+      const built = insertRunnerArgs(command, extraArgs);
+      console.log(
+        dim(
+          `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ""} \u2192 ${built.join(" ")}`
+        )
       );
-    }
-    exitCodes.push(code);
-    const after = snapshotReports(cwd, cfg, snapshot);
-    for (const [file, stamp] of after) {
-      if (snapshot.get(file)?.sha === stamp.sha) continue;
-      let content;
-      try {
-        content = readFileSync4(file, "utf8");
-      } catch (err) {
-        console.warn(`flakefinder: cannot read report ${file}: ${err.message}`);
-        continue;
+      const code = await spawnCommand(built, cwd, cfg.timeoutSeconds, currentChild);
+      if (code === 127 || code === 9009) {
+        console.error(
+          `flakefinder: exit ${code} usually means the command was not found \u2014 check spelling and PATH`
+        );
       }
-      const parser = detectParser(content);
-      if (!parser) {
-        console.warn(`flakefinder: unrecognized report format \u2014 skipped ${file}`);
-        continue;
+      exitCodes.push(code);
+      const after = snapshotReports(cwd, cfg, snapshot);
+      for (const [file, stamp] of after) {
+        if (snapshot.get(file)?.sha === stamp.sha) continue;
+        let content;
+        try {
+          content = readFileSync4(file, "utf8");
+        } catch (err) {
+          console.warn(`flakefinder: cannot read report ${file}: ${err.message}`);
+          continue;
+        }
+        const parser = detectParser(content);
+        if (!parser) {
+          console.warn(`flakefinder: unrecognized report format \u2014 skipped ${file}`);
+          continue;
+        }
+        const { results, warnings } = parser.parse(content, file);
+        for (const w of warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
+        attempts.push({
+          runId,
+          timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+          source: "live",
+          parsedFrom: parser.name,
+          attempt,
+          commitSha,
+          results
+        });
+        usedReportFiles.add(file);
       }
-      const { results, warnings } = parser.parse(content, file);
-      for (const w of warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
-      attempts.push({
-        runId,
-        timestamp: (/* @__PURE__ */ new Date()).toISOString(),
-        source: "live",
-        parsedFrom: parser.name,
-        attempt,
-        commitSha,
-        results
-      });
-      usedReportFiles.add(file);
+      snapshot = after;
+      if (interrupted) break;
+      if (code === 0) break;
     }
-    snapshot = after;
-    if (code === 0) break;
+  } finally {
+    process.off("SIGINT", onInterrupt);
+    process.off("SIGTERM", onInterrupt);
   }
-  const store = new HistoryStore(path5.resolve(cwd, cfg.storeDir));
+  const store = new HistoryStore(path6.resolve(cwd, cfg.storeDir));
   for (const record of attempts) store.append(record);
   store.prune(cfg.maxRuns);
   const all = classifyAll(store.runs(), cfg);
@@ -3095,6 +3306,7 @@ async function runLive(command, cfg, opts) {
     (v) => (v.classification === "failing" || v.classification === "new-failure") && (v.lastStatus === "fail" || v.lastStatus === "error")
   );
   let finalExitCode = deterministicFail || lastExit !== 0 ? 1 : 0;
+  if (interrupted) finalExitCode = 130;
   if (cfg.failOnFlakes && (verdicts.some((v) => v.classification.startsWith("flaky-")) || suiteFlake)) {
     finalExitCode = 1;
   }
@@ -3143,11 +3355,11 @@ function resolveCfg(g, overrides = {}) {
   return resolveConfig(config, overrides);
 }
 function gitSha(cwd) {
-  const r = spawnSync2("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+  const r = spawnSync3("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
   return r.status === 0 ? r.stdout.trim() : void 0;
 }
 function storeFor(g, cfg) {
-  return new HistoryStore(path6.resolve(g.cwd, cfg.storeDir));
+  return new HistoryStore(path7.resolve(g.cwd, cfg.storeDir));
 }
 function filterVerdicts(verdicts, opts, cfg) {
   if (opts.all) return verdicts;
@@ -3225,8 +3437,8 @@ async function main(argv) {
       exitCode = 2;
       return;
     }
-    const configPath = path6.join(g.cwd, CONFIG_FILE_NAME);
-    if (existsSync4(configPath) && !opts.force) {
+    const configPath = path7.join(g.cwd, CONFIG_FILE_NAME);
+    if (existsSync5(configPath) && !opts.force) {
       console.error(`flakefinder: ${configPath} already exists (use --force to overwrite)`);
       exitCode = 2;
       return;
@@ -3240,6 +3452,9 @@ async function main(argv) {
   program.command("run").description("run a test command with automatic retry-based flake detection").allowUnknownOption().option("-R, --retries <n>", "extra attempts after the first (default: config.liveRetries)").option("--fail-on-flake", "exit non-zero when flakes (not just failures) are detected").option("--no-quarantine", "run everything, ignoring the quarantine list").option(
     "--retry-mode <mode>",
     "auto (targeted re-runs when possible) | failed (force targeted) | full (always re-run everything)"
+  ).option(
+    "--timeout <seconds>",
+    "kill the attempt after N seconds (default: config timeoutSeconds, itself unlimited)"
   ).argument("<command...>", "the test command, placed after --").action(
     async (command, opts) => {
       const g = globals();
@@ -3262,6 +3477,17 @@ async function main(argv) {
       if (opts.retryMode != null) {
         overrides.retryMode = opts.retryMode;
       }
+      if (opts.timeout != null) {
+        const seconds = Number.parseInt(opts.timeout, 10);
+        if (Number.isNaN(seconds) || seconds <= 0) {
+          console.error(
+            `flakefinder: --timeout must be a positive number of seconds (got "${opts.timeout}")`
+          );
+          exitCode = 2;
+          return;
+        }
+        overrides.timeoutSeconds = seconds;
+      }
       const cfg = resolveCfg(g, overrides);
       const result = await runLive(command, cfg, {
         retries: retries ?? cfg.liveRetries,
@@ -3277,7 +3503,10 @@ async function main(argv) {
       exitCode = result.finalExitCode;
     }
   );
-  program.command("ingest").description("parse report files into the history store").argument("[files...]", "report files (omit to use configured globs)").option("--attempt <n>", "attempt number to record", "1").option("--source <source>", "live | report | action", "report").action((files, opts) => {
+  program.command("ingest").description("parse report files into the history store").argument("[files...]", "report files (omit to use configured globs)").option("--attempt <n>", "attempt number to record", "1").option("--source <source>", "live | report | action", "report").option(
+    "--run-id <id>",
+    "share a runId across ingests so fail\u2192pass counts as a retry rescue (e.g. per CI job)"
+  ).action((files, opts) => {
     const g = globals();
     const cfg = resolveCfg(g);
     const attempt = Number.parseInt(opts.attempt, 10) || 1;
@@ -3286,7 +3515,7 @@ async function main(argv) {
       exitCode = 2;
       return;
     }
-    const targets = files.length > 0 ? files.map((f) => path6.resolve(g.cwd, f)) : matchGlobs(g.cwd, cfg.reports);
+    const targets = files.length > 0 ? files.map((f) => path7.resolve(g.cwd, f)) : matchGlobs(g.cwd, cfg.reports);
     if (targets.length === 0) {
       console.error(
         'flakefinder: no report files matched \u2014 pass files explicitly or set "reports" globs (see flakefinder init)'
@@ -3294,7 +3523,17 @@ async function main(argv) {
       exitCode = 2;
       return;
     }
-    const runId = randomUUID2();
+    let runId = randomUUID2();
+    if (opts.runId != null) {
+      if (!/^[0-9a-f-]{10,}$/i.test(opts.runId)) {
+        console.error(
+          `flakefinder: --run-id must look like a UUID/identifier (got "${opts.runId}")`
+        );
+        exitCode = 2;
+        return;
+      }
+      runId = opts.runId;
+    }
     const store = storeFor(g, cfg);
     let total = 0;
     let used = 0;
@@ -3395,8 +3634,8 @@ async function main(argv) {
       verdicts,
       runs
     });
-    const out = path6.resolve(g.cwd, opts.out);
-    mkdirSync2(path6.dirname(out), { recursive: true });
+    const out = path7.resolve(g.cwd, opts.out);
+    mkdirSync2(path7.dirname(out), { recursive: true });
     writeFileSync3(out, html, "utf8");
     console.log(`dashboard written \u2192 ${out} (${verdicts.length} tests, ${runs.length} runs)`);
     if (opts.open) openInBrowser(out);
@@ -3404,7 +3643,7 @@ async function main(argv) {
   program.command("quarantine").description("manage the quarantine list (tests excluded from runs)").argument("<action>", "list | add | remove | prune").argument("[testId]", "testId for add/remove").option("--reason <text>", "reason recorded with the entry", "flaky").action((action, testId, opts) => {
     const g = globals();
     const cfg = resolveCfg(g);
-    const qPath = path6.resolve(g.cwd, cfg.quarantineFile);
+    const qPath = path7.resolve(g.cwd, cfg.quarantineFile);
     const qm = new QuarantineManager(qPath);
     if (action === "list") {
       const entries = qm.list();
@@ -3541,12 +3780,12 @@ async function main(argv) {
         `::warning title=flakefinder::${ghEscape(`${v.suite} :: ${v.name} (${v.classification}, score ${v.flakeScore})`)}`
       );
     }
-    const reportPath = path6.resolve(g.cwd, "flakefinder-report.json");
+    const reportPath = path7.resolve(g.cwd, "flakefinder-report.json");
     writeFileSync3(reportPath, renderJson(verdicts, cfg), "utf8");
     console.log(`json report \u2192 ${reportPath}`);
-    const snap = snapshotPath(path6.resolve(g.cwd, cfg.storeDir));
+    const snap = snapshotPath(path7.resolve(g.cwd, cfg.storeDir));
     let previous = null;
-    if (existsSync4(snap)) {
+    if (existsSync5(snap)) {
       try {
         previous = JSON.parse(readFileSync5(snap, "utf8"));
       } catch {
@@ -3561,6 +3800,18 @@ async function main(argv) {
         console.error(`  ${v.suite} :: ${v.name} (score ${v.flakeScore})`);
       exitCode = 1;
     }
+  });
+  program.command("doctor").description("check the setup: config, runner, reports, history, git, quarantine").action(() => {
+    const g = globals();
+    const { lines, ok } = runDoctor(g.cwd);
+    const tag = { ok: "[ok]  ", warn: "[warn]", fail: "[FAIL]", info: "[info]" };
+    for (const line of lines) {
+      const paint = line.status === "fail" ? (s) => `\x1B[31m${s}\x1B[0m` : line.status === "warn" ? (s) => `\x1B[33m${s}\x1B[0m` : (s) => s;
+      console.log(`${paint(tag[line.status])} ${line.message}`);
+      if (line.hint) console.log(`        ${paint("\u2192")} ${line.hint}`);
+    }
+    console.log(ok ? "" : "doctor: problems found (see FAIL lines above)");
+    exitCode = ok ? 0 : 1;
   });
   program.command("version").description("print the flakefinder version").action(() => {
     console.log(FLAKEFINDER_VERSION);

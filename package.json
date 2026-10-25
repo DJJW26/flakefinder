@@ -1,7 +1,7 @@
 {
   "name": "flakefinder",
-  "version": "0.3.0",
-  "description": "Detect, track, and quarantine flaky tests \u2014 from your CLI and CI. History-aware flake scores, retries, HTML dashboard, GitHub Action.",
+  "version": "1.0.0",
+  "description": "Detect, track, and quarantine flaky tests — from your CLI and CI. History-aware flake scores, retries, HTML dashboard, GitHub Action.",
   "type": "module",
   "license": "MIT",
   "engines": {
