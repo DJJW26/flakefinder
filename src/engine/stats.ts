@@ -21,9 +21,10 @@ export function percentile(values: number[], p: number): number | null {
 }
 
 /** Median/p95 over the defined durationMs values of a chronology of observations. */
-export function durationStats(obs: Observation[]): { medianMs: number | null; p95Ms: number | null } {
-  const vals = obs
-    .map((o) => o.durationMs)
-    .filter((v): v is number => typeof v === 'number');
+export function durationStats(obs: Observation[]): {
+  medianMs: number | null;
+  p95Ms: number | null;
+} {
+  const vals = obs.map((o) => o.durationMs).filter((v): v is number => typeof v === 'number');
   return { medianMs: median(vals), p95Ms: p95(vals) };
 }

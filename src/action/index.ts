@@ -1,17 +1,17 @@
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
 import * as artifact from '@actions/artifact';
 import * as cache from '@actions/cache';
 import * as core from '@actions/core';
 import * as github from '@actions/github';
 import { getOctokit } from '@actions/github';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
-import path from 'node:path';
 import { loadConfig, resolveConfig } from '../config.js';
 import { renderDashboard } from '../report/html.js';
-import { buildPrComment, PR_COMMENT_MARKER } from '../report/markdown.js';
 import { renderJson } from '../report/json.js';
+import { buildPrComment, PR_COMMENT_MARKER } from '../report/markdown.js';
 import { snapshotPath } from '../store/history-store.js';
-import { FLAKEFINDER_VERSION } from '../types.js';
 import type { TestVerdict } from '../types.js';
+import { FLAKEFINDER_VERSION } from '../types.js';
 import { computeNewFlakes } from './diff.js';
 import { ingestReports } from './ingest.js';
 
@@ -49,7 +49,10 @@ async function actionMain(): Promise<void> {
 
   const { config } = loadConfig(cwd);
   const reportsInput = core.getInput('reports');
-  const cfg = resolveConfig(config, reportsInput ? { reports: reportsInput.split(',').map((s) => s.trim()) } : {});
+  const cfg = resolveConfig(
+    config,
+    reportsInput ? { reports: reportsInput.split(',').map((s) => s.trim()) } : {},
+  );
   const historyMaxRuns = Number.parseInt(core.getInput('history-max-runs') || '300', 10);
   const storeDir = path.resolve(cwd, cfg.storeDir);
 
@@ -151,13 +154,16 @@ async function actionMain(): Promise<void> {
   // 8. dashboard artifact
   if (core.getBooleanInput('upload-dashboard')) {
     try {
-      const runs = outcome.store.runs().slice(-50).map((r) => ({
-        runId: r.runId,
-        timestamp: r.timestamp,
-        commitSha: r.commitSha,
-        passCount: r.results.filter((t) => t.status === 'pass').length,
-        failCount: r.results.filter((t) => t.status === 'fail' || t.status === 'error').length,
-      }));
+      const runs = outcome.store
+        .runs()
+        .slice(-50)
+        .map((r) => ({
+          runId: r.runId,
+          timestamp: r.timestamp,
+          commitSha: r.commitSha,
+          passCount: r.results.filter((t) => t.status === 'pass').length,
+          failCount: r.results.filter((t) => t.status === 'fail' || t.status === 'error').length,
+        }));
       const html = renderDashboard({
         generatedAt: new Date().toISOString(),
         flakefinderVersion: FLAKEFINDER_VERSION,
@@ -177,7 +183,9 @@ async function actionMain(): Promise<void> {
 
   // 9. fail gate
   if (core.getBooleanInput('fail-on-new-flakes') && newFlakes.length > 0) {
-    const names = newFlakes.map((v) => `  • ${v.suite} :: ${v.name} (score ${v.flakeScore})`).join('\n');
+    const names = newFlakes
+      .map((v) => `  • ${v.suite} :: ${v.name} (score ${v.flakeScore})`)
+      .join('\n');
     core.setFailed(`flakefinder: ${newFlakes.length} NEW flaky test(s):\n${names}`);
   }
 }

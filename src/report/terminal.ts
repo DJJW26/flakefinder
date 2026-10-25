@@ -78,7 +78,10 @@ export function renderTerminal(
     return lines.join('\n');
   }
 
-  lines.push(bold(`flakefinder — ${verdicts.length} tracked test(s), ${problemCount} need attention`), '');
+  lines.push(
+    bold(`flakefinder — ${verdicts.length} tracked test(s), ${problemCount} need attention`),
+    '',
+  );
 
   for (const cls of PROBLEM_CLASSES) {
     const list = byClass.get(cls);

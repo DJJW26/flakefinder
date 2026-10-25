@@ -88,7 +88,12 @@ function countRetryRescues(collapsed: Observation[]): number {
   for (let i = 1; i < collapsed.length; i++) {
     const prev = collapsed[i - 1]!;
     const cur = collapsed[i]!;
-    if (prev.runId === cur.runId && cur.attempt === prev.attempt + 1 && isFail(prev.status) && !isFail(cur.status)) {
+    if (
+      prev.runId === cur.runId &&
+      cur.attempt === prev.attempt + 1 &&
+      isFail(prev.status) &&
+      !isFail(cur.status)
+    ) {
       rescues++;
     }
   }
@@ -156,10 +161,12 @@ function classify(opts: {
   if (!opts.seenRecently) return 'gone';
   if (nonSkip.length === 0) return 'skipped';
   const observed = collapsed; // one observation per (runId, attempt)
-  const bothFamilies = collapsed.some((o) => isFail(o.status)) && collapsed.some((o) => !isFail(o.status));
+  const bothFamilies =
+    collapsed.some((o) => isFail(o.status)) && collapsed.some((o) => !isFail(o.status));
   if (opts.sameShaFlips > 0) return 'flaky-confirmed';
   if (opts.retryRescues > 0) return 'flaky-retry';
-  if (opts.directionChanges >= 2 && observed.length >= cfg.minRuns && bothFamilies) return 'flaky-suspected';
+  if (opts.directionChanges >= 2 && observed.length >= cfg.minRuns && bothFamilies)
+    return 'flaky-suspected';
   // "last 5 (up to) observations all fail-family" with enough data
   const lastWindow = observed.slice(-RECENT_WINDOW);
   if (lastWindow.every((o) => isFail(o.status)) && observed.length >= cfg.minRuns) return 'failing';
@@ -168,7 +175,11 @@ function classify(opts: {
   return 'passing';
 }
 
-function confidenceFor(classification: Classification, observed: Observation[], cfg: ResolvedConfig): number {
+function confidenceFor(
+  classification: Classification,
+  observed: Observation[],
+  cfg: ResolvedConfig,
+): number {
   const totalFails = observed.filter((o) => isFail(o.status)).length;
   switch (classification) {
     case 'flaky-confirmed':
@@ -222,7 +233,13 @@ export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict
 
     const lastFail = [...observed].reverse().find((o) => isFail(o.status));
     const score = bothFamilies
-      ? flakeScore({ sameShaFlips, retryRescues, directionChanges, runsObserved: observed.length, lastFail })
+      ? flakeScore({
+          sameShaFlips,
+          retryRescues,
+          directionChanges,
+          runsObserved: observed.length,
+          lastFail,
+        })
       : 0;
 
     const { medianMs, p95Ms } = durationStats(observed);
@@ -232,7 +249,11 @@ export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict
     if (!seenRecently) tags.push('long-unseen');
     const firstHalf = observed.slice(0, Math.floor(observed.length / 2));
     const lastWindow = observed.slice(-RECENT_WINDOW);
-    if (firstHalf.some((o) => isFail(o.status)) && lastWindow.length > 0 && lastWindow.every((o) => !isFail(o.status))) {
+    if (
+      firstHalf.some((o) => isFail(o.status)) &&
+      lastWindow.length > 0 &&
+      lastWindow.every((o) => !isFail(o.status))
+    ) {
       tags.push('recently-fixed');
     }
 
@@ -274,7 +295,9 @@ export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict
   for (const v of verdicts) {
     const suiteMedianMs = suiteMedians.get(v.suite);
     const slowAbsolute =
-      v.medianDurationMs != null && cfg.slowThresholdMs != null && v.medianDurationMs > cfg.slowThresholdMs;
+      v.medianDurationMs != null &&
+      cfg.slowThresholdMs != null &&
+      v.medianDurationMs > cfg.slowThresholdMs;
     const slowRelative =
       v.p95DurationMs != null &&
       suiteMedianMs != null &&

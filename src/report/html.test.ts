@@ -158,7 +158,8 @@ function fixtureData(): DashboardData {
       p95DurationMs: 61000,
     }),
     verdict({
-      testId: 'jest:tests/network.spec.ts::network > retries fetch with backoff and a very long name that should be truncated in the table view',
+      testId:
+        'jest:tests/network.spec.ts::network > retries fetch with backoff and a very long name that should be truncated in the table view',
       suite: 'tests/network.spec.ts',
       name: 'network > retries fetch with backoff and a very long name that should be truncated in the table view',
       classification: 'flaky-confirmed',
@@ -195,11 +196,35 @@ function fixtureData(): DashboardData {
       passCount: 214,
       failCount: 3,
     },
-    { runId: 'run-2', timestamp: '2026-10-19T09:14:00.000Z', commitSha: '1b2c3d4e5f60718293a4b5c6d7e8f90123456789', passCount: 220, failCount: 0 },
-    { runId: 'run-3', timestamp: '2026-10-20T09:11:00.000Z', commitSha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef', passCount: 205, failCount: 11 },
+    {
+      runId: 'run-2',
+      timestamp: '2026-10-19T09:14:00.000Z',
+      commitSha: '1b2c3d4e5f60718293a4b5c6d7e8f90123456789',
+      passCount: 220,
+      failCount: 0,
+    },
+    {
+      runId: 'run-3',
+      timestamp: '2026-10-20T09:11:00.000Z',
+      commitSha: 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeef',
+      passCount: 205,
+      failCount: 11,
+    },
     { runId: 'run-4', timestamp: '2026-10-21T09:13:00.000Z', passCount: 218, failCount: 1 },
-    { runId: 'run-5', timestamp: '2026-10-22T09:10:00.000Z', commitSha: '4242424242424242424242424242424242424242', passCount: 219, failCount: 0 },
-    { runId: 'run-6', timestamp: '2026-10-23T09:15:00.000Z', commitSha: 'abcdef0abcdef0abcdef0abcdef0abcdef0abcd', passCount: 211, failCount: 4 },
+    {
+      runId: 'run-5',
+      timestamp: '2026-10-22T09:10:00.000Z',
+      commitSha: '4242424242424242424242424242424242424242',
+      passCount: 219,
+      failCount: 0,
+    },
+    {
+      runId: 'run-6',
+      timestamp: '2026-10-23T09:15:00.000Z',
+      commitSha: 'abcdef0abcdef0abcdef0abcdef0abcdef0abcd',
+      passCount: 211,
+      failCount: 4,
+    },
   ];
 
   return { generatedAt: '2026-10-25T14:03:22.000Z', flakefinderVersion: '0.1.0', verdicts, runs };
@@ -278,7 +303,16 @@ describe('renderDashboard', () => {
   });
 
   it('renders the tests table scaffolding with sortable headers', () => {
-    for (const header of ['Score', 'Conf %', 'Runs', 'Pass rate', 'Median', 'Class', 'Test', 'Tags']) {
+    for (const header of [
+      'Score',
+      'Conf %',
+      'Runs',
+      'Pass rate',
+      'Median',
+      'Class',
+      'Test',
+      'Tags',
+    ]) {
       expect(html).toContain(header);
     }
     expect(html).toContain('id="ff-tbody"');
@@ -317,7 +351,16 @@ describe('renderDashboard', () => {
   });
 
   it('exposes integration marker ids', () => {
-    for (const id of ['ff-data', 'ff-chips', 'ff-table', 'ff-tbody', 'ff-filter', 'ff-showing', 'ff-drawer', 'ff-toggle']) {
+    for (const id of [
+      'ff-data',
+      'ff-chips',
+      'ff-table',
+      'ff-tbody',
+      'ff-filter',
+      'ff-showing',
+      'ff-drawer',
+      'ff-toggle',
+    ]) {
       expect(html).toContain(`id="${id}"`);
     }
   });

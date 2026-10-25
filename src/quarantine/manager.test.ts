@@ -16,7 +16,11 @@ afterEach(() => {
   dirs = [];
 });
 
-function entry(testId: string, name = `n-${testId}`, over: Partial<QuarantineEntry> = {}): QuarantineEntry {
+function entry(
+  testId: string,
+  name = `n-${testId}`,
+  over: Partial<QuarantineEntry> = {},
+): QuarantineEntry {
   return {
     testId,
     suite: 's.ts',
@@ -100,8 +104,16 @@ describe('QuarantineManager', () => {
 
   it('prune removes gone entries older than 90 days, keeps fresh ones', () => {
     const qm = new QuarantineManager(tmpFile());
-    qm.add(entry('old-gone', 'x', { quarantinedAt: new Date(Date.now() - 120 * 86_400_000).toISOString() }));
-    qm.add(entry('new-gone', 'y', { quarantinedAt: new Date(Date.now() - 5 * 86_400_000).toISOString() }));
+    qm.add(
+      entry('old-gone', 'x', {
+        quarantinedAt: new Date(Date.now() - 120 * 86_400_000).toISOString(),
+      }),
+    );
+    qm.add(
+      entry('new-gone', 'y', {
+        quarantinedAt: new Date(Date.now() - 5 * 86_400_000).toISOString(),
+      }),
+    );
     const removed = qm.prune([
       verdict('old-gone', { classification: 'gone' }),
       verdict('new-gone', { classification: 'gone' }),
@@ -130,7 +142,11 @@ describe('exclusionArgs', () => {
     expect(args).toEqual(['--deselect', 's.ts::test_one', '--deselect', 's.ts::test_two']);
   });
   it('jest: single -t negative-lookahead pattern, names regex-escaped and deduped', () => {
-    const args = exclusionArgs('jest', [entry('a', 'does (x)'), entry('b', 'does (x)'), entry('c', 'plain')]);
+    const args = exclusionArgs('jest', [
+      entry('a', 'does (x)'),
+      entry('b', 'does (x)'),
+      entry('c', 'plain'),
+    ]);
     expect(args[0]).toBe('-t');
     expect(args[1]).toBe('^(?!.*(?:does \\(x\\)|plain))');
   });

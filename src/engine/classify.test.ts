@@ -49,7 +49,7 @@ function run(specs: TestSpec[]): RunRecord {
     commitSha: specs[0]?.sha,
     results: specs.map((s): TestCaseResult => {
       const suite = s.suite ?? 'suite.ts';
-      const name = s.name ?? (s.id ?? 'test');
+      const name = s.name ?? s.id ?? 'test';
       return {
         testId: s.id ?? makeTestId(suite, name),
         suite,
@@ -76,10 +76,7 @@ function verdictOf(runs: RunRecord[], name = 'test') {
 
 describe('classification precedence (PLAN §5)', () => {
   it('same-commit pass+fail → flaky-confirmed, score 50, confidence 100', () => {
-    const runs = history(
-      { status: 'fail', sha: 'aaa' },
-      { status: 'pass', sha: 'aaa' },
-    );
+    const runs = history({ status: 'fail', sha: 'aaa' }, { status: 'pass', sha: 'aaa' });
     const v = verdictOf(runs);
     expect(v.classification).toBe('flaky-confirmed');
     expect(v.flakeScore).toBe(50);
@@ -261,7 +258,13 @@ describe('score arithmetic and caps', () => {
         attempt: 1,
         commitSha: 'a',
         results: [
-          { testId: makeTestId('suite.ts', 'test'), suite: 'suite.ts', name: 'test', status: 'fail', durationMs: null },
+          {
+            testId: makeTestId('suite.ts', 'test'),
+            suite: 'suite.ts',
+            name: 'test',
+            status: 'fail',
+            durationMs: null,
+          },
         ],
       },
       run([{ status: 'pass', sha: 'b' }]),
@@ -276,7 +279,9 @@ describe('score arithmetic and caps', () => {
 
 describe('tags', () => {
   it('slow: absolute median over threshold', () => {
-    const v = verdictOf(history({ status: 'pass', sha: 'a', durationMs: 20_000 }, { status: 'pass', sha: 'b' }));
+    const v = verdictOf(
+      history({ status: 'pass', sha: 'a', durationMs: 20_000 }, { status: 'pass', sha: 'b' }),
+    );
     expect(v.tags).toContain('slow');
   });
 
@@ -291,13 +296,23 @@ describe('tags', () => {
       }));
     // suite medians: [100, 100, 100, 6002] → median 100 → relative bar = 500
     const v = verdictOf(
-      history(...mk('steady1', 100), ...mk('steady2', 100), ...mk('steady3', 100), ...mk('spiky', 6002)),
+      history(
+        ...mk('steady1', 100),
+        ...mk('steady2', 100),
+        ...mk('steady3', 100),
+        ...mk('spiky', 6002),
+      ),
       'spiky',
     );
     expect(v.p95DurationMs).toBe(6002);
     expect(v.tags).toContain('slow'); // 6002 > 5 × 100
     const steady = verdictOf(
-      history(...mk('steady1', 100), ...mk('steady2', 100), ...mk('steady3', 100), ...mk('spiky', 6002)),
+      history(
+        ...mk('steady1', 100),
+        ...mk('steady2', 100),
+        ...mk('steady3', 100),
+        ...mk('spiky', 6002),
+      ),
       'steady1',
     );
     expect(steady.tags).not.toContain('slow');

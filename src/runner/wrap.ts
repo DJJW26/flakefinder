@@ -2,8 +2,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { classifyAll } from '../engine/classify.js';
 import { detectRunner } from '../config.js';
+import { classifyAll } from '../engine/classify.js';
 import { detectParser } from '../parsers/index.js';
 import { exclusionArgs, QuarantineManager } from '../quarantine/manager.js';
 import { HistoryStore } from '../store/history-store.js';
@@ -96,7 +96,9 @@ export async function runLive(
   const maxAttempts = Math.max(1, opts.retries + 1);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    console.log(dim(`flakefinder: attempt ${attempt}/${maxAttempts} → ${effectiveCommand.join(' ')}`));
+    console.log(
+      dim(`flakefinder: attempt ${attempt}/${maxAttempts} → ${effectiveCommand.join(' ')}`),
+    );
     const code = await spawnCommand(effectiveCommand, cwd);
     exitCodes.push(code);
 
@@ -141,9 +143,7 @@ export async function runLive(
   const verdicts = all.filter((v) => invocationIds.has(v.testId));
 
   const suiteFlake =
-    usedReportFiles.size === 0 &&
-    exitCodes.some((c) => c === 0) &&
-    exitCodes.some((c) => c !== 0);
+    usedReportFiles.size === 0 && exitCodes.some((c) => c === 0) && exitCodes.some((c) => c !== 0);
   if (suiteFlake) {
     console.warn(
       'flakefinder: no report files matched — suite-level verdict only (exits varied across attempts).',
@@ -152,7 +152,9 @@ export async function runLive(
 
   const finalAttempt = exitCodes.length;
   const finalAttemptIds = new Set(
-    attempts.filter((r) => r.attempt === finalAttempt).flatMap((r) => r.results.map((t) => t.testId)),
+    attempts
+      .filter((r) => r.attempt === finalAttempt)
+      .flatMap((r) => r.results.map((t) => t.testId)),
   );
   const lastExit = exitCodes[exitCodes.length - 1] ?? 1;
   const deterministicFail = verdicts.some(

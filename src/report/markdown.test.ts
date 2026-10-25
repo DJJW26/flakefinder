@@ -60,7 +60,10 @@ describe('buildPrComment', () => {
       verdict({ testId: 'new1', name: 'fresh flake', flakeScore: 40 }),
       verdict({ testId: 'down', name: 'calming', flakeScore: 50 }),
     ];
-    const previousFull = [verdict({ flakeScore: 60 }), verdict({ testId: 'down', name: 'calming', flakeScore: 80 })];
+    const previousFull = [
+      verdict({ flakeScore: 60 }),
+      verdict({ testId: 'down', name: 'calming', flakeScore: 80 }),
+    ];
     const body = buildPrComment(current, previousFull);
     void previous;
     expect(body).toContain('**new**');

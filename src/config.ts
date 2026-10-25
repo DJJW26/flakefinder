@@ -116,7 +116,10 @@ export function detectRunner(cwd: string): RunnerKind {
 
   if (has('package.json')) {
     try {
-      const pkg = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8')) as Record<string, any>;
+      const pkg = JSON.parse(readFileSync(path.join(cwd, 'package.json'), 'utf8')) as Record<
+        string,
+        any
+      >;
       const deps: Record<string, string> = { ...pkg.dependencies, ...pkg.devDependencies };
       const scripts = JSON.stringify(pkg.scripts ?? {});
       if (deps.jest || deps.vitest || /\b(jest|vitest)\b/.test(scripts)) return 'jest';
@@ -125,8 +128,10 @@ export function detectRunner(cwd: string): RunnerKind {
       // fall through to file markers
     }
   }
-  if (has('pyproject.toml') || has('pytest.ini') || has('setup.py') || has('setup.cfg')) return 'pytest';
-  if (has('.mocharc.yml') || has('.mocharc.json') || has('.mocharc.js') || has('.mocharc.cjs')) return 'mocha';
+  if (has('pyproject.toml') || has('pytest.ini') || has('setup.py') || has('setup.cfg'))
+    return 'pytest';
+  if (has('.mocharc.yml') || has('.mocharc.json') || has('.mocharc.js') || has('.mocharc.cjs'))
+    return 'mocha';
   if (has('go.mod')) return 'go';
   return 'generic';
 }

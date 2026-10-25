@@ -25,12 +25,20 @@ function verdict(testId: string, classification: TestVerdict['classification']):
 
 describe('computeNewFlakes', () => {
   it('null previous → every flaky verdict is new', () => {
-    const current = [verdict('a', 'flaky-confirmed'), verdict('b', 'passing'), verdict('c', 'flaky-retry')];
+    const current = [
+      verdict('a', 'flaky-confirmed'),
+      verdict('b', 'passing'),
+      verdict('c', 'flaky-retry'),
+    ];
     expect(computeNewFlakes(current, null).map((v) => v.testId)).toEqual(['a', 'c']);
   });
   it('only flakes absent from the previous flaky set are new', () => {
     const previous = [verdict('a', 'flaky-confirmed'), verdict('x', 'passing')];
-    const current = [verdict('a', 'flaky-suspected'), verdict('b', 'flaky-confirmed'), verdict('c', 'failing')];
+    const current = [
+      verdict('a', 'flaky-suspected'),
+      verdict('b', 'flaky-confirmed'),
+      verdict('c', 'failing'),
+    ];
     expect(computeNewFlakes(current, previous).map((v) => v.testId)).toEqual(['b']);
   });
   it('a test flaky before AND now is known, not new', () => {
@@ -59,7 +67,11 @@ describe('computeFixedFlakes semantics', () => {
       verdict('degraded-to-failing', 'failing'),
       verdict('still-flaky', 'flaky-confirmed'),
     ];
-    const fixed = computeFixedFlakes(current, previous).map((v) => v.testId).sort();
-    expect(fixed).toEqual(['degraded-to-failing', 'fixed-now-passing', 'removed-from-suite'].sort());
+    const fixed = computeFixedFlakes(current, previous)
+      .map((v) => v.testId)
+      .sort();
+    expect(fixed).toEqual(
+      ['degraded-to-failing', 'fixed-now-passing', 'removed-from-suite'].sort(),
+    );
   });
 });

@@ -1,7 +1,7 @@
+import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { spawn, spawnSync } from 'node:child_process';
 import { Command } from 'commander';
 import {
   CONFIG_FILE_NAME,
@@ -12,15 +12,21 @@ import {
 } from '../config.js';
 import { classifyAll } from '../engine/classify.js';
 import { detectParser } from '../parsers/index.js';
-import { QuarantineManager, exclusionArgs } from '../quarantine/manager.js';
-import { renderJson } from '../report/json.js';
-import { renderTerminal } from '../report/terminal.js';
+import { exclusionArgs, QuarantineManager } from '../quarantine/manager.js';
 import { renderDashboard } from '../report/html.js';
+import { renderJson } from '../report/json.js';
 import { renderMarkdown } from '../report/markdown.js';
+import { renderTerminal } from '../report/terminal.js';
 import { runLive } from '../runner/wrap.js';
 import { HistoryStore, snapshotPath } from '../store/history-store.js';
+import type {
+  FlakefinderConfig,
+  ResolvedConfig,
+  RunnerKind,
+  RunRecord,
+  TestVerdict,
+} from '../types.js';
 import { FLAKEFINDER_VERSION } from '../types.js';
-import type { FlakefinderConfig, ResolvedConfig, RunRecord, RunnerKind, TestVerdict } from '../types.js';
 import { matchGlobs } from '../util/glob.js';
 
 interface Globals {
@@ -98,7 +104,9 @@ function printSetupHints(runner: RunnerKind): void {
     go: `  go: write the JSON stream to the expected file:\n    go test -json ./... > test-output.jsonl`,
     generic: '  configure "reports" globs in flakefinder.config.json',
   };
-  console.log(`\nnext step — make your runner emit machine-readable reports:\n${hint[runner] ?? hint.generic}`);
+  console.log(
+    `\nnext step — make your runner emit machine-readable reports:\n${hint[runner] ?? hint.generic}`,
+  );
 }
 
 function openInBrowser(file: string): void {
@@ -172,31 +180,36 @@ export async function main(argv: string[]): Promise<number> {
     .option('--fail-on-flake', 'exit non-zero when flakes (not just failures) are detected')
     .option('--no-quarantine', 'run everything, ignoring the quarantine list')
     .argument('<command...>', 'the test command, placed after --')
-    .action(async (command: string[], opts: { retries?: string; failOnFlake?: boolean; quarantine?: boolean }) => {
-      const g = globals();
-      const retries = opts.retries != null ? Number.parseInt(opts.retries, 10) : undefined;
-      if (opts.retries != null && (Number.isNaN(retries) || retries! < 0)) {
-        console.error('flakefinder: --retries must be a non-negative integer');
-        exitCode = 2;
-        return;
-      }
-      const overrides: Partial<FlakefinderConfig> = {};
-      if (opts.failOnFlake) overrides.failOnFlakes = true;
-      if (retries != null) overrides.liveRetries = retries;
-      const cfg = resolveCfg(g, overrides);
-      const result = await runLive(command, cfg, {
-        retries: retries ?? cfg.liveRetries,
-        cwd: g.cwd,
-        applyQuarantine: opts.quarantine !== false,
-      });
-      console.log(
-        renderTerminal(result.verdicts, {
-          color: g.color && process.stdout.isTTY === true,
-          flakesOnly: false,
-        }),
-      );
-      exitCode = result.finalExitCode;
-    });
+    .action(
+      async (
+        command: string[],
+        opts: { retries?: string; failOnFlake?: boolean; quarantine?: boolean },
+      ) => {
+        const g = globals();
+        const retries = opts.retries != null ? Number.parseInt(opts.retries, 10) : undefined;
+        if (opts.retries != null && (Number.isNaN(retries) || retries! < 0)) {
+          console.error('flakefinder: --retries must be a non-negative integer');
+          exitCode = 2;
+          return;
+        }
+        const overrides: Partial<FlakefinderConfig> = {};
+        if (opts.failOnFlake) overrides.failOnFlakes = true;
+        if (retries != null) overrides.liveRetries = retries;
+        const cfg = resolveCfg(g, overrides);
+        const result = await runLive(command, cfg, {
+          retries: retries ?? cfg.liveRetries,
+          cwd: g.cwd,
+          applyQuarantine: opts.quarantine !== false,
+        });
+        console.log(
+          renderTerminal(result.verdicts, {
+            color: g.color && process.stdout.isTTY === true,
+            flakesOnly: false,
+          }),
+        );
+        exitCode = result.finalExitCode;
+      },
+    );
 
   program
     .command('ingest')
@@ -214,7 +227,9 @@ export async function main(argv: string[]): Promise<number> {
         return;
       }
       const targets =
-        files.length > 0 ? files.map((f) => path.resolve(g.cwd, f)) : matchGlobs(g.cwd, cfg.reports);
+        files.length > 0
+          ? files.map((f) => path.resolve(g.cwd, f))
+          : matchGlobs(g.cwd, cfg.reports);
       if (targets.length === 0) {
         console.error(
           'flakefinder: no report files matched — pass files explicitly or set "reports" globs (see flakefinder init)',
@@ -312,13 +327,16 @@ export async function main(argv: string[]): Promise<number> {
       const cfg = resolveCfg(g);
       const store = storeFor(g, cfg);
       const verdicts = classifyAll(store.runs(), cfg);
-      const runs = store.runs().slice(-50).map((r) => ({
-        runId: r.runId,
-        timestamp: r.timestamp,
-        commitSha: r.commitSha,
-        passCount: r.results.filter((t) => t.status === 'pass').length,
-        failCount: r.results.filter((t) => t.status === 'fail' || t.status === 'error').length,
-      }));
+      const runs = store
+        .runs()
+        .slice(-50)
+        .map((r) => ({
+          runId: r.runId,
+          timestamp: r.timestamp,
+          commitSha: r.commitSha,
+          passCount: r.results.filter((t) => t.status === 'pass').length,
+          failCount: r.results.filter((t) => t.status === 'fail' || t.status === 'error').length,
+        }));
       const html = renderDashboard({
         generatedAt: new Date().toISOString(),
         flakefinderVersion: FLAKEFINDER_VERSION,
@@ -351,13 +369,19 @@ export async function main(argv: string[]): Promise<number> {
         }
         console.log(`${entries.length} quarantined test(s):`);
         for (const e of entries) {
-          console.log(`  ${e.testId}  ${e.suite} :: ${e.name}  (score ${e.flakeScore}, ${e.reason})`);
+          console.log(
+            `  ${e.testId}  ${e.suite} :: ${e.name}  (score ${e.flakeScore}, ${e.reason})`,
+          );
         }
         const runner = cfg.runner === 'auto' ? detectRunner(g.cwd) : cfg.runner;
         if (runner === 'go' || runner === 'generic') {
-          console.log(`note: runner "${runner}" has no per-test exclusion — entries are informational only`);
+          console.log(
+            `note: runner "${runner}" has no per-test exclusion — entries are informational only`,
+          );
         } else {
-          console.log(`next run will add: ${exclusionArgs(runner as Exclude<RunnerKind, 'auto'>, entries).join(' ')}`);
+          console.log(
+            `next run will add: ${exclusionArgs(runner as Exclude<RunnerKind, 'auto'>, entries).join(' ')}`,
+          );
         }
         return;
       }
@@ -371,7 +395,9 @@ export async function main(argv: string[]): Promise<number> {
         const verdicts = classifyAll(storeFor(g, cfg).runs(), cfg);
         const v = verdicts.find((x) => x.testId === testId);
         if (!v) {
-          console.error(`flakefinder: testId ${testId} not in history — run "flakefinder report --format json" to list testIds`);
+          console.error(
+            `flakefinder: testId ${testId} not in history — run "flakefinder report --format json" to list testIds`,
+          );
           exitCode = 2;
           return;
         }
@@ -384,7 +410,9 @@ export async function main(argv: string[]): Promise<number> {
           flakeScore: v.flakeScore,
         });
         qm.save();
-        console.log(`quarantined ${v.suite} :: ${v.name} (${v.classification}, score ${v.flakeScore})`);
+        console.log(
+          `quarantined ${v.suite} :: ${v.name} (${v.classification}, score ${v.flakeScore})`,
+        );
         console.log(`quarantine list: ${qPath}`);
         return;
       }
@@ -423,8 +451,13 @@ export async function main(argv: string[]): Promise<number> {
 
   program
     .command('ci')
-    .description('CI one-shot: ingest configured reports, report, GitHub annotations, snapshot diff')
-    .option('--fail-on-new-flakes', 'exit 1 when flakes appear that were not flaky in the previous snapshot')
+    .description(
+      'CI one-shot: ingest configured reports, report, GitHub annotations, snapshot diff',
+    )
+    .option(
+      '--fail-on-new-flakes',
+      'exit 1 when flakes appear that were not flaky in the previous snapshot',
+    )
     .action((opts: { failOnNewFlakes?: boolean }) => {
       const g = globals();
       const cfg = resolveCfg(g);
@@ -498,7 +531,8 @@ export async function main(argv: string[]): Promise<number> {
 
       if (opts.failOnNewFlakes && newFlakes.length > 0) {
         console.error(`flakefinder ci: ${newFlakes.length} NEW flake(s):`);
-        for (const v of newFlakes) console.error(`  ${v.suite} :: ${v.name} (score ${v.flakeScore})`);
+        for (const v of newFlakes)
+          console.error(`  ${v.suite} :: ${v.name} (score ${v.flakeScore})`);
         exitCode = 1;
       }
     });
@@ -514,7 +548,11 @@ export async function main(argv: string[]): Promise<number> {
     await program.parseAsync(argv, { from: 'user' });
   } catch (err) {
     const e = err as { code?: string; message?: string };
-    if (e.code === 'commander.help' || e.code === 'commander.version' || e.code === 'commander.helpDisplayed') {
+    if (
+      e.code === 'commander.help' ||
+      e.code === 'commander.version' ||
+      e.code === 'commander.helpDisplayed'
+    ) {
       return 0;
     }
     console.error(`flakefinder: ${e.message ?? 'unknown error'}`);

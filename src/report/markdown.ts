@@ -37,10 +37,11 @@ function classLabel(v: TestVerdict): string {
   }
 }
 
-function table(
-  rows: Array<{ v: TestVerdict; delta: string }>,
-): string {
-  const lines = ['| Test | Suite | Class | Score | Conf | Δ |', '| --- | --- | --- | --- | --- | --- |'];
+function table(rows: Array<{ v: TestVerdict; delta: string }>): string {
+  const lines = [
+    '| Test | Suite | Class | Score | Conf | Δ |',
+    '| --- | --- | --- | --- | --- | --- |',
+  ];
   for (const { v, delta } of rows) {
     lines.push(
       `| ${cell(v.name, 60)} | ${cell(v.suite, 40)} | ${classLabel(v)} | ${v.flakeScore} | ${v.confidence}% | ${delta} |`,
@@ -59,7 +60,9 @@ function flakeRows(verdicts: TestVerdict[]): Array<{ v: TestVerdict; delta: stri
 /** Standalone markdown report (`flakefinder report --format md`). */
 export function renderMarkdown(verdicts: TestVerdict[], opts: { flakesOnly: boolean }): string {
   const flaky = flakeRows(verdicts);
-  const failing = verdicts.filter((v) => v.classification === 'failing' || v.classification === 'new-failure');
+  const failing = verdicts.filter(
+    (v) => v.classification === 'failing' || v.classification === 'new-failure',
+  );
   const sections: string[] = ['## flakefinder report', ''];
   if (flaky.length > 0) {
     sections.push(`**Flaky tests: ${flaky.length}**`, '', table(flaky), '');
@@ -67,7 +70,12 @@ export function renderMarkdown(verdicts: TestVerdict[], opts: { flakesOnly: bool
     sections.push('✅ no flakes detected', '');
   }
   if (failing.length > 0) {
-    sections.push(`**Deterministic failures: ${failing.length}**`, '', table(failing.map((v) => ({ v, delta: '' }))), '');
+    sections.push(
+      `**Deterministic failures: ${failing.length}**`,
+      '',
+      table(failing.map((v) => ({ v, delta: '' }))),
+      '',
+    );
   }
   if (!opts.flakesOnly) {
     const passing = verdicts.filter((v) => v.classification === 'passing').length;
@@ -83,11 +91,11 @@ export function renderMarkdown(verdicts: TestVerdict[], opts: { flakesOnly: bool
 export function buildPrComment(verdicts: TestVerdict[], previous: TestVerdict[] | null): string {
   const prevFlaky = new Set((previous ?? []).filter(isFlaky).map((v) => v.testId));
   const prevScore = new Map((previous ?? []).map((v) => [v.testId, v.flakeScore]));
-  const flaky = verdicts
-    .filter(isFlaky)
-    .sort((a, b) => b.flakeScore - a.flakeScore);
+  const flaky = verdicts.filter(isFlaky).sort((a, b) => b.flakeScore - a.flakeScore);
   const newFlakes = flaky.filter((v) => !prevFlaky.has(v.testId));
-  const failing = verdicts.filter((v) => v.classification === 'failing' || v.classification === 'new-failure');
+  const failing = verdicts.filter(
+    (v) => v.classification === 'failing' || v.classification === 'new-failure',
+  );
 
   const rows = flaky.map((v) => {
     if (!previous) return { v, delta: '—' };
@@ -110,7 +118,10 @@ export function buildPrComment(verdicts: TestVerdict[], previous: TestVerdict[] 
   const detailCount = Math.min(newFlakes.length, 5);
   for (let i = 0; i < detailCount; i++) {
     const v = newFlakes[i]!;
-    out.push(`<details><summary><code>${cell(v.name, 60)}</code> — score ${v.flakeScore}</summary>`, '');
+    out.push(
+      `<details><summary><code>${cell(v.name, 60)}</code> — score ${v.flakeScore}</summary>`,
+      '',
+    );
     out.push('````text');
     out.push((v.lastMessage ?? '(no failure message recorded)').slice(0, 400));
     out.push('````', '');
@@ -121,8 +132,14 @@ export function buildPrComment(verdicts: TestVerdict[], previous: TestVerdict[] 
     out.push('</details>', '');
   }
   if (newFlakes.length > detailCount) {
-    out.push(`_…and ${newFlakes.length - detailCount} more new flake(s) — see the dashboard artifact._`, '');
+    out.push(
+      `_…and ${newFlakes.length - detailCount} more new flake(s) — see the dashboard artifact._`,
+      '',
+    );
   }
-  out.push('---', '_📊 HTML dashboard uploaded as artifact `flakefinder-dashboard` · docs: `docs/github-action.md`_');
+  out.push(
+    '---',
+    '_📊 HTML dashboard uploaded as artifact `flakefinder-dashboard` · docs: `docs/github-action.md`_',
+  );
   return out.join('\n');
 }

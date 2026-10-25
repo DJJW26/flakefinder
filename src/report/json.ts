@@ -1,6 +1,7 @@
 // STUB — Agent C owns this file. Replace/refine entirely (PLAN §12).
-import { FLAKEFINDER_VERSION } from '../types.js';
+
 import type { ResolvedConfig, TestVerdict } from '../types.js';
+import { FLAKEFINDER_VERSION } from '../types.js';
 
 export interface JsonResult {
   generatedAt: string;

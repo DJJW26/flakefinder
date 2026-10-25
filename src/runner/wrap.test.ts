@@ -62,7 +62,11 @@ describe('runLive', () => {
   it('separates retry-rescued flakes from deterministic failures', async () => {
     const cwd = tmpCwd();
     writeFileSync(path.join(cwd, 'script.js'), SCRIPT_FLAKY, 'utf8');
-    const result = await runLive(['node', 'script.js'], cfg(), { retries: 2, cwd, applyQuarantine: false });
+    const result = await runLive(['node', 'script.js'], cfg(), {
+      retries: 2,
+      cwd,
+      applyQuarantine: false,
+    });
 
     expect(result.finalExitCode).toBe(1); // broken test keeps failing
     expect(result.attempts).toHaveLength(3); // flakiness prevented early exit
@@ -78,7 +82,11 @@ describe('runLive', () => {
   it('stops after a clean first attempt', async () => {
     const cwd = tmpCwd();
     writeFileSync(path.join(cwd, 'script.js'), SCRIPT_ALL_PASS, 'utf8');
-    const result = await runLive(['node', 'script.js'], cfg(), { retries: 3, cwd, applyQuarantine: false });
+    const result = await runLive(['node', 'script.js'], cfg(), {
+      retries: 3,
+      cwd,
+      applyQuarantine: false,
+    });
     expect(result.attempts).toHaveLength(1);
     expect(result.finalExitCode).toBe(0);
     const stable = result.verdicts.find((v) => v.name === 'stable test')!;
@@ -88,11 +96,11 @@ describe('runLive', () => {
   it('falls back to suite-level verdict when no reports match', async () => {
     const cwd = tmpCwd();
     writeFileSync(path.join(cwd, 'script.js'), SCRIPT_EXIT_FLIP, 'utf8');
-    const result = await runLive(
-      ['node', 'script.js'],
-      cfg({ reports: ['nothing*.xml'] }),
-      { retries: 2, cwd, applyQuarantine: false },
-    );
+    const result = await runLive(['node', 'script.js'], cfg({ reports: ['nothing*.xml'] }), {
+      retries: 2,
+      cwd,
+      applyQuarantine: false,
+    });
     expect(result.usedReportFiles).toEqual([]);
     expect(result.attempts).toEqual([]);
     expect(result.suiteFlake).toBe(true); // exit 1 then exit 0
@@ -126,7 +134,11 @@ describe('runLive', () => {
     );
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const result = await runLive(['node', 'script.js'], cfg(), { retries: 1, cwd, applyQuarantine: true });
+    const result = await runLive(['node', 'script.js'], cfg(), {
+      retries: 1,
+      cwd,
+      applyQuarantine: true,
+    });
 
     expect(log.mock.calls.some((c) => String(c[0]).includes('quarantine active'))).toBe(true);
     const argv = JSON.parse(readFileSync(path.join(cwd, 'args.txt'), 'utf8')) as string[];
@@ -139,16 +151,27 @@ describe('runLive', () => {
 
   it('failOnFlakes makes a rescued flake exit non-zero', async () => {
     const cwd = tmpCwd();
-    writeFileSync(path.join(cwd, 'script.js'), SCRIPT_FLAKY.replace("process.exit(1);", `
+    writeFileSync(
+      path.join(cwd, 'script.js'),
+      SCRIPT_FLAKY.replace(
+        'process.exit(1);',
+        `
 const fs2 = require('fs');
 const rep = JSON.parse(fs2.readFileSync('out.json', 'utf8'));
 process.exit(rep.testResults[0].assertionResults.some(a => a.status === 'failed') ? 1 : 0);
-`), 'utf8');
+`,
+      ),
+      'utf8',
+    );
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'warn').mockImplementation(() => {});
-    // attempt 1: counter 1 → flaky fails → exit 1. attempt 2: counter 2 → both pass? broken still failed → exit 1... 
+    // attempt 1: counter 1 → flaky fails → exit 1. attempt 2: counter 2 → both pass? broken still failed → exit 1...
     // broken test always fails, so the command never exits 0; flaky is still rescued (retryRescue).
-    const result = await runLive(['node', 'script.js'], cfg({ failOnFlakes: true }), { retries: 1, cwd, applyQuarantine: false });
+    const result = await runLive(['node', 'script.js'], cfg({ failOnFlakes: true }), {
+      retries: 1,
+      cwd,
+      applyQuarantine: false,
+    });
     expect(result.verdicts.some((v) => v.classification.startsWith('flaky'))).toBe(true);
     expect(result.finalExitCode).toBe(1);
   }, 60_000);

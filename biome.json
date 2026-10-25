@@ -15,6 +15,12 @@
       "suspicious": {
         "noExplicitAny": "off",
         "noConsole": "off"
+      },
+      "complexity": {
+        "noUselessStringRaw": "off"
+      },
+      "style": {
+        "noNonNullAssertion": "off"
       }
     }
   },

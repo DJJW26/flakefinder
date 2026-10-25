@@ -35,7 +35,10 @@ describe('renderTerminal', () => {
 
   it('renders a section per problem class with counts and rows', () => {
     const out = renderTerminal(
-      [verdict(), verdict({ testId: 'd4', classification: 'failing', name: 'always dies', flakeScore: 0 })],
+      [
+        verdict(),
+        verdict({ testId: 'd4', classification: 'failing', name: 'always dies', flakeScore: 0 }),
+      ],
       { color: false, flakesOnly: false },
     );
     expect(out).toContain('FLAKY (confirmed) — 1');
@@ -47,7 +50,10 @@ describe('renderTerminal', () => {
   });
 
   it('includes the healthy summary line unless flakesOnly', () => {
-    const verdicts = [verdict(), verdict({ testId: 'p1', classification: 'passing', flakeScore: 0 })];
+    const verdicts = [
+      verdict(),
+      verdict({ testId: 'p1', classification: 'passing', flakeScore: 0 }),
+    ];
     const withSummary = renderTerminal(verdicts, { color: false, flakesOnly: false });
     expect(withSummary).toContain('ok: 1 passing');
     const flakesOnly = renderTerminal(verdicts, { color: false, flakesOnly: true });
@@ -94,10 +100,10 @@ describe('renderTerminal', () => {
   });
 
   it('long test names are middle-truncated to keep rows readable', () => {
-    const out = renderTerminal(
-      [verdict({ name: 'x'.repeat(120), suite: 's'.repeat(40) })],
-      { color: false, flakesOnly: false },
-    );
+    const out = renderTerminal([verdict({ name: 'x'.repeat(120), suite: 's'.repeat(40) })], {
+      color: false,
+      flakesOnly: false,
+    });
     expect(out).toContain('…');
     expect(out.split('\n').every((l) => l.length <= 160)).toBe(true);
   });

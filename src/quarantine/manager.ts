@@ -66,8 +66,7 @@ export class QuarantineManager {
     const kept: QuarantineEntry[] = [];
     for (const entry of this.file.entries) {
       const v = byId.get(entry.testId);
-      const healthy =
-        v !== undefined && v.classification === 'passing' && v.runsObserved >= 10;
+      const healthy = v !== undefined && v.classification === 'passing' && v.runsObserved >= 10;
       const quarantinedMs = Date.parse(entry.quarantinedAt);
       const agedOut =
         v?.classification === 'gone' &&

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { durationStats, median, p95 } from './stats.js';
 import type { Observation } from '../types.js';
+import { durationStats, median, p95 } from './stats.js';
 
 describe('median', () => {
   it('returns null for empty input', () => {
