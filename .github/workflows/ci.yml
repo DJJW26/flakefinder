@@ -1,0 +1,65 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx biome check src tests
+      - run: npx tsc -p .
+      - run: npx vitest run
+      - run: npm run build
+      - name: dist is committed and up to date
+        run: |
+          git diff --exit-code dist/ || (echo '::error::dist/ is stale — run "npm run build" and commit' && exit 1)
+
+  matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npx vitest run
+      - run: npm run build
+      - run: node dist/cli.js version
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Cache jest fixture deps
+        uses: actions/cache@v4
+        with:
+          path: fixtures/jest-project/node_modules
+          key: jest-fixture-${{ hashFiles('fixtures/jest-project/package.json') }}
+      - run: npm ci
+      - run: npm run build
+      - run: node scripts/e2e.mjs

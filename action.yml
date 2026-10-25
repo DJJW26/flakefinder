@@ -1,0 +1,42 @@
+name: flakefinder
+description: Detect, track and quarantine flaky tests. History-aware PR comments, HTML dashboard artifact.
+branding:
+  icon: activity
+  color: orange
+
+inputs:
+  reports:
+    description: 'Comma-separated report globs (overrides flakefinder.config.json)'
+    required: false
+  github-token:
+    description: 'Token used for PR comments'
+    default: ${{ github.token }}
+  fail-on-new-flakes:
+    description: 'Fail the job if NEW flakes appear'
+    default: 'false'
+  comment:
+    description: 'Comment on pull requests'
+    default: 'true'
+  upload-dashboard:
+    description: 'Upload the HTML dashboard as an artifact'
+    default: 'true'
+  history-max-runs:
+    description: 'How many runs of history to retain'
+    default: '300'
+  working-directory:
+    description: 'Directory containing reports/config (for monorepos)'
+    default: '.'
+
+outputs:
+  flaky-count:
+    description: 'Total flaky tests'
+  new-flaky-count:
+    description: 'Flakes not flagged in the previous run'
+  failing-count:
+    description: 'Deterministically failing tests'
+  report-json:
+    description: 'Path to the written JSON report'
+
+runs:
+  using: node20
+  main: dist/action/index.js

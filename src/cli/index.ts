@@ -16,6 +16,7 @@ import { QuarantineManager, exclusionArgs } from '../quarantine/manager.js';
 import { renderJson } from '../report/json.js';
 import { renderTerminal } from '../report/terminal.js';
 import { renderDashboard } from '../report/html.js';
+import { renderMarkdown } from '../report/markdown.js';
 import { runLive } from '../runner/wrap.js';
 import { HistoryStore, snapshotPath } from '../store/history-store.js';
 import { FLAKEFINDER_VERSION } from '../types.js';
@@ -280,11 +281,11 @@ export async function main(argv: string[]): Promise<number> {
         return;
       }
       if (opts.format === 'md') {
-        // lazy import avoids a hard dependency at module load; markdown is Agent A's module
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        import('../report/markdown.js').then(({ renderMarkdown }) => {
-          console.log(renderMarkdown(filterVerdicts(verdicts, { all: opts.all, threshold }, cfg), { flakesOnly: !opts.all }));
-        });
+        console.log(
+          renderMarkdown(filterVerdicts(verdicts, { all: opts.all, threshold }, cfg), {
+            flakesOnly: !opts.all,
+          }),
+        );
         return;
       }
       if (opts.format !== 'table') {
