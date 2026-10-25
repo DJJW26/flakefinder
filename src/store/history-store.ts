@@ -43,50 +43,63 @@ export class HistoryStore {
     if (this.loaded) return;
     this.loaded = true;
     if (!existsSync(this.path)) return;
-    const lines = readFileSync(this.path, 'utf8').split(/\r?\n/);
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!.trim();
-      if (!line) continue;
-      let parsed: Record<string, unknown>;
-      try {
-        parsed = JSON.parse(line) as Record<string, unknown>;
-      } catch {
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      // Schema marker: {"version":N} with no record fields. Legitimate at
-      // line 0; elsewhere it means a merged/partial write — skip it, don't
-      // crash downstream (RunRecord consumers iterate `results`).
-      if (parsed.runId === undefined && parsed.results === undefined) {
-        if (typeof parsed.version === 'number') {
-          if (i === 0) this.formatVersion = parsed.version;
-          else if (this.warnings.length < 10) {
-            this.warnings.push(`unexpected schema marker at line ${i + 1} — skipped`);
-          }
-          continue;
-        }
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping record-shaped garbage at line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      // Record shape validation: anything without a runId + results array is
-      // skipped with a warning instead of blowing up the classifier later.
-      if (typeof parsed.runId !== 'string' || !Array.isArray(parsed.results)) {
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping invalid record at line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      this.records.push(parsed as unknown as RunRecord);
+    // Indexed line iteration instead of split(): stores hold large records
+    // (a run with 500 tests ≈ 44 KB/line), and split() duplicates the whole
+    // file as a string array — this keeps peak memory to one copy.
+    const raw = readFileSync(this.path, 'utf8');
+    let start = 0;
+    let lineNo = 0;
+    while (start < raw.length) {
+      let end = raw.indexOf('\n', start);
+      if (end === -1) end = raw.length;
+      const line = raw.slice(start, end).trim();
+      lineNo++;
+      this.processLine(line, lineNo);
+      start = end + 1;
     }
     if (this.formatVersion !== null && this.formatVersion > STORE_FORMAT_VERSION) {
       this.warnings.unshift(
         `store format v${this.formatVersion} is newer than this flakefinder (v${STORE_FORMAT_VERSION}) — unknown fields will be preserved`,
       );
     }
+  }
+
+  private processLine(line: string, i: number): void {
+    if (!line) return;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping corrupt line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    // Schema marker: {"version":N} with no record fields. Legitimate at
+    // line 0; elsewhere it means a merged/partial write — skip it, don't
+    // crash downstream (RunRecord consumers iterate `results`).
+    if (parsed.runId === undefined && parsed.results === undefined) {
+      if (typeof parsed.version === 'number') {
+        if (i === 1) this.formatVersion = parsed.version;
+        else if (this.warnings.length < 10) {
+          this.warnings.push(`unexpected schema marker at line ${i} — skipped`);
+        }
+        return;
+      }
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping record-shaped garbage at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    // Record shape validation: anything without a runId + results array is
+    // skipped with a warning instead of blowing up the classifier later.
+    if (typeof parsed.runId !== 'string' || !Array.isArray(parsed.results)) {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping invalid record at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    this.records.push(parsed as unknown as RunRecord);
   }
 
   private ensureHeader(): void {
