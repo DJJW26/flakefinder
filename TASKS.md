@@ -134,3 +134,12 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P10.7 Phase D: D5 community templates (bug/parser-request/PR) · D2 dashboard render cap 500 + show-all toggle · D1 PR comments → plain fetch + env-parsed context (octokit removed from OUR code; bundle unchanged because @actions/artifact depends on it transitively — raw blob-upload protocol rejected as fragile) · D3 TRX/TAP DEFERRED (needs real tool-output samples to avoid shipping guesswork parsers)
 - ✅ P10.8 docs/CLOUD_SCALING.md — cloud migration research (competitor landscape, staged path: engine extraction → ingest API → hosted dashboard → GitHub App → self-hosted; Postgres/JSONB storage rationale; security/privacy requirements; pricing sketch)
 - ✅ P10.9 OVERNIGHT_DONE — loop complete
+
+## Phase 11 — Phase D continuation (user-resumable: state kept in TASKS + commits)
+
+- ✅ P11.0 Continuation started (D1/D2/D5 already shipped in Phase 10; D3 un-deferred via real-output research, D4 GitLab MR notes)
+- 🔄 P11.1 D3a: node:test TAP parser (fixture from REAL `node --test --test-reporter=tap` output generated locally)
+- ⬜ P11.2 D3b: TRX (.NET) parser (fixture from Microsoft's documented schema via research)
+- ⬜ P11.3 D4: GitLab MR notes in `ci` (env-driven: GITLAB_CI/CI_MERGE_REQUEST_IID/GITLAB_TOKEN)
+- ⬜ P11.4 Docs (README formats table, USAGE) + PLAN sync
+- ⬜ P11.5 Release v1.1.0 via scripts/release.mjs --push + CI watch

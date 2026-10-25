@@ -94,7 +94,8 @@ export async function upsertPrComment(
   if (!ctx.isPr || ctx.prNumber === null) return;
   // collect all comment pages
   const comments: GhComment[] = [];
-  let url: string | null = `${ctx.apiUrl}/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments?per_page=100`;
+  let url: string | null =
+    `${ctx.apiUrl}/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments?per_page=100`;
   while (url) {
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
@@ -108,9 +109,21 @@ export async function upsertPrComment(
   }
   const existing = comments.find((c) => (c.body ?? '').includes(PR_COMMENT_MARKER));
   if (existing) {
-    await ghRest(ctx.apiUrl, token, 'PATCH', `/repos/${ctx.owner}/${ctx.repo}/issues/comments/${existing.id}`, { body });
+    await ghRest(
+      ctx.apiUrl,
+      token,
+      'PATCH',
+      `/repos/${ctx.owner}/${ctx.repo}/issues/comments/${existing.id}`,
+      { body },
+    );
   } else {
-    await ghRest(ctx.apiUrl, token, 'POST', `/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments`, { body });
+    await ghRest(
+      ctx.apiUrl,
+      token,
+      'POST',
+      `/repos/${ctx.owner}/${ctx.repo}/issues/${ctx.prNumber}/comments`,
+      { body },
+    );
   }
 }
 
@@ -219,7 +232,11 @@ async function actionMain(): Promise<void> {
         .filter((v) => v.classification.startsWith('flaky-'))
         .sort((a, b) => b.flakeScore - a.flakeScore)
         .slice(0, 20)
-        .map((v) => [`${redact(v.suite)} :: ${redact(v.name)}`, v.classification, String(v.flakeScore)]),
+        .map((v) => [
+          `${redact(v.suite)} :: ${redact(v.name)}`,
+          v.classification,
+          String(v.flakeScore),
+        ]),
     ])
     .write();
 
@@ -236,13 +253,16 @@ async function actionMain(): Promise<void> {
   // 8. dashboard artifact
   if (core.getBooleanInput('upload-dashboard')) {
     try {
-      const runs = outcome.store.runs().slice(-50).map((r) => ({
-        runId: r.runId,
-        timestamp: r.timestamp,
-        commitSha: r.commitSha,
-        passCount: r.results.filter((t) => t.status === 'pass').length,
-        failCount: r.results.filter((t) => t.status === 'fail' || t.status === 'error').length,
-      }));
+      const runs = outcome.store
+        .runs()
+        .slice(-50)
+        .map((r) => ({
+          runId: r.runId,
+          timestamp: r.timestamp,
+          commitSha: r.commitSha,
+          passCount: r.results.filter((t) => t.status === 'pass').length,
+          failCount: r.results.filter((t) => t.status === 'fail' || t.status === 'error').length,
+        }));
       const html = renderDashboard({
         generatedAt: new Date().toISOString(),
         flakefinderVersion: FLAKEFINDER_VERSION,
@@ -262,7 +282,9 @@ async function actionMain(): Promise<void> {
 
   // 9. fail gate
   if (core.getBooleanInput('fail-on-new-flakes') && newFlakes.length > 0) {
-    const names = newFlakes.map((v) => `  • ${v.suite} :: ${v.name} (score ${v.flakeScore})`).join('\n');
+    const names = newFlakes
+      .map((v) => `  • ${v.suite} :: ${v.name} (score ${v.flakeScore})`)
+      .join('\n');
     core.setFailed(`flakefinder: ${newFlakes.length} NEW flaky test(s):\n${names}`);
   }
 }

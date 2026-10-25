@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <TestDefinitions>
+    <UnitTest name="CalculatorTests.DividesEvenly" storage="calculator.dll">
+      <TestMethod className="App.CalculatorTests" name="DividesEvenly"/>
+    </UnitTest>
+    <UnitTest name="CalculatorTests.ExplodesOnZero" storage="calculator.dll">
+      <TestMethod className="App.CalculatorTests" name="ExplodesOnZero"/>
+    </UnitTest>
+    <UnitTest name="CalculatorTests.NotExecutedYet" storage="calculator.dll">
+      <TestMethod className="App.CalculatorTests" name="NotExecutedYet"/>
+    </UnitTest>
+  </TestDefinitions>
+  <Results>
+    <UnitTestResult testName="CalculatorTests.DividesEvenly" outcome="Passed" duration="00:00:00.1230000">
+      <Output>
+        <StdOut>test ran</StdOut>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult testName="CalculatorTests.ExplodesOnZero" outcome="Failed" duration="00:00:00.4560000">
+      <Output>
+        <ErrorInfo>
+          <Message>DivideByZeroException: attempted to divide by zero at App.Calculator.Divide</Message>
+          <StackTrace>   at App.Calculator.Divide(Int32 a, Int32 b)&#10;   at App.CalculatorTests.ExplodesOnZero()</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult testName="CalculatorTests.NotExecutedYet" outcome="NotExecuted" />
+    <UnitTestResult outcome="Failed" duration="00:00:00.0010000" />
+  </Results>
+</TestRun>

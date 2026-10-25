@@ -6,8 +6,8 @@ const load = (name: string): string =>
   readFileSync(new URL(`../../tests/parsers-fixtures/${name}`, import.meta.url), 'utf8');
 
 describe('parsers registry', () => {
-  it('exposes the four parsers in contract order', () => {
-    expect(parsers.map((p) => p.name)).toEqual(['junit', 'jest', 'mocha', 'go']);
+  it('exposes the six parsers in contract order', () => {
+    expect(parsers.map((p) => p.name)).toEqual(['junit', 'jest', 'mocha', 'go', 'tap', 'trx']);
   });
 });
 

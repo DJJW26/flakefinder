@@ -1,0 +1,68 @@
+TAP version 13
+# Subtest: math
+    # Subtest: adds numbers
+    ok 1 - adds numbers
+      ---
+      duration_ms: 0.3793
+      ...
+    # Subtest: subtracts badly
+    not ok 2 - subtracts badly
+      ---
+      duration_ms: 0.3905
+      location: 'C:\repo\tests\sample.test.mjs:6:3'
+      failureType: 'testCodeFailure'
+      error: 'subtraction is broken'
+      code: 'ERR_ASSERTION'
+      name: 'AssertionError'
+      expected: 2
+      actual: 0
+      operator: '=='
+      stack: |-
+        TestContext.<anonymous> (file:///C:/repo/tests/sample.test.mjs:6:42)
+        Test.run (node:internal/test_runner/test:931:25)
+      ...
+    # Subtest: inner
+        # Subtest: nested multiply
+        ok 1 - nested multiply
+          ---
+          duration_ms: 0.1219
+          ...
+        # Subtest: skipped one
+        ok 2 - skipped one # SKIP not ready yet
+          ---
+          duration_ms: 0.1119
+          ...
+        1..2
+    ok 3 - inner
+      ---
+      duration_ms: 0.8172
+      type: 'suite'
+      ...
+    1..3
+not ok 1 - math
+  ---
+  duration_ms: 2.2103
+  type: 'suite'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: root level pass
+ok 2 - root level pass
+  ---
+  duration_ms: 0.0662
+  ...
+# Subtest: todo probe
+not ok 3 - todo probe # TODO
+  ---
+  duration_ms: 0.1917
+  failureType: 'testCodeFailure'
+  error: '1 == 2'
+  ...
+1..3
+# tests 6
+# suites 2
+# pass 3
+# fail 1
+# skipped 1
+# todo 1

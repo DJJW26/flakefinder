@@ -13,8 +13,17 @@ import { goTestParser } from './gotest.js';
 import { jestParser } from './jest.js';
 import { junitParser } from './junit.js';
 import { mochaParser } from './mocha.js';
+import { tapParser } from './tap.js';
+import { trxParser } from './trx.js';
 
-export const parsers: ReportParser[] = [junitParser, jestParser, mochaParser, goTestParser];
+export const parsers: ReportParser[] = [
+  junitParser,
+  jestParser,
+  mochaParser,
+  goTestParser,
+  tapParser,
+  trxParser,
+];
 
 export function detectParser(content: string): ReportParser | null {
   for (const parser of parsers) {
