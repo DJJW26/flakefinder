@@ -142,4 +142,4 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P11.2 D3b: TRX parser — documented-schema fixture (dotnet unavailable locally); className suites, ErrorInfo→error, NotExecuted→skip, TRX duration parsing
 - ✅ P11.3 D4: GitLab MR notes — env-driven (src/report/gitlab.ts), marker-scoped upsert, fetch-injected tests, failures never fail the job
 - ✅ P11.4 Docs: README formats table (+TAP/TRX rows), USAGE report-formats + GitLab section, CHANGELOG 1.1.0
-- ⬜ P11.5 Release v1.1.0 via scripts/release.mjs --push + CI watch
+- ✅ P11.5 v1.1.0 released via automation — CI + release workflow green on first poll (f1f9f8a)
