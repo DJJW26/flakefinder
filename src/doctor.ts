@@ -6,9 +6,10 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { CONFIG_FILE_NAME, detectRunner, loadConfig, resolveConfig } from './config.js';
+import { detectRunner, loadConfig, resolveConfig } from './config.js';
 import { QuarantineManager } from './quarantine/manager.js';
 import { HistoryStore } from './store/history-store.js';
+import type { ResolvedConfig } from './types.js';
 import { matchGlobs } from './util/glob.js';
 
 export interface DoctorLine {
@@ -29,7 +30,7 @@ export function runDoctor(cwd: string): DoctorResult {
   let ok = true;
 
   // 1. config
-  let config;
+  let config: ResolvedConfig;
   try {
     const { config: cfg, path: configPath } = loadConfig(cwd);
     config = resolveConfig(cfg);
