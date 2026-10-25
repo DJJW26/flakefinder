@@ -9,7 +9,7 @@ import path from 'node:path';
 import { detectRunner, loadConfig, resolveConfig } from './config.js';
 import { QuarantineManager } from './quarantine/manager.js';
 import { HistoryStore } from './store/history-store.js';
-import type { ResolvedConfig } from './types.js';
+import type { QuarantineEntry, ResolvedConfig } from './types.js';
 import { matchGlobs } from './util/glob.js';
 
 export interface DoctorLine {
@@ -133,7 +133,7 @@ export function runDoctor(cwd: string): DoctorResult {
   // 6. quarantine
   const qPath = path.resolve(cwd, config.quarantineFile);
   if (existsSync(qPath)) {
-    let entries;
+    let entries: QuarantineEntry[];
     try {
       entries = new QuarantineManager(qPath).list();
     } catch (err) {

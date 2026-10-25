@@ -126,12 +126,11 @@ describe('store format header (v0.2.0)', () => {
     const a = tmpStore();
     a.append(record('legacy', 'pass'));
     // strip the header to simulate a v0.1.x store
-    const body =
-      readFileSync(a.path, 'utf8')
-        .split('\n')
-        .filter((l) => l.trim() !== '')
-        .slice(1)
-        .join('\n') + '\n';
+    const body = `${readFileSync(a.path, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '')
+      .slice(1)
+      .join('\n')}\n`;
     writeFileSync(a.path, body, 'utf8');
     const b = new HistoryStore(path.dirname(a.path));
     expect(b.formatVersion).toBeNull();
@@ -142,12 +141,11 @@ describe('store format header (v0.2.0)', () => {
   it('prune inserts the header on rewrite of a legacy store', () => {
     const a = tmpStore();
     for (let i = 1; i <= 6; i++) a.append(record(`r${i}`, 'pass'));
-    const body =
-      readFileSync(a.path, 'utf8')
-        .split('\n')
-        .filter((l) => l.trim() !== '')
-        .slice(1)
-        .join('\n') + '\n';
+    const body = `${readFileSync(a.path, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '')
+      .slice(1)
+      .join('\n')}\n`;
     writeFileSync(a.path, body, 'utf8');
     const b = new HistoryStore(path.dirname(a.path));
     b.prune(2);

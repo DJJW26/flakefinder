@@ -108,7 +108,7 @@ export function validateConfig(config: FlakefinderConfig): void {
       (c.reports as unknown[]).every((x) => typeof x === 'string' && x.trim() !== '');
     if (!ok)
       problems.push(
-        'reports: expected array of non-empty glob strings, got ' + describe(c.reports),
+        `reports: expected array of non-empty glob strings, got ${describe(c.reports)}`,
       );
   }
   if (c.storeDir !== undefined && (typeof c.storeDir !== 'string' || c.storeDir.trim() === '')) {

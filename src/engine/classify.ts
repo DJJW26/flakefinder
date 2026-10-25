@@ -36,8 +36,11 @@ function sortRuns(runs: RunRecord[]): RunRecord[] {
     if (g) g.push(r);
     else groups.set(r.runId, [r]);
   }
-  const minTs = (g: RunRecord[]): string =>
-    g.reduce((m, r) => (r.timestamp < m ? r.timestamp : m), g[0]!.timestamp);
+  const minTs = (g: RunRecord[]): string => {
+    let min = g[0]!.timestamp;
+    for (const r of g) if (r.timestamp < min) min = r.timestamp;
+    return min;
+  };
   const ordered: RunRecord[] = [];
   for (const g of [...groups.values()].sort((a, b) => {
     const am = minTs(a);
