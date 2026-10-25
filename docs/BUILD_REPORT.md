@@ -1,7 +1,8 @@
 # flakefinder — Build Report
 
 > How this project was built, and the core mechanisms underneath it.
-> Written by the build orchestrator at v0.1.0. For usage, see [USAGE.md](USAGE.md).
+> Written by the build orchestrator; covers v0.1.0 plus the v0.1.1 QA iteration.
+> For usage, see [USAGE.md](USAGE.md); for the zero-background version, [EXPLAINER.md](EXPLAINER.md).
 
 ## What flakefinder is
 
@@ -55,8 +56,11 @@ Three signals are derived:
   failure. The strongest possible flake signal: identical code, different outcomes.
 - **retryRescues** — consecutive attempt pairs (k fail → k+1 pass) within one
   invocation. The instant-mode signal.
-- **directionChanges** — how many times the per-commit outcome family toggles
-  across distinct commits (fail→pass→fail…). Weaker, statistical.
+- **directionChanges** — how many times the outcome family toggles across
+  distinct code states (fail→pass→fail…). A state is a commit bucket, or a
+  per-run bucket when no commit SHA exists (projects outside git still get
+  flip-flop detection; same-run retry attempts count as one state). Weaker,
+  statistical.
 
 Classification precedence (first match wins):
 
@@ -90,8 +94,13 @@ Every rule above is pinned by table-driven tests in `src/engine/classify.test.ts
 ### Live mode (`run`)
 
 `runLive` snapshots sha256 of all files matching the configured report globs,
-executes the command (`shell: true`, stdio inherited so users see their normal
-test output), then re-hashes. Changed/new files are parsed into attempt
+executes the command (stdio inherited so users see their normal test output),
+then re-hashes. The command spawns **without a shell** by default — argv
+passes verbatim, which eliminates quoting hazards for exclusion patterns with
+spaces — and falls back to shell mode (with our injected values quoted) when
+the command contains shell operators (`>`, `|`, `&&`) or the direct spawn is
+refused: Windows blocks `.cmd` shims like npm without a shell (EINVAL since
+the CVE-2024-27980 fix). Changed/new files are parsed into attempt
 records. Loop stops early on exit 0. Exit codes are contract:
 
 - `0` clean, or failures explained entirely by rescued flakes
@@ -107,8 +116,11 @@ configure reports — never a silent no-op.
 `flakefinder quarantine add <testId>` records the test in
 `flakefinder.quarantine.json`. The next `run` appends **runner-native
 exclusion flags** — `--deselect` (pytest), `-t` with a negative-lookahead
-(jest/vitest), `--grep` (mocha) — never editing your test files. Go has no
-per-test exclusion; the tool says so honestly and reports only.
+(jest/vitest), `--grep` (mocha) — never editing your test files. When the
+command goes through a package-manager wrapper (`npm test`, `yarn test`,
+`pnpm test`), a `--` separator is inserted automatically: npm-family commands
+swallow flags themselves and only forward what follows `--` to the runner.
+Go has no per-test exclusion; the tool says so honestly and reports only.
 
 Prune is deliberately conservative: quarantined tests are excluded from runs,
 so "unseen lately" is NOT evidence of health. Entries leave only on positive
@@ -166,7 +178,7 @@ Everything else — glob matching, JSONC parsing, ANSI, statistics — is
 stdlib-grade code in `src/util`/`src/engine`. The Action bundles
 `@actions/*` separately into `dist/action/index.js`.
 
-**Testing.** 167 unit tests across 17 files: table-driven engine tests (one per
+**Testing.** 171 unit tests across 17 files: table-driven engine tests (one per
 classification rule, score caps, recency tiers), parser fixtures shaped like
 real tool output (including malformed inputs — parsers must warn, never
 throw), store round-trips and corruption tolerance, and an integration test
@@ -186,6 +198,15 @@ so live-detected flakes classify as `flaky-confirmed`, not `flaky-retry` —
 precedence correctly promotes to the stronger signal. `flaky-retry` surfaces
 in CI-less environments where SHAs are absent.
 
+**Post-release QA (v0.1.1).** A second iteration of adversarial testing,
+longitudinal simulation (15 simulated days), scale testing (1,000 tests ×
+7 runs), and docs-accuracy auditing found and fixed two "silent lie" bugs —
+quarantine flags never reaching runners through `npm test` (missing `--`
+separator plus shell-split patterns) and flip-flop detection going blind
+without git SHAs — plus a dead Action input; each fix carries regression
+tests (167 → 171). Full findings, open items, and verified non-bugs:
+[QA_FINDINGS.md](QA_FINDINGS.md).
+
 ## Known limitations (v1)
 
 - Test renames fork history (identity is suite+name).
@@ -195,7 +216,9 @@ in CI-less environments where SHAs are absent.
 - Dashboard shows derived stats per test (score/confidence/flips), not the
   per-observation timeline (the data contract doesn't carry observations to
   the renderer yet — v1.1).
+- No config schema validation (wrong-typed values fail late, not early —
+  top of the QA open-items list).
 
 ## Version
 
-0.1.0 — see CHANGELOG.md. MIT.
+0.1.1 — see CHANGELOG.md. MIT.

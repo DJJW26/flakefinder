@@ -38,9 +38,9 @@ the two straight, so `run` can gate CI without punishing you for known flakes.
 Every parsed run lands in an append-only JSONL store (`.flakefinder/history.jsonl`).
 The engine replays each test's timeline and classifies it: same-commit flips
 (failed *and* passed on one commit — the strongest possible signal), retry
-rescues, and flip-flop patterns across commits each count toward a 0–100 flake
-score with a confidence value. Weeks of CI runs turn into a ranked list of
-worst offenders.
+rescues, and flip-flop patterns across commits (or across runs, when no git
+metadata exists) each count toward a 0–100 flake score with a confidence
+value. Weeks of CI runs turn into a ranked list of worst offenders.
 
 ### Classification
 
@@ -48,7 +48,7 @@ worst offenders.
 |---|---|
 | `FLAKY (confirmed)` | failed **and** passed on the same commit — proven flake |
 | `FLAKY (retry-rescued)` | failed, then passed on a retry of the same run |
-| `FLAKY (suspected)` | direction changed ≥ 2 times across commits; score-gated |
+| `FLAKY (suspected)` | result flipped ≥ 2 times across commits/runs; score-gated |
 | `FAILING` | last 5 observations all failed — real failure |
 | `NEW FAILURE` | failed on the latest run, not enough data yet to say more |
 | passing / skipped / gone | healthy, always-skipped, not seen in 30 runs |
@@ -153,9 +153,11 @@ $ npx flakefinder quarantine prune    # releases entries with positive evidence 
 
 Exclusion is done with runner flags — `pytest --deselect`, `jest -t`,
 `mocha --grep` — computed from the quarantine list at run time. flakefinder
-**never edits your test files**; remove the entry and the test is back. For
-`go` there is no per-test exclusion flag: entries are tracked and reported,
-but not auto-excluded.
+**never edits your test files**; remove the entry and the test is back.
+Package-manager wrappers (`npm test`, `yarn test`, `pnpm test`) are handled
+automatically — the flags are forwarded after `--` so the runner actually
+receives them. For `go` there is no per-test exclusion flag: entries are
+tracked and reported, but not auto-excluded.
 
 ## Design principles
 

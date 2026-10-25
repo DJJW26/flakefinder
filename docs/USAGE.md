@@ -104,11 +104,14 @@ can't detect a runner (pass `--runner` explicitly) or the config exists
 $ npx flakefinder run [-R <n>] [--fail-on-flake] [--no-quarantine] -- <command…>
 ```
 
-Executes `<command>` (everything after `--`, passed through to a shell —
-runner flags and redirects work) up to `retries + 1` times, stopping early on
-exit 0. After each attempt it parses the report files that **changed** and
-records them as attempts of one run. Then it classifies and prints a terminal
-report restricted to the tests observed in this invocation.
+Executes `<command>` (everything after `--`) up to `retries + 1` times,
+stopping early on exit 0. The command is spawned **directly** (no shell) —
+arguments pass through verbatim, including spaces and special characters.
+Commands containing shell operators (`>`, `|`, `&&`) automatically fall back
+to shell mode so redirects keep working. After each attempt it parses the
+report files that **changed** and records them as attempts of one run. Then
+it classifies and prints a terminal report restricted to the tests observed
+in this invocation.
 
 - `-R, --retries <n>` — extra attempts (default: config `liveRetries`, itself
   default 2). `-R 0` runs once with no retries but still records history.
@@ -271,10 +274,13 @@ matter most require *proof*:
   retry rescue is usually *also* a same-commit flip, so it classifies as
   `flaky-confirmed`; without git metadata you'll see `flaky-retry`.
 - **Direction changes → up to +24 points, gated by `minRuns`.** Across
-  *distinct commits*, how many times did the test's result family flip
+  *distinct code states* — commits when git metadata exists, otherwise
+  individual runs — how many times did the test's result family flip
   (pass→fail or fail→pass)? Two or more flips over enough runs is statistical
   suspicion, not proof — hence `flaky-suspected`, score-gated by
-  `flakeScoreThreshold`, and it never fails your build.
+  `flakeScoreThreshold`, and it never fails your build. (Projects outside a
+  git repo get run-level flip tracking automatically; same-run retry attempts
+  count as one state.)
 - **Long track record → +10 points** at ≥ 10 observed runs.
 
 Recency dampens history: flips in the last 14 days count fully, ≤ 30 days at
@@ -298,6 +304,15 @@ Quarantine removes a test from the *run path* without touching source code.
 The list lives in `flakefinder.quarantine.json`; `run` consults it (unless
 `--no-quarantine`), appends the right exclusion flags to your command, and
 prints a notice.
+
+**How the flags reach your runner.** flakefinder spawns your command directly
+(no shell) whenever possible, so patterns with spaces and special characters
+arrive as one intact argument. If your command itself needs a shell
+(redirects like `>`, pipes), it runs through the shell with the exclusion
+values quoted. When the command goes through a package-manager wrapper
+(`npm test`, `yarn test`, `pnpm test`, `bun test`), a `--` separator is
+inserted automatically — npm & friends swallow flags themselves and only
+forward what follows `--` to the underlying runner.
 
 Per runner:
 
@@ -436,13 +451,14 @@ prefer changing assertions over names, or accept the fresh start — scores
 recover within a few runs.
 
 **Windows paths** — use forward slashes in globs (`test-results/*.xml` works
-everywhere). `run` passes your command through a shell, so runner flags and
-`>` redirects behave as in your terminal; quote paths containing spaces. The
-store and reports use `path.join`, so mixed separators in existing files are
-tolerated. In scripts that wrap the CLI, pass the go redirect as **argument
-tokens** (`… -- go test -json ./... ">" test-output.jsonl`) rather than
-letting an outer shell expand it — this repo's `scripts/e2e.mjs` does exactly
-that.
+everywhere). `run` spawns your command directly (no shell) so arguments with
+spaces survive intact; commands with `>` redirects or pipes automatically
+switch to shell mode where they behave as in your terminal — quote paths
+containing spaces in that case. The store and reports use `path.join`, so
+mixed separators in existing files are tolerated. In scripts that wrap the
+CLI, pass the go redirect as **argument tokens**
+(`… -- go test -json ./... ">" test-output.jsonl`) rather than letting an
+outer shell expand it — this repo's `scripts/e2e.mjs` does exactly that.
 
 **"quarantine has entries but runner go has no per-test exclusion"** —
 working as designed: `go test` has no `--deselect` equivalent. Entries stay

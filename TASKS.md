@@ -72,3 +72,18 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P5.3 dist/action/index.js committed (no sourcemap); placeholders <YOUR_GITHUB>/<YOUR_NPM> in
   README/badges/package.json/action docs
 - ✅ P5.4 Final commit + handoff summary
+
+## Phase 6 — Post-release QA iteration (v0.1.1)
+
+- ✅ P6.1 Adversarial + longitudinal + scale testing (concurrency limits blocked QA
+  subagents; orchestrator ran the full battery in-thread)
+- ✅ P6.2 FIXED: quarantine flags never reached runners via npm/yarn/pnpm (missing `--`
+  separator + shell-split patterns) — spawn reworked: no-shell default, shell fallback
+  with quoting, CVE-2024-27980 aware, close-race guarded (+3 tests)
+- ✅ P6.3 FIXED: SHA-less histories blind to flip-flop flakes (runId-bucket fallback,
+  +2 tests) — 143/143 detected in the scale repro, was 0
+- ✅ P6.4 FIXED: Action `history-max-runs` dead input wired into config
+- ✅ P6.5 Docs accuracy audit: 18/18 flags documented correctly; README claims verified
+- ✅ P6.6 docs/QA_FINDINGS.md — fixed/open/non-bugs record; 14 open items ranked
+- ✅ P6.7 All docs updated for v0.1.1 mechanisms; release tagged v0.1.1 (171 tests,
+  e2e 10/10)

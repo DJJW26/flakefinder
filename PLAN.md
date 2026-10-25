@@ -167,9 +167,11 @@ Given chronological `Observation[]` per test (from `RunRecord`s sorted by timest
 - `sameShaFlips`: count of distinct `commitSha` values that observed BOTH families.
 - `retryRescues`: count of consecutive pairs `(attempt k → k+1)` with the SAME `runId` where
   k is fail-family and k+1 is pass-family.
-- `directionChanges`: over the sequence of distinct-commit observations (family per commit =
-  latest family seen on that commit), the number of times family changes between consecutive
-  distinct commits.
+- `directionChanges`: over the sequence of distinct code-state observations, the number of
+  times family changes between consecutive distinct states. A state is a `commitSha` bucket;
+  observations WITHOUT a commitSha (no git repo) bucket by `runId` instead, so SHA-less
+  histories still get statistical flip-flop detection (same-runId retry attempts collapse to
+  one state). Family per state = latest family seen in that state.
 
 Classification precedence (first match wins):
 
@@ -266,8 +268,13 @@ reports (jest-junit config / `pytest --junitxml=...` / `go test -json > test-out
 ## 8. Live-run spec (Agent C, `src/runner/wrap.ts`)
 
 1. Resolve report globs from `cwd`; snapshot `path → sha256` of existing matches.
-2. `attempt = 1..retries+1`: spawn command (`child_process.spawn` with `shell: true`,
-   stdio inherit so the user sees their test output; `cwd` set). Stop early after exit 0.
+2. `attempt = 1..retries+1`: spawn the command (stdio inherit so the user sees their test
+   output; `cwd` set), stopping early after exit 0. Spawn strategy: **no shell by default**
+   (argv passes verbatim — no quoting hazards for quarantine patterns); fall back to shell
+   mode, with our injected values shell-quoted, when the command contains shell operators
+   (`>`, `|`, `&&`) or the direct spawn is refused (Windows blocks `.cmd` shims like npm
+   without a shell — EINVAL since the CVE-2024-27980 fix). Abandoned first attempts' events
+   are ignored (close-race guard).
 3. After each attempt: hash report files again; new-or-changed files are parsed
    (`detectParser`), results → `RunRecord` with the SAME `runId` across attempts, `attempt`
    set, `source: 'live'`, best-effort `commitSha` via `git rev-parse HEAD` (absent → undefined).
@@ -275,7 +282,9 @@ reports (jest-junit config / `pytest --junitxml=...` / `go test -json > test-out
 5. `suiteFlake` fallback: if zero report files ever matched, classify the SUITE: attempts with
    differing exit codes → print warning + suite-level flake verdict (no per-test data).
 6. Quarantine: when `applyQuarantine` and runner is pytest/jest/mocha and entries exist,
-   append `exclusionArgs` to the command. Emit a notice listing quarantined test count.
+   append `exclusionArgs` to the command — inserting a `--` separator first when the command
+   is an npm/yarn/pnpm/bun wrapper (they swallow flags; only post-`--` args reach the runner).
+   Emit a notice listing quarantined test count.
 7. `finalExitCode` per §7 exit rules. `verdicts` restricted to tests observed in THIS
    invocation (testIds present in this invocation's records) — the CLI prints those, while
    history still contains everything.

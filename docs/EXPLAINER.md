@@ -141,7 +141,9 @@ at different times. A healthy test cannot do that. Only a flake can.
 
 Weaker-but-real signals are also counted: rescued-by-retry failures, and
 tests that flip-flop pass/fail across versions without any change being
-related to them.
+related to them. (Don't use Git? The flip-flop tracking falls back to
+comparing individual runs instead of commits — projects outside Git get
+detection too.)
 
 All of this adds up to two numbers per test:
 
