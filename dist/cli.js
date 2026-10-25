@@ -466,23 +466,43 @@ var HistoryStore = class {
       this.releaseLock();
     }
   }
-  /** Keep only the last `maxRuns` records; rewrite the file atomically. */
+  /**
+   * Keep only the last `maxRuns` records; rewrite the file atomically.
+   * Re-reads the file FRESH inside the lock: a stale in-memory snapshot
+   * would silently delete records another process appended between our load
+   * and this prune (verified 10/10 with two concurrent ingests before the
+   * fix). In-memory records are resynced to the fresh state.
+   */
   prune(maxRuns) {
     this.ensureLoaded();
     if (this.records.length <= maxRuns) return;
     this.acquireLock();
     try {
-      this.records = this.records.slice(-maxRuns);
+      const fresh = [];
+      try {
+        const lines = readFileSync3(this.path, "utf8").split(/\r?\n/);
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t) continue;
+          try {
+            const parsed = JSON.parse(t);
+            if (typeof parsed.runId === "string" && Array.isArray(parsed.results)) {
+              fresh.push(parsed);
+            }
+          } catch {
+          }
+        }
+      } catch {
+      }
+      const source = fresh.length > 0 ? fresh : this.records;
+      const keep = source.slice(-maxRuns);
       const tmp = `${this.path}.tmp`;
       const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
 ` : "";
-      writeFileSync2(
-        tmp,
-        `${header}${this.records.map((r) => JSON.stringify(r)).join("\n")}
-`,
-        "utf8"
-      );
+      writeFileSync2(tmp, `${header}${keep.map((r) => JSON.stringify(r)).join("\n")}
+`, "utf8");
       renameSync(tmp, this.path);
+      this.records = keep;
     } finally {
       this.releaseLock();
     }
@@ -3647,7 +3667,7 @@ async function runLive(command, cfg, opts) {
       exitCodes.push(code);
       const after = snapshotReports(cwd, cfg, snapshot);
       for (const [file, stamp] of after) {
-        if (snapshot.get(file)?.sha === stamp.sha) continue;
+        if (attempt === 1 && snapshot.get(file)?.sha === stamp.sha) continue;
         let content;
         try {
           content = readFileSync4(file, "utf8");

@@ -284,7 +284,12 @@ export async function runLive(
 
       const after = snapshotReports(cwd, cfg, snapshot);
       for (const [file, stamp] of after) {
-        if (snapshot.get(file)?.sha === stamp.sha) continue;
+        // Attempt 1: skip files that already existed pre-run with identical
+        // content (stale reports from a previous job). Attempts 2+: ingest
+        // EVERY matched file — the command ran again, so the report state is
+        // a new attempt observation even when byte-identical (a fail-fail-
+        // pass retry with a deterministic report must still be detected).
+        if (attempt === 1 && snapshot.get(file)?.sha === stamp.sha) continue;
         let content: string;
         try {
           content = readFileSync(file, 'utf8');

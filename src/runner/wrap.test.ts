@@ -424,3 +424,42 @@ describe('attempt timeout (C2)', () => {
     expect(err.mock.calls.some((c) => String(c[0]).includes('timed out after 1s'))).toBe(true);
   }, 30_000);
 });
+
+describe('retry re-record semantics (QA A1)', () => {
+  it('fail-fail-pass with byte-identical failure reports still detects the rescue', async () => {
+    const cwd = tmpCwd();
+    // attempts 1 and 2 write a FAILING report with IDENTICAL bytes and exit 1;
+    // attempt 3 writes a passing one. Before the fix, the byte-identical
+    // attempt 2 was hash-skipped → no attempt-2 observation → no rescue.
+    const script = `
+const fs = require('fs');
+let n = 0;
+try { n = parseInt(fs.readFileSync('c7.txt', 'utf8'), 10) || 0; } catch {}
+n++;
+fs.writeFileSync('c7.txt', String(n));
+const mk = (title, status) => ({ title, fullName: title, status, ancestorTitles: [], duration: 3, failureMessages: status === 'failed' ? ['deterministic failure text'] : [] });
+let results;
+if (n <= 2) results = [mk('flaky test', 'failed')];
+else results = [mk('flaky test', 'passed')];
+const failed = results.some((r) => r.status === 'failed');
+fs.writeFileSync('out.json', JSON.stringify({ testResults: [{ name: 's.js', status: failed ? 'failed' : 'passed', assertionResults: results }] }));
+process.exit(failed ? 1 : 0);
+`;
+    writeFileSync(path.join(cwd, 'script.js'), script, 'utf8');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await runLive(['node', 'script.js'], cfg({ minRuns: 1 }), {
+      retries: 2,
+      cwd,
+      applyQuarantine: false,
+    });
+    const attemptsForTest = result.attempts.filter((r) =>
+      r.results.some((t) => t.name === 'flaky test'),
+    );
+    expect(attemptsForTest.map((r) => r.attempt)).toEqual([1, 2, 3]); // all three recorded
+    const flaky = result.verdicts.find((v) => v.name === 'flaky test')!;
+    expect(flaky.retryRescues).toBeGreaterThanOrEqual(1);
+    expect(flaky.classification.startsWith('flaky-')).toBe(true);
+    expect(result.finalExitCode).toBe(0);
+  }, 60_000);
+});

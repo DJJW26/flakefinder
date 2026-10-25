@@ -177,22 +177,46 @@ export class HistoryStore {
     }
   }
 
-  /** Keep only the last `maxRuns` records; rewrite the file atomically. */
+  /**
+   * Keep only the last `maxRuns` records; rewrite the file atomically.
+   * Re-reads the file FRESH inside the lock: a stale in-memory snapshot
+   * would silently delete records another process appended between our load
+   * and this prune (verified 10/10 with two concurrent ingests before the
+   * fix). In-memory records are resynced to the fresh state.
+   */
   prune(maxRuns: number): void {
     this.ensureLoaded();
     if (this.records.length <= maxRuns) return;
     this.acquireLock();
     try {
-      this.records = this.records.slice(-maxRuns);
+      // fresh read under the lock — the on-disk state may include other
+      // processes' appends made after our ensureLoaded()
+      const fresh: RunRecord[] = [];
+      try {
+        const lines = readFileSync(this.path, 'utf8').split(/\r?\n/);
+        for (const line of lines) {
+          const t = line.trim();
+          if (!t) continue;
+          try {
+            const parsed = JSON.parse(t) as Record<string, unknown>;
+            if (typeof parsed.runId === 'string' && Array.isArray(parsed.results)) {
+              fresh.push(parsed as unknown as RunRecord);
+            }
+          } catch {
+            // corrupt lines are dropped by the rewrite — consistent with load
+          }
+        }
+      } catch {
+        // unreadable store: fall through with in-memory records
+      }
+      const source = fresh.length > 0 ? fresh : this.records;
+      const keep = source.slice(-maxRuns);
       const tmp = `${this.path}.tmp`;
       const header =
         this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}\n` : '';
-      writeFileSync(
-        tmp,
-        `${header}${this.records.map((r) => JSON.stringify(r)).join('\n')}\n`,
-        'utf8',
-      );
+      writeFileSync(tmp, `${header}${keep.map((r) => JSON.stringify(r)).join('\n')}\n`, 'utf8');
       renameSync(tmp, this.path);
+      this.records = keep;
     } finally {
       this.releaseLock();
     }
