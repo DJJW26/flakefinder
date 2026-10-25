@@ -119,6 +119,11 @@ in this invocation.
   detected. Default behavior: flakes alone exit 0, so known flakes don't fail
   your CI gate.
 - `--no-quarantine` — run the full suite, ignoring the quarantine list.
+- `--timeout <seconds>` — kill the attempt (whole process tree) after N
+  seconds; the attempt counts as failed (exit 124, GNU-timeout convention)
+  and the retry loop proceeds. Default: config `timeoutSeconds`, itself
+  unlimited. SIGINT/SIGTERM (Ctrl-C) kill the current tree, stop the loop,
+  and exit 130 while keeping everything observed so far in history.
 - `--retry-mode auto|failed|full` — retry strategy (default: config `retryMode`,
   itself default `auto`). `auto`: attempt 1 runs everything; re-runs execute
   **only the failed tests** — jest/vitest via `-t`, mocha via `--grep`, go via

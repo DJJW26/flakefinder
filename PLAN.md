@@ -236,6 +236,7 @@ Tags:
 | `quarantineFile` | `"flakefinder.quarantine.json"` | quarantine path |
 | `runner` | `"auto"` | `auto|pytest|jest|mocha|go|generic` |
 | `failOnFlakes` | `false` | flakes make `run`/action exit non-zero |
+| `timeoutSeconds` | `null` | per-attempt wall-clock limit for `run` (seconds; `null` = unlimited; killed attempts resolve exit 124) |
 | `retryMode` | `"auto"` | `run` retry strategy: `auto` = attempt 1 full, attempts 2+ re-run only failed tests via runner-native selectors (fall back to full when no adapter/no failures recorded); `failed` = force targeted (warn + full when impossible); `full` = always re-run everything |
 
 Note on globs: implement a minimal brace-free glob (`**`, `*`, `?`) matcher in

@@ -15,6 +15,7 @@ const cfg = {
   runner: 'auto',
   failOnFlakes: false,
   retryMode: 'auto',
+  timeoutSeconds: null,
 } as ResolvedConfig;
 
 function verdict(over: Partial<TestVerdict> = {}): TestVerdict {

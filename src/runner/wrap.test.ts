@@ -404,3 +404,21 @@ process.exit(failed ? 1 : 0);
     expect(argv).toEqual([]); // no -t/--grep/-run/--lf injection in full mode
   }, 60_000);
 });
+
+describe('attempt timeout (C2)', () => {
+  it('kills an attempt that exceeds --timeout and records exit 124', async () => {
+    const cwd = tmpCwd();
+    // hangs forever; t sc spy keeps output quiet
+    writeFileSync(path.join(cwd, 'hang.js'), "setInterval(() => {}, 1000);", 'utf8');
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const t0 = Date.now();
+    const result = await runLive(['node', 'hang.js'], cfg({ reports: [], timeoutSeconds: 1 }), {
+      retries: 0, cwd, applyQuarantine: false,
+    });
+    const elapsed = Date.now() - t0;
+    expect(result.finalExitCode).toBe(1); // 124 → nonzero → contract exit 1
+    expect(elapsed).toBeLessThan(8000); // killed at ~1s, not hanging forever
+    expect(err.mock.calls.some((c) => String(c[0]).includes('timed out after 1s'))).toBe(true);
+  }, 30_000);
+});

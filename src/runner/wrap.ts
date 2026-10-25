@@ -100,14 +100,34 @@ function insertRunnerArgs(command: string[], args: string[]): string[] {
  * shell-quoted EXCEPT operator tokens — so user values with metacharacters
  * (e.g. `w1&&w2`) and injected regex patterns (with `^!()`) survive cmd.exe.
  */
-function spawnCommand(command: string[], cwd: string): Promise<number> {
+/** Kill a child and its whole process tree, cross-platform. */
+function killTree(child: ReturnType<typeof spawn>): void {
+  if (child.pid === undefined) return;
+  if (process.platform === 'win32') {
+    // child.kill() only reaches the direct process — cmd chains survive it
+    spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' });
+  } else {
+    child.kill('SIGTERM');
+    const escalated = setTimeout(() => child.kill('SIGKILL'), 3000);
+    escalated.unref();
+  }
+}
+
+function spawnCommand(
+  command: string[],
+  cwd: string,
+  timeoutSeconds: number | null,
+  currentChild: { ref: ReturnType<typeof spawn> | null },
+): Promise<number> {
   const shellArgv = command.map((t) => (isShellOperator(t) ? t : shellQuote(t)));
   return new Promise((resolve) => {
     const done = (code: number): void => {
+      if (currentChild.ref) currentChild.ref = null;
       resolve(code);
     };
     const start = (argv: string[], useShell: boolean): void => {
       let abandoned = false; // once we fall back to shell mode, ignore this attempt's events
+      let timedOut = false;
       let child: ReturnType<typeof spawn>;
       try {
         child = spawn(argv[0]!, argv.slice(1), { shell: useShell, cwd, stdio: 'inherit' });
@@ -121,9 +141,25 @@ function spawnCommand(command: string[], cwd: string): Promise<number> {
         done(2);
         return;
       }
+      currentChild.ref = child;
+      const timer =
+        timeoutSeconds != null
+          ? setTimeout(() => {
+              timedOut = true;
+              console.error(
+                `flakefinder: attempt timed out after ${timeoutSeconds}s — killing the process tree`,
+              );
+              killTree(child);
+            }, timeoutSeconds * 1000)
+          : null;
+      const finish = (code: number): void => {
+        if (timer) clearTimeout(timer);
+        done(timedOut ? 124 : code);
+      };
       child.on('error', (err: NodeJS.ErrnoException) => {
         if (!useShell && (err.code === 'ENOENT' || err.code === 'EINVAL')) {
           abandoned = true;
+          if (timer) clearTimeout(timer);
           start(shellArgv, true);
           return;
         }
@@ -134,11 +170,11 @@ function spawnCommand(command: string[], cwd: string): Promise<number> {
         } else {
           console.error(`flakefinder: failed to start command: ${err.message}`);
         }
-        done(2);
+        finish(2);
       });
       child.on('close', (code) => {
         if (abandoned) return; // superseded by the shell fallback
-        done(code ?? 1);
+        finish(code ?? 1);
       });
     };
     const useShell = needsShell(command);
@@ -199,74 +235,88 @@ export async function runLive(
   const exitCodes: number[] = [];
   let snapshot = snapshotReports(cwd, cfg);
   const maxAttempts = Math.max(1, opts.retries + 1);
+  const currentChild: { ref: ReturnType<typeof spawn> | null } = { ref: null };
+  let interrupted = false;
+  const onInterrupt = (): void => {
+    interrupted = true;
+    if (currentChild.ref) killTree(currentChild.ref);
+  };
+  process.on('SIGINT', onInterrupt);
+  process.on('SIGTERM', onInterrupt);
 
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    // Attempt 1 runs the full suite (with quarantine exclusions). Attempts 2+
-    // re-run ONLY the failed tests via runner-native selectors when an adapter
-    // exists and retryMode allows it — otherwise the full command again.
-    let extraArgs = quarantineFlags;
-    let note = '';
-    if (attempt > 1 && cfg.retryMode !== 'full') {
-      const failed = failedNamesOf(attempts).filter((n) => !quarantinedNames.includes(n));
-      const targeted = failedOnlyArgs(runner, failed, quarantinedNames);
-      if (targeted) {
-        extraArgs = targeted;
-        note = `targeted: re-running ${failed.length} failed test(s)`;
-      } else if (failed.length === 0) {
-        note = 'full re-run (no failures recorded)';
-      } else {
-        if (cfg.retryMode === 'failed') {
-          console.warn(
-            `flakefinder: no targeted-rerun adapter for runner "${runner}" — falling back to a full re-run`,
-          );
+  try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Attempt 1 runs the full suite (with quarantine exclusions). Attempts 2+
+      // re-run ONLY the failed tests via runner-native selectors when an adapter
+      // exists and retryMode allows it — otherwise the full command again.
+      let extraArgs = quarantineFlags;
+      let note = '';
+      if (attempt > 1 && cfg.retryMode !== 'full') {
+        const failed = failedNamesOf(attempts).filter((n) => !quarantinedNames.includes(n));
+        const targeted = failedOnlyArgs(runner, failed, quarantinedNames);
+        if (targeted) {
+          extraArgs = targeted;
+          note = `targeted: re-running ${failed.length} failed test(s)`;
+        } else if (failed.length === 0) {
+          note = 'full re-run (no failures recorded)';
+        } else {
+          if (cfg.retryMode === 'failed') {
+            console.warn(
+              `flakefinder: no targeted-rerun adapter for runner "${runner}" — falling back to a full re-run`,
+            );
+          }
+          note = 'full re-run (no targeted adapter)';
         }
-        note = 'full re-run (no targeted adapter)';
       }
-    }
-    const built = insertRunnerArgs(command, extraArgs);
-    console.log(
-      dim(
-        `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ''} → ${built.join(' ')}`,
-      ),
-    );
-    const code = await spawnCommand(built, cwd);
-    if (code === 127 || code === 9009) {
-      console.error(
-        `flakefinder: exit ${code} usually means the command was not found — check spelling and PATH`,
+      const built = insertRunnerArgs(command, extraArgs);
+      console.log(
+        dim(
+          `flakefinder: attempt ${attempt}/${maxAttempts}${note ? ` (${note})` : ''} → ${built.join(' ')}`,
+        ),
       );
-    }
-    exitCodes.push(code);
+      const code = await spawnCommand(built, cwd, cfg.timeoutSeconds, currentChild);
+      if (code === 127 || code === 9009) {
+        console.error(
+          `flakefinder: exit ${code} usually means the command was not found — check spelling and PATH`,
+        );
+      }
+      exitCodes.push(code);
 
-    const after = snapshotReports(cwd, cfg, snapshot);
-    for (const [file, stamp] of after) {
-      if (snapshot.get(file)?.sha === stamp.sha) continue;
-      let content: string;
-      try {
-        content = readFileSync(file, 'utf8');
-      } catch (err) {
-        console.warn(`flakefinder: cannot read report ${file}: ${(err as Error).message}`);
-        continue;
+      const after = snapshotReports(cwd, cfg, snapshot);
+      for (const [file, stamp] of after) {
+        if (snapshot.get(file)?.sha === stamp.sha) continue;
+        let content: string;
+        try {
+          content = readFileSync(file, 'utf8');
+        } catch (err) {
+          console.warn(`flakefinder: cannot read report ${file}: ${(err as Error).message}`);
+          continue;
+        }
+        const parser = detectParser(content);
+        if (!parser) {
+          console.warn(`flakefinder: unrecognized report format — skipped ${file}`);
+          continue;
+        }
+        const { results, warnings } = parser.parse(content, file);
+        for (const w of warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
+        attempts.push({
+          runId,
+          timestamp: new Date().toISOString(),
+          source: 'live',
+          parsedFrom: parser.name,
+          attempt,
+          commitSha,
+          results,
+        });
+        usedReportFiles.add(file);
       }
-      const parser = detectParser(content);
-      if (!parser) {
-        console.warn(`flakefinder: unrecognized report format — skipped ${file}`);
-        continue;
-      }
-      const { results, warnings } = parser.parse(content, file);
-      for (const w of warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
-      attempts.push({
-        runId,
-        timestamp: new Date().toISOString(),
-        source: 'live',
-        parsedFrom: parser.name,
-        attempt,
-        commitSha,
-        results,
-      });
-      usedReportFiles.add(file);
+      snapshot = after;
+      if (interrupted) break; // Ctrl-C: stop the retry loop, keep the evidence
+      if (code === 0) break;
     }
-    snapshot = after;
-    if (code === 0) break;
+  } finally {
+    process.off('SIGINT', onInterrupt);
+    process.off('SIGTERM', onInterrupt);
   }
 
   const store = new HistoryStore(path.resolve(cwd, cfg.storeDir));
@@ -296,6 +346,7 @@ export async function runLive(
       (v.lastStatus === 'fail' || v.lastStatus === 'error'),
   );
   let finalExitCode = deterministicFail || lastExit !== 0 ? 1 : 0;
+  if (interrupted) finalExitCode = 130; // SIGINT/SIGTERM: convention for user interrupts
   if (
     cfg.failOnFlakes &&
     (verdicts.some((v) => v.classification.startsWith('flaky-')) || suiteFlake)

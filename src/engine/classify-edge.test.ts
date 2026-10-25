@@ -16,6 +16,7 @@ const cfg: ResolvedConfig = {
   runner: 'auto',
   failOnFlakes: false,
   retryMode: 'auto',
+  timeoutSeconds: null,
 };
 
 let clock = 0;

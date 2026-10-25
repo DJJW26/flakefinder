@@ -129,6 +129,8 @@ export interface FlakefinderConfig {
   failOnFlakes?: boolean;
   /** Retry strategy for `run` (see RetryMode). */
   retryMode?: RetryMode;
+  /** Per-attempt wall-clock timeout for `run` in seconds (null = unlimited). */
+  timeoutSeconds?: number | null;
 }
 
 export type ResolvedConfig = Required<FlakefinderConfig>;

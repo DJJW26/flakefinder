@@ -39,6 +39,7 @@ describe('resolveConfig defaults (PLAN §6)', () => {
       runner: 'auto',
       failOnFlakes: false,
       retryMode: 'auto',
+      timeoutSeconds: null,
     });
   });
   it('merges defaults < file < overrides', () => {

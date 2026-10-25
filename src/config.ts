@@ -68,6 +68,7 @@ const KNOWN_KEYS: ReadonlySet<string> = new Set([
   'runner',
   'failOnFlakes',
   'retryMode',
+  'timeoutSeconds',
 ]);
 
 const VALID_RUNNERS: readonly RunnerKind[] = ['auto', 'pytest', 'jest', 'mocha', 'go', 'generic'];
@@ -162,6 +163,15 @@ export function validateConfig(config: FlakefinderConfig): void {
       problems.push(`retryMode: expected one of ${modes.join('|')}, got ${describe(c.retryMode)}`);
     }
   }
+  if (
+    c.timeoutSeconds !== undefined &&
+    c.timeoutSeconds !== null &&
+    (typeof c.timeoutSeconds !== 'number' || !Number.isFinite(c.timeoutSeconds) || c.timeoutSeconds <= 0)
+  ) {
+    problems.push(
+      `timeoutSeconds: expected positive number or null, got ${describe(c.timeoutSeconds)}`,
+    );
+  }
 
   if (problems.length > 0) {
     throw new ConfigValidationError(`invalid flakefinder config:\n  - ${problems.join('\n  - ')}`);
@@ -191,6 +201,7 @@ export function resolveConfig(
     runner: 'auto',
     failOnFlakes: false,
     retryMode: 'auto',
+    timeoutSeconds: null,
     ...config,
     ...overrides,
   };

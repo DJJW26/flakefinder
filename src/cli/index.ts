@@ -184,11 +184,12 @@ export async function main(argv: string[]): Promise<number> {
       '--retry-mode <mode>',
       'auto (targeted re-runs when possible) | failed (force targeted) | full (always re-run everything)',
     )
+    .option('--timeout <seconds>', 'kill the attempt after N seconds (default: config timeoutSeconds, itself unlimited)')
     .argument('<command...>', 'the test command, placed after --')
     .action(
       async (
         command: string[],
-        opts: { retries?: string; failOnFlake?: boolean; quarantine?: boolean; retryMode?: string },
+        opts: { retries?: string; failOnFlake?: boolean; quarantine?: boolean; retryMode?: string; timeout?: string },
       ) => {
         const g = globals();
         const retries = opts.retries != null ? Number.parseInt(opts.retries, 10) : undefined;
@@ -209,6 +210,15 @@ export async function main(argv: string[]): Promise<number> {
         if (retries != null) overrides.liveRetries = retries;
         if (opts.retryMode != null) {
           overrides.retryMode = opts.retryMode as FlakefinderConfig['retryMode'];
+        }
+        if (opts.timeout != null) {
+          const seconds = Number.parseInt(opts.timeout, 10);
+          if (Number.isNaN(seconds) || seconds <= 0) {
+            console.error(`flakefinder: --timeout must be a positive number of seconds (got "${opts.timeout}")`);
+            exitCode = 2;
+            return;
+          }
+          overrides.timeoutSeconds = seconds;
         }
         const cfg = resolveCfg(g, overrides);
         const result = await runLive(command, cfg, {
