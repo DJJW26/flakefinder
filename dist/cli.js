@@ -2566,14 +2566,44 @@ function snapshotReports(cwd, cfg) {
   for (const file of matchGlobs(cwd, cfg.reports)) snapshot.set(file, hashFile(file));
   return snapshot;
 }
-function spawnCommand(command, cwd) {
+function needsShell(command) {
+  return command.some((t) => /[<>|&]/.test(t) || t === "&&" || t === "||");
+}
+function spawnCommand(command, cwd, quoteIdx = []) {
+  const shellArgv = command.map((t, i) => quoteIdx.includes(i) ? shellQuote(t) : t);
   return new Promise((resolve) => {
-    const child = spawn(command[0], command.slice(1), { shell: true, cwd, stdio: "inherit" });
-    child.on("error", (err) => {
-      console.error(`flakefinder: failed to start command: ${err.message}`);
-      resolve(2);
-    });
-    child.on("close", (code) => resolve(code ?? 1));
+    const done = (code) => {
+      resolve(code);
+    };
+    const start = (argv, useShell) => {
+      let abandoned = false;
+      let child;
+      try {
+        child = spawn(argv[0], argv.slice(1), { shell: useShell, cwd, stdio: "inherit" });
+      } catch (err) {
+        if (!useShell) {
+          start(shellArgv, true);
+          return;
+        }
+        console.error(`flakefinder: failed to start command: ${err.message}`);
+        done(2);
+        return;
+      }
+      child.on("error", (err) => {
+        if (!useShell && (err.code === "ENOENT" || err.code === "EINVAL")) {
+          abandoned = true;
+          start(shellArgv, true);
+          return;
+        }
+        console.error(`flakefinder: failed to start command: ${err.message}`);
+        done(2);
+      });
+      child.on("close", (code) => {
+        if (abandoned) return;
+        done(code ?? 1);
+      });
+    };
+    start(command, needsShell(command));
   });
 }
 async function runLive(command, cfg, opts) {
@@ -2583,13 +2613,18 @@ async function runLive(command, cfg, opts) {
   const git = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
   if (git.status === 0) commitSha = git.stdout.trim();
   let effectiveCommand = command;
+  let quarantineQuoteIdx = [];
   const runner = cfg.runner === "auto" ? detectRunner(cwd) : cfg.runner;
   if (opts.applyQuarantine) {
     if (runner === "pytest" || runner === "jest" || runner === "mocha") {
       const qm = new QuarantineManager(path5.resolve(cwd, cfg.quarantineFile));
       const entries = qm.list();
       if (entries.length > 0) {
-        effectiveCommand = [...command, ...exclusionArgs(runner, entries)];
+        const separator = isPackageManagerWrapper(command) ? ["--"] : [];
+        const flags = exclusionArgs(runner, entries);
+        const base = command.length + separator.length;
+        quarantineQuoteIdx = flags.map((arg, i) => i % 2 === 1 ? base + i : -1).filter((i) => i >= 0);
+        effectiveCommand = [...command, ...separator, ...flags];
         console.log(
           `flakefinder: quarantine active \u2014 excluding ${entries.length} quarantined test(s) via runner flags`
         );
@@ -2617,7 +2652,7 @@ async function runLive(command, cfg, opts) {
     console.log(
       dim(`flakefinder: attempt ${attempt}/${maxAttempts} \u2192 ${effectiveCommand.join(" ")}`)
     );
-    const code = await spawnCommand(effectiveCommand, cwd);
+    const code = await spawnCommand(effectiveCommand, cwd, quarantineQuoteIdx);
     exitCodes.push(code);
     const after = snapshotReports(cwd, cfg);
     for (const [file, hash] of after) {
@@ -2684,6 +2719,17 @@ async function runLive(command, cfg, opts) {
 }
 function dim(s) {
   return process.stdout.isTTY ? `\x1B[2m${s}\x1B[0m` : s;
+}
+function isPackageManagerWrapper(command) {
+  const first = command[0]?.toLowerCase().replace(/\.(cmd|exe)$/, "");
+  return first === "npm" || first === "yarn" || first === "pnpm" || first === "bun";
+}
+function shellQuote(s) {
+  if (!/[\s"&|<>^()%!'"\\]/.test(s)) return s;
+  if (process.platform === "win32") {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 // src/cli/index.ts

@@ -32,14 +32,55 @@ function snapshotReports(cwd: string, cfg: ResolvedConfig): Map<string, string |
   return snapshot;
 }
 
-function spawnCommand(command: string[], cwd: string): Promise<number> {
+/** Tokens that only a shell can interpret (redirects, pipes, command chaining). */
+function needsShell(command: string[]): boolean {
+  return command.some((t) => /[<>|&]/.test(t) || t === '&&' || t === '||');
+}
+
+/**
+ * Spawn the test command. Prefer NO shell (argv passes verbatim — no quoting
+ * hazards for quarantine patterns with spaces); fall back to shell mode when
+ * the command contains shell operators OR the spawn is refused (Windows
+ * blocks .cmd shims like npm/yarn without a shell — EINVAL since the
+ * CVE-2024-27980 fix). In shell mode our injected values (quoteIdx) are
+ * shell-quoted; user tokens keep their shell semantics.
+ */
+function spawnCommand(command: string[], cwd: string, quoteIdx: number[] = []): Promise<number> {
+  const shellArgv = command.map((t, i) => (quoteIdx.includes(i) ? shellQuote(t) : t));
   return new Promise((resolve) => {
-    const child = spawn(command[0]!, command.slice(1), { shell: true, cwd, stdio: 'inherit' });
-    child.on('error', (err) => {
-      console.error(`flakefinder: failed to start command: ${err.message}`);
-      resolve(2);
-    });
-    child.on('close', (code) => resolve(code ?? 1));
+    const done = (code: number): void => {
+      resolve(code);
+    };
+    const start = (argv: string[], useShell: boolean): void => {
+      let abandoned = false; // once we fall back to shell mode, ignore this attempt's events
+      let child;
+      try {
+        child = spawn(argv[0]!, argv.slice(1), { shell: useShell, cwd, stdio: 'inherit' });
+      } catch (err) {
+        // synchronous EINVAL for Windows batch shims without a shell
+        if (!useShell) {
+          start(shellArgv, true);
+          return;
+        }
+        console.error(`flakefinder: failed to start command: ${(err as Error).message}`);
+        done(2);
+        return;
+      }
+      child.on('error', (err: NodeJS.ErrnoException) => {
+        if (!useShell && (err.code === 'ENOENT' || err.code === 'EINVAL')) {
+          abandoned = true;
+          start(shellArgv, true);
+          return;
+        }
+        console.error(`flakefinder: failed to start command: ${err.message}`);
+        done(2);
+      });
+      child.on('close', (code) => {
+        if (abandoned) return; // superseded by the shell fallback
+        done(code ?? 1);
+      });
+    };
+    start(command, needsShell(command));
   });
 }
 
@@ -62,13 +103,19 @@ export async function runLive(
   if (git.status === 0) commitSha = git.stdout.trim();
 
   let effectiveCommand = command;
+  let quarantineQuoteIdx: number[] = [];
   const runner = cfg.runner === 'auto' ? detectRunner(cwd) : cfg.runner;
   if (opts.applyQuarantine) {
     if (runner === 'pytest' || runner === 'jest' || runner === 'mocha') {
       const qm = new QuarantineManager(path.resolve(cwd, cfg.quarantineFile));
       const entries = qm.list();
       if (entries.length > 0) {
-        effectiveCommand = [...command, ...exclusionArgs(runner, entries)];
+        // flag/value pairs — remember VALUE positions for shell-mode quoting
+        const separator = isPackageManagerWrapper(command) ? ['--'] : [];
+        const flags = exclusionArgs(runner, entries);
+        const base = command.length + separator.length;
+        quarantineQuoteIdx = flags.map((arg, i) => (i % 2 === 1 ? base + i : -1)).filter((i) => i >= 0);
+        effectiveCommand = [...command, ...separator, ...flags];
         console.log(
           `flakefinder: quarantine active — excluding ${entries.length} quarantined test(s) via runner flags`,
         );
@@ -99,7 +146,7 @@ export async function runLive(
     console.log(
       dim(`flakefinder: attempt ${attempt}/${maxAttempts} → ${effectiveCommand.join(' ')}`),
     );
-    const code = await spawnCommand(effectiveCommand, cwd);
+    const code = await spawnCommand(effectiveCommand, cwd, quarantineQuoteIdx);
     exitCodes.push(code);
 
     const after = snapshotReports(cwd, cfg);
@@ -179,4 +226,19 @@ export async function runLive(
 
 function dim(s: string): string {
   return process.stdout.isTTY ? `\x1b[2m${s}\x1b[0m` : s;
+}
+
+/** Package-manager commands consume flags themselves; only `--` forwards args to the underlying test runner. */
+export function isPackageManagerWrapper(command: string[]): boolean {
+  const first = command[0]?.toLowerCase().replace(/\.(cmd|exe)$/, '');
+  return first === 'npm' || first === 'yarn' || first === 'pnpm' || first === 'bun';
+}
+
+/** Quote a single argument for spawn({shell:true}) on the current platform. No-op for safe tokens. */
+export function shellQuote(s: string): string {
+  if (!/[\s"&|<>^()%!'"\\]/.test(s)) return s;
+  if (process.platform === 'win32') {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
