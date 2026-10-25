@@ -408,3 +408,32 @@ describe('edge cases', () => {
     expect(v.passRate).toBe(0.75);
   });
 });
+
+describe('SHA-less histories (no git repo)', () => {
+  it('alternating pass/fail across distinct runs without commitShas → flaky-suspected', () => {
+    // Before the runId-fallback fix, directionChanges was commit-only and this
+    // classified as new-failure/passing — silently hiding real flakes.
+    const specs: TestSpec[] = [
+      { status: 'fail', runId: 'r1' },
+      { status: 'pass', runId: 'r2' },
+      { status: 'fail', runId: 'r3' },
+      { status: 'pass', runId: 'r4' },
+      { status: 'fail', runId: 'r5' },
+      { status: 'pass', runId: 'r6' },
+    ];
+    const v = verdictOf(history(...specs));
+    expect(v.directionChanges).toBe(5);
+    expect(v.classification).toBe('flaky-suspected');
+    expect(v.flakeScore).toBe(24); // min(24, 5×8×1.0)
+  });
+
+  it('same-runId retry attempts stay ONE bucket (no phantom direction changes)', () => {
+    const specs: TestSpec[] = [
+      { status: 'fail', runId: 'R', attempt: 1 },
+      { status: 'pass', runId: 'R', attempt: 2 },
+    ];
+    const v = verdictOf(history(...specs));
+    expect(v.directionChanges).toBe(0);
+    expect(v.classification).toBe('flaky-retry');
+  });
+});

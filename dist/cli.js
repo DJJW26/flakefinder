@@ -212,12 +212,11 @@ function countRetryRescues(collapsed) {
   return rescues;
 }
 function countDirectionChanges(collapsed) {
-  const commitFamily = /* @__PURE__ */ new Map();
+  const bucketFamily = /* @__PURE__ */ new Map();
   for (const o of collapsed) {
-    if (!o.commitSha) continue;
-    commitFamily.set(o.commitSha, isFail(o.status));
+    bucketFamily.set(o.commitSha ?? o.runId, isFail(o.status));
   }
-  const families = [...commitFamily.values()];
+  const families = [...bucketFamily.values()];
   let changes = 0;
   for (let i = 1; i < families.length; i++) {
     if (families[i] !== families[i - 1]) changes++;

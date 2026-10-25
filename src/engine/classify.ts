@@ -100,14 +100,18 @@ function countRetryRescues(collapsed: Observation[]): number {
   return rescues;
 }
 
-/** Direction changes across DISTINCT commits; a commit's family is its chronologically last observation's. */
+/**
+ * Direction changes across DISTINCT code states. A state is a commit bucket;
+ * observations without a commitSha (runs outside a git repo) bucket by runId
+ * instead, so statistical flip-flop detection still works in SHA-less
+ * histories. A bucket's family is its chronologically last observation's.
+ */
 function countDirectionChanges(collapsed: Observation[]): number {
-  const commitFamily = new Map<string, boolean>();
+  const bucketFamily = new Map<string, boolean>();
   for (const o of collapsed) {
-    if (!o.commitSha) continue;
-    commitFamily.set(o.commitSha, isFail(o.status));
+    bucketFamily.set(o.commitSha ?? o.runId, isFail(o.status));
   }
-  const families = [...commitFamily.values()];
+  const families = [...bucketFamily.values()];
   let changes = 0;
   for (let i = 1; i < families.length; i++) {
     if (families[i] !== families[i - 1]) changes++;
