@@ -14,8 +14,9 @@ export default defineConfig([
     outDir: 'dist',
   },
   {
+    // CJS: @actions/* are CommonJS packages; the node20 runtime executes this directly.
     entry: { 'action/index': 'src/action/index.ts' },
-    format: ['esm'],
+    format: ['cjs'],
     platform: 'node',
     target: 'node20',
     sourcemap: false,
