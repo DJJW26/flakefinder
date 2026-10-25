@@ -166,15 +166,25 @@ Everything else — glob matching, JSONC parsing, ANSI, statistics — is
 stdlib-grade code in `src/util`/`src/engine`. The Action bundles
 `@actions/*` separately into `dist/action/index.js`.
 
-**Testing.** NNN unit tests across 17 files: table-driven engine tests (one per
+**Testing.** 167 unit tests across 17 files: table-driven engine tests (one per
 classification rule, score caps, recency tiers), parser fixtures shaped like
 real tool output (including malformed inputs — parsers must warn, never
 throw), store round-trips and corruption tolerance, and an integration test
 that spawns a REAL node process writing REAL report files with a
-counter-based deterministic flake, and asserts `runLive` rescues it. E2E runs
-the same loop against actual jest/pytest/go projects in `fixtures/`
-(deterministic flakiness via counter files — no `Math.random()` anywhere near
-CI).
+counter-based deterministic flake, and asserts `runLive` rescues it. E2E then
+runs the same loop against actual projects in `fixtures/` — a real jest
+project (with jest-junit), a real pytest project, and a real Go module, each
+containing a stable test, a deterministic failure, a counter-based flake, and
+a slow test: 11/11 steps green on Windows (jest section is required; pytest/go
+skip gracefully when toolchains are absent). No `Math.random()` anywhere near
+CI — flakiness in the fixtures is deterministic by counter parity, so the e2e
+itself can never be flaky.
+
+An instructive engine fact surfaced by e2e: in a git repo every retry rescue
+also satisfies the same-commit-flip rule (both attempts share the commit SHA),
+so live-detected flakes classify as `flaky-confirmed`, not `flaky-retry` —
+precedence correctly promotes to the stronger signal. `flaky-retry` surfaces
+in CI-less environments where SHAs are absent.
 
 ## Known limitations (v1)
 
