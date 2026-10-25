@@ -229,3 +229,25 @@ describe('store concurrency lock (C1)', () => {
     expect(existsSync(`${a.path}.lock`)).toBe(false);
   });
 });
+
+describe('prune fresh-read under lock (QA A2)', () => {
+  it('stale instance prune does NOT delete records another instance appended', () => {
+    // instance A seeds 3 records and stays loaded (stale view)
+    const a = tmpStore();
+    a.append(record('r1', 'pass'));
+    a.append(record('r2', 'pass'));
+    a.append(record('r3', 'pass'));
+    // instance B (fresh view of the same store) appends r4
+    const b = new HistoryStore(path.dirname(a.path));
+    b.append(record('r4', 'pass'));
+    // stale instance A prunes to 3 — must keep the LAST 3 of the FRESH file
+    a.prune(3);
+    const onDisk = readFileSync(a.path, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '')
+      .map((l) => (JSON.parse(l) as { runId: string }).runId);
+    expect(onDisk).toEqual(['r2', 'r3', 'r4']); // r4 survived (was deleted before the fix)
+    // and A's in-memory view resynced
+    expect(a.runs().map((r) => r.runId)).toEqual(['r2', 'r3', 'r4']);
+  });
+});
