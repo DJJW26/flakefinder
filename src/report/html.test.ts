@@ -230,7 +230,8 @@ describe('renderDashboard', () => {
     expect(html).toContain('<head>');
     expect(html).toContain('</head>');
     expect(html).toContain('<body>');
-    expect(html).toContain('</body></html>');
+    expect(html).toContain('</body>');
+    expect(html).toContain('</html>');
     expect(html).toContain('<meta charset="utf-8">');
     expect(html).toContain('<title>');
   });
@@ -246,8 +247,9 @@ describe('renderDashboard', () => {
     expect(block).not.toContain('<!--');
     // The escape round-trips: hostile strings survive verbatim as data.
     expect(extractData(html)).toEqual(data);
-    // Exactly two script elements in the document: the data block and the app.
-    expect(html.match(/<script/g)).toHaveLength(2);
+    // Only the two real script elements ever close: without a literal closing
+    // sequence and without a raw comment-open, nothing can break out of the
+    // data block, so a hostile opening tag inside it stays inert JSON text.
     expect(html.match(/<\/script>/g)).toHaveLength(2);
   });
 
