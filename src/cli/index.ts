@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
+import { computeNewFlakes } from '../action/diff.js';
 import {
   CONFIG_FILE_NAME,
   detectRunner,
@@ -534,12 +535,8 @@ export async function main(argv: string[]): Promise<number> {
           previous = null;
         }
       }
-      const prevFlaky = new Set(
-        (previous ?? []).filter((v) => v.classification.startsWith('flaky-')).map((v) => v.testId),
-      );
-      const newFlakes = verdicts.filter(
-        (v) => v.classification.startsWith('flaky-') && !prevFlaky.has(v.testId),
-      );
+      // same semantics as the GitHub Action — one implementation (src/action/diff.ts)
+      const newFlakes = computeNewFlakes(verdicts, previous);
       writeFileSync(snap, JSON.stringify(verdicts), 'utf8');
 
       if (opts.failOnNewFlakes && newFlakes.length > 0) {

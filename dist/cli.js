@@ -7,6 +7,15 @@ import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as rea
 import path6 from "path";
 import { Command } from "commander";
 
+// src/action/diff.ts
+var FLAKY = /* @__PURE__ */ new Set(["flaky-confirmed", "flaky-retry", "flaky-suspected"]);
+function computeNewFlakes(current, previous) {
+  const prevFlaky = new Set(
+    (previous ?? []).filter((v) => FLAKY.has(v.classification)).map((v) => v.testId)
+  );
+  return current.filter((v) => FLAKY.has(v.classification) && !prevFlaky.has(v.testId));
+}
+
 // src/config.ts
 import { existsSync, readFileSync, statSync } from "fs";
 import path from "path";
@@ -3421,12 +3430,7 @@ async function main(argv) {
         previous = null;
       }
     }
-    const prevFlaky = new Set(
-      (previous ?? []).filter((v) => v.classification.startsWith("flaky-")).map((v) => v.testId)
-    );
-    const newFlakes = verdicts.filter(
-      (v) => v.classification.startsWith("flaky-") && !prevFlaky.has(v.testId)
-    );
+    const newFlakes = computeNewFlakes(verdicts, previous);
     writeFileSync3(snap, JSON.stringify(verdicts), "utf8");
     if (opts.failOnNewFlakes && newFlakes.length > 0) {
       console.error(`flakefinder ci: ${newFlakes.length} NEW flake(s):`);
