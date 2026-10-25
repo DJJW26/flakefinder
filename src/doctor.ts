@@ -113,7 +113,7 @@ export function runDoctor(cwd: string): DoctorResult {
 
   // 5. git metadata
   try {
-    const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8' });
+    const r = spawnSync('git', ['rev-parse', 'HEAD'], { cwd, encoding: 'utf8', timeout: 5000 });
     if (r.status === 0) {
       lines.push({
         status: 'ok',
@@ -133,7 +133,19 @@ export function runDoctor(cwd: string): DoctorResult {
   // 6. quarantine
   const qPath = path.resolve(cwd, config.quarantineFile);
   if (existsSync(qPath)) {
-    const entries = new QuarantineManager(qPath).list();
+    let entries;
+    try {
+      entries = new QuarantineManager(qPath).list();
+    } catch (err) {
+      // a corrupt quarantine file must be diagnosed, never crash the doctor
+      ok = false;
+      lines.push({
+        status: 'fail',
+        message: `quarantine: unreadable — ${(err as Error).message}`,
+        hint: 'fix or delete flakefinder.quarantine.json (a `run` would also fail on it)',
+      });
+      return { lines, ok };
+    }
     const unsupported = runner === 'go' || runner === 'generic';
     lines.push({
       status: unsupported ? 'warn' : 'ok',

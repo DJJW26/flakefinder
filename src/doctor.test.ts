@@ -57,3 +57,17 @@ describe('runDoctor', () => {
     expect(reports.hint).toContain('flakefinder init');
   });
 });
+
+describe('doctor resilience (QA round 4)', () => {
+  it('reports a corrupt quarantine file as FAIL instead of crashing', () => {
+    const d = tmp();
+    writeFileSync(path.join(d, 'flakefinder.config.json'), '{ "reports": [] }', 'utf8');
+    writeFileSync(path.join(d, 'flakefinder.quarantine.json'), '{ broken quarantine', 'utf8');
+    const { lines, ok } = runDoctor(d);
+    expect(ok).toBe(false);
+    const q = lines.find((l) => l.message.startsWith('quarantine:'))!;
+    expect(q.status).toBe('fail');
+    expect(q.message).toContain('unreadable');
+    expect(q.hint).toContain('a `run` would also fail');
+  });
+});

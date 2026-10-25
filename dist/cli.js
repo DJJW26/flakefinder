@@ -620,7 +620,7 @@ function runDoctor(cwd) {
     });
   }
   try {
-    const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8" });
+    const r = spawnSync("git", ["rev-parse", "HEAD"], { cwd, encoding: "utf8", timeout: 5e3 });
     if (r.status === 0) {
       lines.push({
         status: "ok",
@@ -638,7 +638,18 @@ function runDoctor(cwd) {
   }
   const qPath = path5.resolve(cwd, config.quarantineFile);
   if (existsSync4(qPath)) {
-    const entries = new QuarantineManager(qPath).list();
+    let entries;
+    try {
+      entries = new QuarantineManager(qPath).list();
+    } catch (err) {
+      ok = false;
+      lines.push({
+        status: "fail",
+        message: `quarantine: unreadable \u2014 ${err.message}`,
+        hint: "fix or delete flakefinder.quarantine.json (a `run` would also fail on it)"
+      });
+      return { lines, ok };
+    }
     const unsupported = runner === "go" || runner === "generic";
     lines.push({
       status: unsupported ? "warn" : "ok",
