@@ -186,11 +186,13 @@ export class HistoryStore {
    */
   prune(maxRuns: number): void {
     this.ensureLoaded();
-    if (this.records.length <= maxRuns) return;
+    if (!existsSync(this.path)) return;
     this.acquireLock();
     try {
       // fresh read under the lock — the on-disk state may include other
-      // processes' appends made after our ensureLoaded()
+      // processes' appends made after our ensureLoaded(). The early-return
+      // check MUST use the fresh count: a stale in-memory count (e.g. 3 of
+      // maxRuns=3) hid records another process appended.
       const fresh: RunRecord[] = [];
       try {
         const lines = readFileSync(this.path, 'utf8').split(/\r?\n/);
@@ -210,6 +212,10 @@ export class HistoryStore {
         // unreadable store: fall through with in-memory records
       }
       const source = fresh.length > 0 ? fresh : this.records;
+      if (source.length <= maxRuns) {
+        this.records = source;
+        return;
+      }
       const keep = source.slice(-maxRuns);
       const tmp = `${this.path}.tmp`;
       const header =
