@@ -1,0 +1,29 @@
+{"Time":"2026-10-25T10:00:00.101Z","Action":"start","Package":"example.com/flakefinder/math"}
+{"Time":"2026-10-25T10:00:00.102Z","Action":"run","Package":"example.com/flakefinder/math","Test":"TestAdd"}
+{"Time":"2026-10-25T10:00:00.103Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestAdd","Output":"=== RUN   TestAdd\n"}
+{"Time":"2026-10-25T10:00:00.104Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestAdd","Output":"  \n"}
+{"Time":"2026-10-25T10:00:00.105Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestAdd","Output":"    math_test.go:11: computing 2 + 3\n"}
+{"Time":"2026-10-25T10:00:00.106Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestAdd","Output":"\u001b[32m--- PASS: TestAdd (0.00s)\u001b[0m\n"}
+{"Time":"2026-10-25T10:00:00.107Z","Action":"pass","Package":"example.com/flakefinder/math","Test":"TestAdd","Elapsed":0.001}
+{"Time":"2026-10-25T10:00:00.108Z","Action":"run","Package":"example.com/flakefinder/math","Test":"TestDivide"}
+{"Time":"2026-10-25T10:00:00.109Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestDivide","Output":"=== RUN   TestDivide\n"}
+{"Time":"2026-10-25T10:00:00.110Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestDivide","Output":"\u001b[31m    math_test.go:25: division mismatch: got 3, want 3.5\u001b[0m\n"}
+{"Time":"2026-10-25T10:00:00.111Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestDivide","Output":"--- FAIL: TestDivide (0.01s)\n"}
+{"Time":"2026-10-25T10:00:00.112Z","Action":"fail","Package":"example.com/flakefinder/math","Test":"TestDivide","Elapsed":0.01}
+{"Time":"2026-10-25T10:00:00.113Z","Action":"run","Package":"example.com/flakefinder/math","Test":"TestSkip"}
+{"Time":"2026-10-25T10:00:00.114Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestSkip","Output":"    math_test.go:30: skipping: not implemented on windows\n"}
+{"Time":"2026-10-25T10:00:00.115Z","Action":"output","Package":"example.com/flakefinder/math","Test":"TestSkip","Output":"--- SKIP: TestSkip (0.00s)\n"}
+{"Time":"2026-10-25T10:00:00.116Z","Action":"skip","Package":"example.com/flakefinder/math","Test":"TestSkip","Elapsed":0}
+{"Time":"2026-10-25T10:00:00.117Z","Action":"output","Package":"example.com/flakefinder/math","Output":"PASS\n"}
+{"Time":"2026-10-25T10:00:00.118Z","Action":"pass","Package":"example.com/flakefinder/math","Elapsed":0.03}
+{"Time":"2026-10-25T10:00:00.119Z","Action":"start","Package":"example.com/flakefinder/strings"}
+{"Time":"2026-10-25T10:00:00.120Z","Action":"run","Package":"example.com/flakefinder/strings","Test":"TestUpper"}
+{"Time":"2026-10-25T10:00:00.121Z","Action":"pass","Package":"example.com/flakefinder/strings","Test":"TestUpper","Elapsed":0.002}
+{"Time":"2026-10-25T10:00:00.122Z","Action":"run","Package":"example.com/flakefinder/strings","Test":"TestLong"}
+{"Time":"2026-10-25T10:00:00.123Z","Action":"output","Package":"example.com/flakefinder/strings","Test":"TestLong","Output":"=== RUN   TestLong\n"}
+{"Time":"2026-10-25T10:00:00.124Z","Action":"output","Package":"example.com/flakefinder/strings","Test":"TestLong","Output":"LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL\n"}
+{"Time":"2026-10-25T10:00:00.125Z","Action":"output","Package":"example.com/flakefinder/strings","Test":"TestLong","Output":"--- FAIL: TestLong (0.10s)\n"}
+{"Time":"2026-10-25T10:00:00.126Z","Action":"fail","Package":"example.com/flakefinder/strings","Test":"TestLong","Elapsed":0.1}
+{"Time":"2026-10-25T10:00:00.127Z","Action":"output","Package":"example.com/flakefinder/strings","Output":"FAIL\n"}
+{"Time":"2026-10-25T10:00:00.128Z","Action":"fail","Package":"example.com/flakefinder/strings","Elapsed":0.15}
+{"Time":"2026-10-25T10:00:00.129Z","Action":"pass","Package":"example.com/flakefin

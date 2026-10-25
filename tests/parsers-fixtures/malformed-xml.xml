@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="tests.test_broken" tests="2" failures="1" errors="0" skipped="0">
+    <testcase classname="tests.test_broken" name="test_ok" time="0.1"/>
+    <testcase classname="tests.test_broken" name="test_partial" time="0.2">
+      <failure message="AssertionError: assert 1 == 2">Traceback (most recent call last):
+  File "/repo/tests/test_broken.py", line 8, in test_partial

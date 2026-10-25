@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="4" disabled="0" errors="0" failures="1" time="1.514">
+  <testsuite name="/repo/src/app.test.js" tests="4" disabled="0" errors="0" failures="1" time="1.514" timestamp="2026-10-25T10:00:00" hostname="localhost">
+    <testcase classname="src/app renders the login form" name="renders the login form" time="0.123"/>
+    <testcase classname="src/app submits credentials" name="submits credentials" time="0.456">
+      <failure><![CDATA[expect(received).toBe(expected) // Object.is equality
+
+Expected: 200
+Received: 401
+    at Object.<anonymous> (/repo/src/app.test.js:31:27)
+    at Promise (native)]]></failure>
+    </testcase>
+    <testcase classname="src/app logs out" name="logs out" time="0.1235"/>
+    <testcase classname="src/app remembers the session" name="remembers the session" time="0.05">
+      <skipped/>
+    </testcase>
+  </testsuite>
+</testsuites>

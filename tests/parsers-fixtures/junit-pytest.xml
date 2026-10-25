@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+  <testsuite name="tests.test_math" errors="1" failures="2" skipped="1" tests="6" time="0.559" timestamp="2026-10-25T10:00:00.123456" hostname="ci-runner-1">
+    <testcase classname="tests.test_math" name="test_add" time="0.001"/>
+    <testcase classname="tests.test_math" name="test_unicode_ünïcode_名前" time="0.002"/>
+    <testcase classname="tests.test_math" name="test_subtract" time="0.0034">
+      <failure message="AssertionError: assert -1 == 0" type="AssertionError">Traceback (most recent call last):
+  File "/repo/tests/test_math.py", line 21, in test_subtract
+    assert sub(2, 3) == 0
+AssertionError: assert -1 == 0</failure>
+    </testcase>
+    <testcase classname="tests.test_math" name="test_multiply" time="0.001">
+      <failure type="AssertionError">Traceback (most recent call last):
+  File "/repo/tests/test_math.py", line 30, in test_multiply
+    assert mul(2, 3) == 7
+AssertionError: assert 6 == 7</failure>
+    </testcase>
+    <testsuite name="tests.test_math.TestInner" errors="1" failures="0" skipped="1" tests="2" time="0.55">
+      <testcase classname="tests.test_math.TestInner" name="test_boom" time="0.5">
+        <error message="RuntimeError: boom" type="RuntimeError">Traceback (most recent call last):
+  File "/repo/tests/test_math.py", line 44, in test_boom
+    raise RuntimeError('boom')
+RuntimeError: boom</error>
+      </testcase>
+      <testcase name="test_placeholder">
+        <skipped type="pytest.skip" message="not implemented in this build">/repo/tests/test_math.py:52: NotImplemented</skipped>
+      </testcase>
+    </testsuite>
+  </testsuite>
+</testsuites>

@@ -1,0 +1,17 @@
+{
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "failureMessages": [],
+          "fullName": "works",
+          "status": "passed",
+          "title": "works"
+        }
+      ],
+      "name": "/repo/smoke.test.js",
+      "status": "passed"
+    }
+  ]
+}

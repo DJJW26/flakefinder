@@ -26,6 +26,7 @@ export function trimTo(value: unknown, max: number): string | undefined {
 
 /** Strip ANSI SGR escape sequences (`ESC[…m`) from text. */
 export function stripAnsi(text: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: the ESC control character is the very thing being matched.
   return text.replace(/\u001b\[[0-9;]*m/g, '');
 }
 

@@ -1,0 +1,95 @@
+{
+  "numFailedTestSuites": 1,
+  "numFailedTests": 2,
+  "numPassedTestSuites": 2,
+  "numPassedTests": 3,
+  "numPendingTests": 1,
+  "numRuntimeErrorTestSuites": 1,
+  "numTotalTestSuites": 3,
+  "numTotalTests": 6,
+  "openHandles": [],
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["Calculator", "add"],
+          "duration": 12,
+          "failureMessages": [],
+          "fullName": "Calculator add adds two numbers",
+          "invocationCallOrder": [1, 2],
+          "location": null,
+          "numPassingAsserts": 3,
+          "retryReasons": [],
+          "status": "passed",
+          "title": "adds two numbers"
+        },
+        {
+          "ancestorTitles": ["Calculator", "divide"],
+          "duration": 8,
+          "failureMessages": [
+            "Expected: 2\nReceived: 1\n\n    at Object.<anonymous> (/repo/src/calc.test.js:23:5)\n    at Promise (native)"
+          ],
+          "fullName": "Calculator divide divides evenly",
+          "invocationCallOrder": [3, 4],
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "failed",
+          "title": "divides evenly"
+        }
+      ],
+      "endTime": 1761388800123,
+      "message": "",
+      "name": "/repo/src/calc.test.js",
+      "startTime": 1761388800000,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "duration": 5,
+          "failureMessages": [],
+          "fullName": "parses a config file",
+          "invocationCallOrder": [5],
+          "location": null,
+          "numPassingAsserts": 2,
+          "retryReasons": [],
+          "status": "passed",
+          "title": "parses a config file"
+        },
+        {
+          "ancestorTitles": ["Config"],
+          "duration": null,
+          "failureMessages": [],
+          "fullName": "Config skips legacy format",
+          "invocationCallOrder": [],
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "pending",
+          "title": "skips legacy format"
+        }
+      ],
+      "endTime": 1761388800456,
+      "message": "",
+      "name": "/repo/src/config.test.js",
+      "startTime": 1761388800400,
+      "status": "passed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [],
+      "coverage": {},
+      "endTime": 1761388800999,
+      "message": "FAIL /repo/src/util.test.js\n  ● Test suite failed to run\n\n    SyntaxError: Unexpected token '}' (10:5)\n      at Parser.pp$5.raise (/repo/node_modules/@babel/parser/lib/index.js:1451:15)\n      at Parser.pp$7.raise (/repo/node_modules/@babel/parser/lib/index.js:1581:22)\n",
+      "name": "/repo/src/util.test.js",
+      "startTime": 1761388800900,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

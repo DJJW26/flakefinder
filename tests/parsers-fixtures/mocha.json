@@ -1,0 +1,152 @@
+{
+  "stats": {
+    "suites": 3,
+    "tests": 5,
+    "passes": 3,
+    "pending": 1,
+    "failures": 1,
+    "start": "2026-10-25T10:00:00.014Z",
+    "end": "2026-10-25T10:00:01.438Z",
+    "duration": 1424
+  },
+  "tests": [
+    {
+      "title": "should return -1 when the value is not present",
+      "fullTitle": "Array #indexOf() should return -1 when the value is not present",
+      "timedOut": false,
+      "duration": 2,
+      "state": "passed",
+      "speed": "fast",
+      "pass": true,
+      "fail": false,
+      "isPending": false,
+      "file": "test/array.test.js",
+      "err": {}
+    },
+    {
+      "title": "should return 3",
+      "fullTitle": "Math max() should return 3",
+      "timedOut": false,
+      "duration": 1,
+      "state": "passed",
+      "speed": "fast",
+      "pass": true,
+      "fail": false,
+      "isPending": false,
+      "file": "",
+      "err": {}
+    },
+    {
+      "title": "should return the max",
+      "fullTitle": "Math max() should return the max",
+      "timedOut": false,
+      "duration": 5,
+      "state": "failed",
+      "speed": null,
+      "pass": false,
+      "fail": true,
+      "isPending": false,
+      "file": "test/math.test.js",
+      "err": {
+        "message": "expected 3 to equal 4",
+        "stack": "AssertionError: expected 3 to equal 4\n    at Context.<anonymous> (test/math.test.js:14:20)\n    at processImmediate (node:internal/timers:471:21)"
+      }
+    },
+    {
+      "title": "rejects bad password",
+      "fullTitle": "API user login rejects bad password",
+      "timedOut": false,
+      "duration": 45,
+      "state": "passed",
+      "speed": "medium",
+      "pass": true,
+      "fail": false,
+      "isPending": false,
+      "file": "test/api.test.js",
+      "err": {}
+    },
+    {
+      "title": "should be fast",
+      "fullTitle": "String #split() should be fast",
+      "timedOut": false,
+      "state": "pending",
+      "pass": false,
+      "fail": false,
+      "isPending": true,
+      "file": "test/string.test.js",
+      "err": {}
+    }
+  ],
+  "pending": [
+    {
+      "title": "should be fast",
+      "fullTitle": "String #split() should be fast",
+      "timedOut": false,
+      "state": "pending",
+      "pass": false,
+      "fail": false,
+      "isPending": true,
+      "file": "test/string.test.js",
+      "err": {}
+    }
+  ],
+  "failures": [
+    {
+      "title": "should return the max",
+      "fullTitle": "Math max() should return the max",
+      "timedOut": false,
+      "duration": 5,
+      "state": "failed",
+      "speed": null,
+      "pass": false,
+      "fail": true,
+      "isPending": false,
+      "file": "test/math.test.js",
+      "err": {
+        "message": "expected 3 to equal 4",
+        "stack": "AssertionError: expected 3 to equal 4\n    at Context.<anonymous> (test/math.test.js:14:20)\n    at processImmediate (node:internal/timers:471:21)"
+      }
+    }
+  ],
+  "passes": [
+    {
+      "title": "should return -1 when the value is not present",
+      "fullTitle": "Array #indexOf() should return -1 when the value is not present",
+      "timedOut": false,
+      "duration": 2,
+      "state": "passed",
+      "speed": "fast",
+      "pass": true,
+      "fail": false,
+      "isPending": false,
+      "file": "test/array.test.js",
+      "err": {}
+    },
+    {
+      "title": "should return 3",
+      "fullTitle": "Math max() should return 3",
+      "timedOut": false,
+      "duration": 1,
+      "state": "passed",
+      "speed": "fast",
+      "pass": true,
+      "fail": false,
+      "isPending": false,
+      "file": "",
+      "err": {}
+    },
+    {
+      "title": "rejects bad password",
+      "fullTitle": "API user login rejects bad password",
+      "timedOut": false,
+      "duration": 45,
+      "state": "passed",
+      "speed": "medium",
+      "pass": true,
+      "fail": false,
+      "isPending": false,
+      "file": "test/api.test.js",
+      "err": {}
+    }
+  ]
+}

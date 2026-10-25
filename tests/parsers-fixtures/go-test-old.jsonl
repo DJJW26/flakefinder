@@ -1,0 +1,10 @@
+{"Time":"2023-01-02T10:00:00.001Z","Action":"start","Package":"example.com/legacy/pkg"}
+{"Time":"2023-01-02T10:00:00.002Z","Action":"run","Package":"example.com/legacy/pkg","Test":"TestOldPass"}
+{"Time":"2023-01-02T10:00:00.003Z","Action":"output","Package":"example.com/legacy/pkg","Test":"TestOldPass","Output":"--- PASS: TestOldPass (0.00s)\n"}
+{"Time":"2023-01-02T10:00:00.004Z","Action":"pass","Package":"example.com/legacy/pkg","Test":"TestOldPass"}
+{"Time":"2023-01-02T10:00:00.005Z","Action":"run","Package":"example.com/legacy/pkg","Test":"TestOldFail"}
+{"Time":"2023-01-02T10:00:00.006Z","Action":"output","Package":"example.com/legacy/pkg","Test":"TestOldFail","Output":"--- FAIL: TestOldFail (0.00s)\n"}
+{"Time":"2023-01-02T10:00:00.007Z","Action":"fail","Package":"example.com/legacy/pkg","Test":"TestOldFail"}
+{"Time":"2023-01-02T10:00:00.008Z","Action":"run","Package":"example.com/legacy/pkg","Test":"TestOldSkip"}
+{"Time":"2023-01-02T10:00:00.009Z","Action":"skip","Package":"example.com/legacy/pkg","Test":"TestOldSkip"}
+{"Time":"2023-01-02T10:00:00.010Z","Action":"pass","Package":"example.com/legacy/pkg","Elapsed":0.02}

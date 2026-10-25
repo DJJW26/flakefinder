@@ -43,11 +43,12 @@ function elapsedToMs(ev: Record<string, unknown>): number | null {
 /** Last meaningful chunk of a test's output events, trimmed to MESSAGE_MAX_CHARS. */
 function messageFromOutputs(outputs: string[]): string | undefined {
   if (outputs.length === 0) return undefined;
-  const joined = stripAnsi(outputs.join(''))
+  // Blank lines are dropped but per-line indentation is kept — a line like
+  // "    file.go:12: detail" carries its t.Log prefix meaningfully.
+  const text = stripAnsi(outputs.join(''))
     .split(/\r?\n/)
     .filter((line) => line.trim() !== '')
     .join('\n');
-  const text = joined.trim();
   if (text === '') return undefined;
   return text.length > MESSAGE_MAX_CHARS ? text.slice(-MESSAGE_MAX_CHARS) : text;
 }
