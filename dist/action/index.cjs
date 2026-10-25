@@ -127630,7 +127630,9 @@ function loadConfig(cwd) {
         throw new Error(`cannot read ${candidate}: ${err.message}`);
       }
       try {
-        const parsed = JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, "")));
+        const parsed = JSON.parse(
+          stripJsonComments(raw.replace(/^\uFEFF/, ""))
+        );
         return { config: parsed, path: candidate };
       } catch (err) {
         throw new Error(`invalid config in ${candidate}: ${err.message}`);
@@ -129046,7 +129048,7 @@ ${hasVerdicts ? drawerMarkup : ""}
 }
 
 // src/types.ts
-var FLAKEFINDER_VERSION = "0.2.0";
+var FLAKEFINDER_VERSION = "0.2.1";
 
 // src/report/json.ts
 function renderJson(verdicts, cfg) {
