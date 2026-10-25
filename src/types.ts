@@ -158,4 +158,4 @@ export interface DashboardData {
   runs: DashboardRun[];
 }
 
-export const FLAKEFINDER_VERSION = '0.1.0';
+export const FLAKEFINDER_VERSION = '0.1.1';

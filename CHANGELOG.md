@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.1
+
+- **fix**: quarantine flags now actually reach the test runner through
+  npm/yarn/pnpm commands (`--` separator inserted) and are shell-safe in direct
+  mode (spawn without shell by default, quoting only in shell fallback).
+- **fix**: flake detection no longer goes blind outside git repositories —
+  flip-flop detection falls back to per-run buckets when no commit SHA exists.
+- **fix**: GitHub Action `history-max-runs` input is now honored.
+- QA pass results and open items: docs/QA_FINDINGS.md.
+
+## 0.1.0
 
 Initial release.
 

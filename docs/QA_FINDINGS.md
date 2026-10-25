@@ -129,6 +129,10 @@ next iteration, with a recommendation.
 - **Quarantine honesty**: entries for unsupported runners are informational only, and
   prune refuses to un-quarantine tests that merely went unseen (they're excluded —
   silence isn't health).
+- **Documentation accuracy**: all 18 CLI flags verified present and correct in
+  docs/USAGE.md against live `--help` output; README claims (85 KB package, exit-code
+  table, offline dashboard, "never edits test files", formats table) verified against
+  actual behavior.
 
 ---
 
