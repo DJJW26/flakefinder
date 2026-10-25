@@ -106,17 +106,6 @@ describe('goTestParser', () => {
     expect(results[0]).toMatchObject({ status: 'pass', durationMs: 20 });
   });
 
-  it('omits tests that never reach a terminal action', () => {
-    const content = [
-      '{"Action":"run","Package":"p","Test":"Started"}',
-      '{"Action":"output","Package":"p","Test":"Started","Output":"mid-run crash"}',
-      '{"Action":"fail","Package":"p","Elapsed":9.9}',
-    ].join('\n');
-    const { results, warnings } = goTestParser.parse(content, 'inline');
-    expect(results).toEqual([]);
-    expect(warnings).toEqual([]);
-  });
-
   it('reports at most 5 malformed lines then a summary', () => {
     const lines = Array.from({ length: 7 }, (_, i) => `garbage line ${i} {{`);
     lines.push('{"Action":"pass","Package":"p","Test":"Ok","Elapsed":0.001}');
@@ -136,5 +125,37 @@ describe('goTestParser', () => {
     expect(goTestParser.sniff('{"Action":"pass"}')).toBe(false); // no Package
     expect(goTestParser.sniff(load('jest.json'))).toBe(false);
     expect(goTestParser.sniff('')).toBe(false);
+  });
+});
+
+describe('dangling runs (v0.2.0 — crash coverage)', () => {
+  it('synthesizes error results for tests that started but never finished', () => {
+    const content = [
+      JSON.stringify({ Action: 'run', Package: 'pkg/a', Test: 'TestCrash' }),
+      JSON.stringify({
+        Action: 'output',
+        Package: 'pkg/a',
+        Test: 'TestCrash',
+        Output: '=== RUN TestCrash\n',
+      }),
+      JSON.stringify({ Action: 'run', Package: 'pkg/a', Test: 'TestSurvives' }),
+      JSON.stringify({ Action: 'pass', Package: 'pkg/a', Test: 'TestSurvives', Elapsed: 0.01 }),
+    ].join('\n');
+    const { results, warnings } = goTestParser.parse(content, 'crash.jsonl');
+    const crashed = results.find((r) => r.name === 'TestCrash')!;
+    expect(crashed).toBeDefined();
+    expect(crashed.status).toBe('error');
+    expect(crashed.message).toContain('never reported a result');
+    expect(results.find((r) => r.name === 'TestSurvives')!.status).toBe('pass');
+    expect(warnings.some((w) => w.includes('1 test(s) started but never reported'))).toBe(true);
+  });
+
+  it('emits no warning when every test reaches a terminal action', () => {
+    const content = [
+      JSON.stringify({ Action: 'run', Package: 'p', Test: 'T' }),
+      JSON.stringify({ Action: 'pass', Package: 'p', Test: 'T', Elapsed: 0.5 }),
+    ].join('\n');
+    const { warnings } = goTestParser.parse(content, 'ok.jsonl');
+    expect(warnings).toEqual([]);
   });
 });

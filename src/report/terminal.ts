@@ -45,16 +45,25 @@ function truncateMiddle(s: string, max: number): string {
  * Terminal report. Sections per problem classification, a summary line for
  * healthy tests, and actionable next steps. ANSI only when opts.color.
  * Receives the FULL verdict set — filtering by class would make the
- * "N tracked / ok:" numbers lie.
+ * "N tracked / ok:" numbers lie. `threshold` (when provided) drops
+ * flaky-suspected rows below the score, matching the md report's behavior;
+ * confirmed/retry flakes and failures always show.
  */
 export function renderTerminal(
-  verdicts: TestVerdict[],
-  opts: { color: boolean; flakesOnly: boolean; allRows?: boolean },
+  allVerdicts: TestVerdict[],
+  opts: { color: boolean; flakesOnly: boolean; allRows?: boolean; threshold?: number },
 ): string {
   const color = makeColor(opts.color);
   const bold = (s: string): string => color('1', s);
   const dim = (s: string): string => color('2', s);
   const lines: string[] = [];
+
+  const verdicts =
+    opts.threshold == null
+      ? allVerdicts
+      : allVerdicts.filter(
+          (v) => v.classification !== 'flaky-suspected' || v.flakeScore >= opts.threshold!,
+        );
 
   const byClass = new Map<Classification, TestVerdict[]>();
   for (const v of verdicts) {

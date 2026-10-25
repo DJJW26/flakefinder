@@ -111,11 +111,14 @@ detectParser(content: string): ReportParser | null
 class HistoryStore {
   constructor(storeDir: string)
   readonly path: string            // <storeDir>/history.jsonl
-  append(run: RunRecord): void     // fs append + in-memory
+  formatVersion: number | null     // schema header version; null = legacy header-less file
+  append(run: RunRecord): void     // fs append + in-memory; writes {"version":1} header when creating the file
   loadAll(): RunRecord[]           // tolerant of corrupt lines (skips them)
   runs(): RunRecord[]              // in-memory, chronological
-  prune(maxRuns: number): void     // keep last N, atomic rewrite (tmp+rename)
+  prune(maxRuns: number): void     // keep last N, atomic rewrite (tmp+rename); preserves/inserts header
 }
+// v0.2.0+: the file starts with a {"version":1} header line; readers tolerate
+// legacy header-less stores and treat the header as a schema marker, not a record.
 snapshotPath(storeDir: string): string  // <storeDir>/verdicts-snapshot.json
 
 // src/engine/stats.ts  (Agent E)

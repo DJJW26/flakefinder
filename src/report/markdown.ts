@@ -1,4 +1,5 @@
 import type { TestVerdict } from '../types.js';
+import { redact } from '../util/redact.js';
 
 export const PR_COMMENT_MARKER = '<!-- flakefinder:report -->';
 
@@ -8,10 +9,10 @@ function isFlaky(v: TestVerdict): boolean {
   return (FLAKY_CLASSES as readonly string[]).includes(v.classification);
 }
 
-/** Table-cell safe: no pipes, no newlines, capped length. */
+/** Table-cell safe: no pipes, no newlines, capped length; secrets redacted. */
 function cell(s: string | undefined, max = 80): string {
   if (!s) return '';
-  const oneLine = s.replace(/\r?\n/g, ' ');
+  const oneLine = redact(s).replace(/\r?\n/g, ' ');
   const out = oneLine.length > max ? `${oneLine.slice(0, max - 1)}…` : oneLine;
   return out.replace(/\|/g, '\\|');
 }
@@ -123,7 +124,8 @@ export function buildPrComment(verdicts: TestVerdict[], previous: TestVerdict[] 
       '',
     );
     out.push('````text');
-    out.push((v.lastMessage ?? '(no failure message recorded)').slice(0, 400));
+    // redact BEFORE truncating so a token split by the slice can't survive partially
+    out.push(redact(v.lastMessage ?? '(no failure message recorded)').slice(0, 400));
     out.push('````', '');
     out.push('Quarantine it:', '');
     out.push('```bash');

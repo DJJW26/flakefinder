@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import path from 'node:path';
@@ -14,14 +15,21 @@ export function snapshotPath(storeDir: string): string {
   return path.join(storeDir, 'verdicts-snapshot.json');
 }
 
+/** Current on-disk schema version, stamped as a {"version":N} header line. */
+export const STORE_FORMAT_VERSION = 1;
+
 /**
- * Append-only JSONL history store. One RunRecord per line. Corrupt lines are
- * skipped on load and reported through `warnings` (capped at 10) rather than
- * aborting — history must never be the reason a CI run dies.
+ * Append-only JSONL history store. One RunRecord per line, prefixed by a
+ * `{"version":1}` schema header (v0.2.0+; legacy header-less files load
+ * unchanged). Corrupt lines are skipped on load and reported through
+ * `warnings` (capped at 10) rather than aborting — history must never be the
+ * reason a CI run dies.
  */
 export class HistoryStore {
   readonly path: string;
   readonly warnings: string[] = [];
+  /** Schema version read from the file header; null for legacy header-less stores. */
+  formatVersion: number | null = null;
 
   private loaded = false;
   private records: RunRecord[] = [];
@@ -40,13 +48,24 @@ export class HistoryStore {
       const line = lines[i]!.trim();
       if (!line) continue;
       try {
-        this.records.push(JSON.parse(line) as RunRecord);
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (i === 0 && typeof parsed.version === 'number' && parsed.runId === undefined) {
+          this.formatVersion = parsed.version;
+          continue;
+        }
+        this.records.push(parsed as unknown as RunRecord);
       } catch {
         if (this.warnings.length < 10) {
           this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
         }
       }
     }
+  }
+
+  private ensureHeader(): void {
+    if (existsSync(this.path) && statSync(this.path).size > 0) return;
+    appendFileSync(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}\n`, 'utf8');
+    this.formatVersion = STORE_FORMAT_VERSION;
   }
 
   loadAll(): RunRecord[] {
@@ -61,6 +80,7 @@ export class HistoryStore {
 
   append(run: RunRecord): void {
     this.ensureLoaded();
+    this.ensureHeader();
     appendFileSync(this.path, `${JSON.stringify(run)}\n`, 'utf8');
     this.records.push(run);
   }
@@ -71,7 +91,13 @@ export class HistoryStore {
     if (this.records.length <= maxRuns) return;
     this.records = this.records.slice(-maxRuns);
     const tmp = `${this.path}.tmp`;
-    writeFileSync(tmp, `${this.records.map((r) => JSON.stringify(r)).join('\n')}\n`, 'utf8');
+    const header =
+      this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}\n` : '';
+    writeFileSync(
+      tmp,
+      `${header}${this.records.map((r) => JSON.stringify(r)).join('\n')}\n`,
+      'utf8',
+    );
     renameSync(tmp, this.path);
   }
 }

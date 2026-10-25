@@ -72,7 +72,13 @@ function spawnCommand(command: string[], cwd: string, quoteIdx: number[] = []): 
           start(shellArgv, true);
           return;
         }
-        console.error(`flakefinder: failed to start command: ${err.message}`);
+        if (err.code === 'ENOENT') {
+          console.error(
+            `flakefinder: command not found: ${argv[0]!} — is it installed and on PATH?`,
+          );
+        } else {
+          console.error(`flakefinder: failed to start command: ${err.message}`);
+        }
         done(2);
       });
       child.on('close', (code) => {

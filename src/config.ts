@@ -52,11 +52,122 @@ export function defaultConfig(): FlakefinderConfig {
   return {};
 }
 
-/** Defaults per PLAN §6. */
+/** Thrown when user-supplied config fails validation; message lists ALL problems. */
+export class ConfigValidationError extends Error {}
+
+const KNOWN_KEYS: ReadonlySet<string> = new Set([
+  'reports',
+  'storeDir',
+  'maxRuns',
+  'minRuns',
+  'liveRetries',
+  'flakeScoreThreshold',
+  'slowThresholdMs',
+  'slowMultiplier',
+  'quarantineFile',
+  'runner',
+  'failOnFlakes',
+]);
+
+const VALID_RUNNERS: readonly RunnerKind[] = ['auto', 'pytest', 'jest', 'mocha', 'go', 'generic'];
+
+function describe(v: unknown): string {
+  if (typeof v === 'string') return `"${v}" (string)`;
+  if (v === null) return 'null';
+  if (Array.isArray(v)) return 'array';
+  return `${String(v)} (${typeof v})`;
+}
+
+function checkInt(problems: string[], key: string, v: unknown, min: number, max: number): void {
+  if (v === undefined) return; // absent keys fall back to defaults
+  if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) {
+    problems.push(`${key}: expected integer ${min}–${max}, got ${describe(v)}`);
+  }
+}
+
+/**
+ * Validate user-supplied config keys (partial — absent keys fall back to
+ * defaults). Fails fast with every problem listed: wrong-typed values used to
+ * silently misbehave (e.g. `runner: "Jest"` fell through to `generic`, which
+ * disables quarantine without a warning).
+ */
+export function validateConfig(config: FlakefinderConfig): void {
+  const problems: string[] = [];
+  for (const key of Object.keys(config)) {
+    if (!KNOWN_KEYS.has(key)) {
+      problems.push(`${key}: unknown key (valid keys: ${[...KNOWN_KEYS].sort().join(', ')})`);
+    }
+  }
+  const c = config as Record<string, unknown>;
+
+  if (c.reports !== undefined) {
+    const ok =
+      Array.isArray(c.reports) &&
+      (c.reports as unknown[]).every((x) => typeof x === 'string' && x.trim() !== '');
+    if (!ok)
+      problems.push(
+        'reports: expected array of non-empty glob strings, got ' + describe(c.reports),
+      );
+  }
+  if (c.storeDir !== undefined && (typeof c.storeDir !== 'string' || c.storeDir.trim() === '')) {
+    problems.push(`storeDir: expected non-empty string, got ${describe(c.storeDir)}`);
+  }
+  checkInt(problems, 'maxRuns', c.maxRuns, 1, 100_000);
+  checkInt(problems, 'minRuns', c.minRuns, 1, 1_000);
+  checkInt(problems, 'liveRetries', c.liveRetries, 0, 10);
+  checkInt(problems, 'flakeScoreThreshold', c.flakeScoreThreshold, 0, 100);
+  if (
+    c.slowThresholdMs !== undefined &&
+    c.slowThresholdMs !== null &&
+    (typeof c.slowThresholdMs !== 'number' ||
+      !Number.isFinite(c.slowThresholdMs) ||
+      c.slowThresholdMs <= 0)
+  ) {
+    problems.push(
+      `slowThresholdMs: expected positive number or null, got ${describe(c.slowThresholdMs)}`,
+    );
+  }
+  if (
+    c.slowMultiplier !== undefined &&
+    (typeof c.slowMultiplier !== 'number' ||
+      !Number.isFinite(c.slowMultiplier) ||
+      c.slowMultiplier <= 0)
+  ) {
+    problems.push(`slowMultiplier: expected positive number, got ${describe(c.slowMultiplier)}`);
+  }
+  if (
+    c.quarantineFile !== undefined &&
+    (typeof c.quarantineFile !== 'string' || c.quarantineFile.trim() === '')
+  ) {
+    problems.push(`quarantineFile: expected non-empty string, got ${describe(c.quarantineFile)}`);
+  }
+  if (c.runner !== undefined) {
+    if (typeof c.runner !== 'string' || !VALID_RUNNERS.includes(c.runner as RunnerKind)) {
+      const guess = VALID_RUNNERS.find(
+        (r) => typeof c.runner === 'string' && r.toLowerCase() === c.runner.toLowerCase(),
+      );
+      problems.push(
+        `runner: expected one of ${VALID_RUNNERS.join('|')}, got ${describe(c.runner)}` +
+          (guess ? ` (did you mean "${guess}"?)` : ''),
+      );
+    }
+  }
+  if (c.failOnFlakes !== undefined && typeof c.failOnFlakes !== 'boolean') {
+    problems.push(`failOnFlakes: expected boolean, got ${describe(c.failOnFlakes)}`);
+  }
+
+  if (problems.length > 0) {
+    throw new ConfigValidationError(`invalid flakefinder config:\n  - ${problems.join('\n  - ')}`);
+  }
+}
+
+/** Defaults per PLAN §6. User-supplied values are validated before merging. */
 export function resolveConfig(
   config: FlakefinderConfig = {},
   overrides: Partial<FlakefinderConfig> = {},
 ): ResolvedConfig {
+  validateConfig(config);
+  validateConfig(overrides);
   return {
     reports: [],
     storeDir: '.flakefinder',

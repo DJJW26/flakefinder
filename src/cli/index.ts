@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import {
@@ -313,6 +313,8 @@ export async function main(argv: string[]): Promise<number> {
           color: g.color && process.stdout.isTTY === true,
           flakesOnly: opts.flakesOnly === true,
           allRows: opts.all === true,
+          // table and md now agree: threshold gates suspected flakes; --all shows everything
+          threshold: opts.all === true ? undefined : (threshold ?? cfg.flakeScoreThreshold),
         }),
       );
     });
@@ -344,6 +346,7 @@ export async function main(argv: string[]): Promise<number> {
         runs,
       });
       const out = path.resolve(g.cwd, opts.out);
+      mkdirSync(path.dirname(out), { recursive: true }); // -o into a fresh directory just works
       writeFileSync(out, html, 'utf8');
       console.log(`dashboard written → ${out} (${verdicts.length} tests, ${runs.length} runs)`);
       if (opts.open) openInBrowser(out);

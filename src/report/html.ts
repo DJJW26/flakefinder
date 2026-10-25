@@ -23,6 +23,22 @@
  */
 
 import type { DashboardData } from '../types.js';
+import { redact } from '../util/redact.js';
+
+/**
+ * The dashboard is uploaded as a CI artifact — redact credential-shaped
+ * strings from failure messages before embedding. Other fields (names,
+ * suites) come from test code and stay as-is; the raw store remains the
+ * unredacted source of truth on the user's machine.
+ */
+function redactData(data: DashboardData): DashboardData {
+  return {
+    ...data,
+    verdicts: data.verdicts.map((v) =>
+      v.lastMessage ? { ...v, lastMessage: redact(v.lastMessage) } : v,
+    ),
+  };
+}
 
 /** Serialize the payload and neutralize HTML parser break-outs inside the data script. */
 function embedJson(data: DashboardData): string {
@@ -32,9 +48,10 @@ function embedJson(data: DashboardData): string {
 }
 
 export function renderDashboard(data: DashboardData): string {
-  const json = embedJson(data);
-  const hasVerdicts = data.verdicts.length > 0;
-  const hasRuns = data.runs.length > 0;
+  const safeData = redactData(data);
+  const json = embedJson(safeData);
+  const hasVerdicts = safeData.verdicts.length > 0;
+  const hasRuns = safeData.runs.length > 0;
 
   const css = String.raw`
   *, *::before, *::after { box-sizing: border-box; }

@@ -3,7 +3,7 @@
 // src/cli/index.ts
 import { spawn as spawn2, spawnSync as spawnSync2 } from "child_process";
 import { randomUUID as randomUUID2 } from "crypto";
-import { existsSync as existsSync4, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "fs";
+import { existsSync as existsSync4, mkdirSync as mkdirSync2, readFileSync as readFileSync5, writeFileSync as writeFileSync3 } from "fs";
 import path6 from "path";
 import { Command } from "commander";
 
@@ -52,7 +52,88 @@ function stripJsonComments(text) {
   }
   return out.replace(/,(\s*[}\]])/g, "$1");
 }
+var ConfigValidationError = class extends Error {
+};
+var KNOWN_KEYS = /* @__PURE__ */ new Set([
+  "reports",
+  "storeDir",
+  "maxRuns",
+  "minRuns",
+  "liveRetries",
+  "flakeScoreThreshold",
+  "slowThresholdMs",
+  "slowMultiplier",
+  "quarantineFile",
+  "runner",
+  "failOnFlakes"
+]);
+var VALID_RUNNERS = ["auto", "pytest", "jest", "mocha", "go", "generic"];
+function describe(v) {
+  if (typeof v === "string") return `"${v}" (string)`;
+  if (v === null) return "null";
+  if (Array.isArray(v)) return "array";
+  return `${String(v)} (${typeof v})`;
+}
+function checkInt(problems, key, v, min, max) {
+  if (v === void 0) return;
+  if (typeof v !== "number" || !Number.isInteger(v) || v < min || v > max) {
+    problems.push(`${key}: expected integer ${min}\u2013${max}, got ${describe(v)}`);
+  }
+}
+function validateConfig(config) {
+  const problems = [];
+  for (const key of Object.keys(config)) {
+    if (!KNOWN_KEYS.has(key)) {
+      problems.push(`${key}: unknown key (valid keys: ${[...KNOWN_KEYS].sort().join(", ")})`);
+    }
+  }
+  const c = config;
+  if (c.reports !== void 0) {
+    const ok = Array.isArray(c.reports) && c.reports.every((x) => typeof x === "string" && x.trim() !== "");
+    if (!ok)
+      problems.push(
+        "reports: expected array of non-empty glob strings, got " + describe(c.reports)
+      );
+  }
+  if (c.storeDir !== void 0 && (typeof c.storeDir !== "string" || c.storeDir.trim() === "")) {
+    problems.push(`storeDir: expected non-empty string, got ${describe(c.storeDir)}`);
+  }
+  checkInt(problems, "maxRuns", c.maxRuns, 1, 1e5);
+  checkInt(problems, "minRuns", c.minRuns, 1, 1e3);
+  checkInt(problems, "liveRetries", c.liveRetries, 0, 10);
+  checkInt(problems, "flakeScoreThreshold", c.flakeScoreThreshold, 0, 100);
+  if (c.slowThresholdMs !== void 0 && c.slowThresholdMs !== null && (typeof c.slowThresholdMs !== "number" || !Number.isFinite(c.slowThresholdMs) || c.slowThresholdMs <= 0)) {
+    problems.push(
+      `slowThresholdMs: expected positive number or null, got ${describe(c.slowThresholdMs)}`
+    );
+  }
+  if (c.slowMultiplier !== void 0 && (typeof c.slowMultiplier !== "number" || !Number.isFinite(c.slowMultiplier) || c.slowMultiplier <= 0)) {
+    problems.push(`slowMultiplier: expected positive number, got ${describe(c.slowMultiplier)}`);
+  }
+  if (c.quarantineFile !== void 0 && (typeof c.quarantineFile !== "string" || c.quarantineFile.trim() === "")) {
+    problems.push(`quarantineFile: expected non-empty string, got ${describe(c.quarantineFile)}`);
+  }
+  if (c.runner !== void 0) {
+    if (typeof c.runner !== "string" || !VALID_RUNNERS.includes(c.runner)) {
+      const guess = VALID_RUNNERS.find(
+        (r) => typeof c.runner === "string" && r.toLowerCase() === c.runner.toLowerCase()
+      );
+      problems.push(
+        `runner: expected one of ${VALID_RUNNERS.join("|")}, got ${describe(c.runner)}` + (guess ? ` (did you mean "${guess}"?)` : "")
+      );
+    }
+  }
+  if (c.failOnFlakes !== void 0 && typeof c.failOnFlakes !== "boolean") {
+    problems.push(`failOnFlakes: expected boolean, got ${describe(c.failOnFlakes)}`);
+  }
+  if (problems.length > 0) {
+    throw new ConfigValidationError(`invalid flakefinder config:
+  - ${problems.join("\n  - ")}`);
+  }
+}
 function resolveConfig(config = {}, overrides = {}) {
+  validateConfig(config);
+  validateConfig(overrides);
   return {
     reports: [],
     storeDir: ".flakefinder",
@@ -466,8 +547,24 @@ var goTestParser = {
     if (malformed > MAX_MALFORMED_DETAILS) {
       warnings.push(`\u2026and ${malformed - MAX_MALFORMED_DETAILS} more malformed lines`);
     }
+    let dangling = 0;
     for (const acc of tests.values()) {
-      if (acc.status === void 0) continue;
+      if (acc.status === void 0) {
+        dangling++;
+        const result2 = {
+          testId: makeTestId(acc.pkg, acc.test),
+          suite: acc.pkg,
+          name: acc.test,
+          status: "error",
+          durationMs: null,
+          message: "test started but never reported a result (test binary crashed mid-run?)"
+        };
+        const output = messageFromOutputs(acc.outputs);
+        if (output !== void 0) result2.message = `${result2.message}
+${output}`;
+        results.push(result2);
+        continue;
+      }
       const result = {
         testId: makeTestId(acc.pkg, acc.test),
         suite: acc.pkg,
@@ -478,6 +575,11 @@ var goTestParser = {
       const message = messageFromOutputs(acc.outputs);
       if (message !== void 0) result.message = message;
       results.push(result);
+    }
+    if (dangling > 0) {
+      warnings.push(
+        `go: ${sourcePath}: ${dangling} test(s) started but never reported a result \u2014 synthesized as error (package crash?)`
+      );
     }
     return { results, warnings };
   }
@@ -880,14 +982,69 @@ function exclusionArgs(runner, entries) {
   }
 }
 
+// src/util/redact.ts
+var PATTERNS = [
+  { name: "github-pat-classic", re: /\bghp_[A-Za-z0-9]{30,}\b/g, replacement: "ghp_[REDACTED]" },
+  {
+    name: "github-pat-fine",
+    re: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+    replacement: "github_pat_[REDACTED]"
+  },
+  { name: "aws-access-key", re: /\bAKIA[0-9A-Z]{16}\b/g, replacement: "AKIA[REDACTED]" },
+  { name: "openai-key", re: /\bsk-[A-Za-z0-9_-]{20,}\b/g, replacement: "sk-[REDACTED]" },
+  { name: "slack-token", re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, replacement: "xox[REDACTED]" },
+  { name: "gitlab-pat", re: /\bglpat-[A-Za-z0-9_-]{20,}\b/g, replacement: "glpat-[REDACTED]" },
+  {
+    name: "npm-token",
+    re: /\bnpm_[A-Za-z0-9]{30,}\b/g,
+    replacement: "npm_[REDACTED]"
+  },
+  // JWT-shaped: three base64url segments
+  {
+    name: "jwt",
+    re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b/g,
+    replacement: "[REDACTED-JWT]"
+  },
+  // Authorization headers with raw tokens
+  {
+    name: "bearer",
+    re: /\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{18,}/gi,
+    replacement: "$1 [REDACTED]"
+  },
+  // Assignment forms: SECRET_KEY=... / "api_key": "..." (quoted or not). No
+  // leading \b on purpose: compound names like AWS_SECRET_ACCESS_KEY have an
+  // underscore before the matched fragment, which is a word char.
+  {
+    name: "secret-assignment",
+    re: /((?:api[_-]?key|secret[_-]?key|access[_-]?key|auth[_-]?token|password|passwd|client[_-]?secret)["']?\s*[:=]\s*["']?)([^\s"']{8,})/gi,
+    replacement: "$1[REDACTED]"
+  }
+];
+function redact(text) {
+  let out = text;
+  for (const p of PATTERNS) {
+    out = out.replace(p.re, p.replacement);
+  }
+  return out;
+}
+
 // src/report/html.ts
+function redactData(data) {
+  return {
+    ...data,
+    verdicts: data.verdicts.map(
+      (v) => v.lastMessage ? { ...v, lastMessage: redact(v.lastMessage) } : v
+    )
+  };
+}
 function embedJson(data) {
   return JSON.stringify(data).replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "<\\!--");
 }
 function renderDashboard(data) {
-  const json = embedJson(data);
-  const hasVerdicts = data.verdicts.length > 0;
-  const hasRuns = data.runs.length > 0;
+  const safeData = redactData(data);
+  const json = embedJson(safeData);
+  const hasVerdicts = safeData.verdicts.length > 0;
+  const hasRuns = safeData.runs.length > 0;
   const css = String.raw`
   *, *::before, *::after { box-sizing: border-box; }
   :root, [data-theme='dark'] {
@@ -2242,7 +2399,7 @@ function isFlaky(v) {
 }
 function cell(s, max = 80) {
   if (!s) return "";
-  const oneLine = s.replace(/\r?\n/g, " ");
+  const oneLine = redact(s).replace(/\r?\n/g, " ");
   const out = oneLine.length > max ? `${oneLine.slice(0, max - 1)}\u2026` : oneLine;
   return out.replace(/\|/g, "\\|");
 }
@@ -2339,11 +2496,14 @@ function truncateMiddle(s, max) {
   const half = Math.floor((max - 1) / 2);
   return `${s.slice(0, half)}\u2026${s.slice(s.length - half)}`;
 }
-function renderTerminal(verdicts, opts) {
+function renderTerminal(allVerdicts, opts) {
   const color = makeColor(opts.color);
   const bold = (s) => color("1", s);
   const dim2 = (s) => color("2", s);
   const lines = [];
+  const verdicts = opts.threshold == null ? allVerdicts : allVerdicts.filter(
+    (v) => v.classification !== "flaky-suspected" || v.flakeScore >= opts.threshold
+  );
   const byClass = /* @__PURE__ */ new Map();
   for (const v of verdicts) {
     const list = byClass.get(v.classification) ?? [];
@@ -2439,15 +2599,19 @@ import {
   mkdirSync,
   readFileSync as readFileSync3,
   renameSync,
+  statSync as statSync2,
   writeFileSync as writeFileSync2
 } from "fs";
 import path3 from "path";
 function snapshotPath(storeDir) {
   return path3.join(storeDir, "verdicts-snapshot.json");
 }
+var STORE_FORMAT_VERSION = 1;
 var HistoryStore = class {
   path;
   warnings = [];
+  /** Schema version read from the file header; null for legacy header-less stores. */
+  formatVersion = null;
   loaded = false;
   records = [];
   constructor(storeDir) {
@@ -2463,13 +2627,24 @@ var HistoryStore = class {
       const line = lines[i].trim();
       if (!line) continue;
       try {
-        this.records.push(JSON.parse(line));
+        const parsed = JSON.parse(line);
+        if (i === 0 && typeof parsed.version === "number" && parsed.runId === void 0) {
+          this.formatVersion = parsed.version;
+          continue;
+        }
+        this.records.push(parsed);
       } catch {
         if (this.warnings.length < 10) {
           this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
         }
       }
     }
+  }
+  ensureHeader() {
+    if (existsSync3(this.path) && statSync2(this.path).size > 0) return;
+    appendFileSync(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+`, "utf8");
+    this.formatVersion = STORE_FORMAT_VERSION;
   }
   loadAll() {
     this.ensureLoaded();
@@ -2481,6 +2656,7 @@ var HistoryStore = class {
   }
   append(run) {
     this.ensureLoaded();
+    this.ensureHeader();
     appendFileSync(this.path, `${JSON.stringify(run)}
 `, "utf8");
     this.records.push(run);
@@ -2491,8 +2667,14 @@ var HistoryStore = class {
     if (this.records.length <= maxRuns) return;
     this.records = this.records.slice(-maxRuns);
     const tmp = `${this.path}.tmp`;
-    writeFileSync2(tmp, `${this.records.map((r) => JSON.stringify(r)).join("\n")}
-`, "utf8");
+    const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+` : "";
+    writeFileSync2(
+      tmp,
+      `${header}${this.records.map((r) => JSON.stringify(r)).join("\n")}
+`,
+      "utf8"
+    );
     renameSync(tmp, this.path);
   }
 };
@@ -2595,7 +2777,13 @@ function spawnCommand(command, cwd, quoteIdx = []) {
           start(shellArgv, true);
           return;
         }
-        console.error(`flakefinder: failed to start command: ${err.message}`);
+        if (err.code === "ENOENT") {
+          console.error(
+            `flakefinder: command not found: ${argv[0]} \u2014 is it installed and on PATH?`
+          );
+        } else {
+          console.error(`flakefinder: failed to start command: ${err.message}`);
+        }
         done(2);
       });
       child.on("close", (code) => {
@@ -2959,7 +3147,9 @@ async function main(argv) {
       renderTerminal(verdicts, {
         color: g.color && process.stdout.isTTY === true,
         flakesOnly: opts.flakesOnly === true,
-        allRows: opts.all === true
+        allRows: opts.all === true,
+        // table and md now agree: threshold gates suspected flakes; --all shows everything
+        threshold: opts.all === true ? void 0 : threshold ?? cfg.flakeScoreThreshold
       })
     );
   });
@@ -2982,6 +3172,7 @@ async function main(argv) {
       runs
     });
     const out = path6.resolve(g.cwd, opts.out);
+    mkdirSync2(path6.dirname(out), { recursive: true });
     writeFileSync3(out, html, "utf8");
     console.log(`dashboard written \u2192 ${out} (${verdicts.length} tests, ${runs.length} runs)`);
     if (opts.open) openInBrowser(out);

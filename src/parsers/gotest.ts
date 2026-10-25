@@ -116,8 +116,28 @@ export const goTestParser: ReportParser = {
       warnings.push(`…and ${malformed - MAX_MALFORMED_DETAILS} more malformed lines`);
     }
 
+    let dangling = 0;
     for (const acc of tests.values()) {
-      if (acc.status === undefined) continue; // never reached a terminal action
+      if (acc.status === undefined) {
+        // Test started (run event) but never reported pass/fail/skip — the test
+        // binary crashed mid-run (panic, OOM, killed). Synthesize an error so
+        // the crash is visible in verdicts instead of silently vanishing.
+        dangling++;
+        const result: TestCaseResult = {
+          testId: makeTestId(acc.pkg, acc.test),
+          suite: acc.pkg,
+          name: acc.test,
+          status: 'error',
+          durationMs: null,
+          message: 'test started but never reported a result (test binary crashed mid-run?)',
+        };
+        // Real crash output (panic trace etc.) is the evidence — keep it below
+        // the synthetic explanation.
+        const output = messageFromOutputs(acc.outputs);
+        if (output !== undefined) result.message = `${result.message}\n${output}`;
+        results.push(result);
+        continue;
+      }
       const result: TestCaseResult = {
         testId: makeTestId(acc.pkg, acc.test),
         suite: acc.pkg,
@@ -128,6 +148,11 @@ export const goTestParser: ReportParser = {
       const message = messageFromOutputs(acc.outputs);
       if (message !== undefined) result.message = message;
       results.push(result);
+    }
+    if (dangling > 0) {
+      warnings.push(
+        `go: ${sourcePath}: ${dangling} test(s) started but never reported a result — synthesized as error (package crash?)`,
+      );
     }
     return { results, warnings };
   },

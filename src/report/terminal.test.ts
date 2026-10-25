@@ -108,3 +108,41 @@ describe('renderTerminal', () => {
     expect(out.split('\n').every((l) => l.length <= 160)).toBe(true);
   });
 });
+
+describe('threshold filter (v0.2.0 — table matches md behavior)', () => {
+  it('drops flaky-suspected below threshold, keeps confirmed/retry/failures', () => {
+    const verdicts = [
+      verdict({
+        testId: 'hi',
+        name: 'suspected high',
+        classification: 'flaky-suspected',
+        flakeScore: 55,
+      }),
+      verdict({
+        testId: 'lo',
+        name: 'suspected low',
+        classification: 'flaky-suspected',
+        flakeScore: 10,
+      }),
+      verdict({
+        testId: 'conf',
+        name: 'confirmed low score',
+        classification: 'flaky-confirmed',
+        flakeScore: 50,
+      }),
+    ];
+    const out = renderTerminal(verdicts, { color: false, flakesOnly: false, threshold: 40 });
+    expect(out).toContain('suspected high');
+    expect(out).not.toContain('suspected low');
+    expect(out).toContain('confirmed low score'); // confirmed always shows, even at score 50
+    expect(out).toContain('2 tracked test(s)'); // honest count post-filter
+  });
+
+  it('no threshold → suspected rows always shown (run/ci surfaces unchanged)', () => {
+    const out = renderTerminal([verdict({ classification: 'flaky-suspected', flakeScore: 5 })], {
+      color: false,
+      flakesOnly: false,
+    });
+    expect(out).toContain('FLAKY (suspected)');
+  });
+});

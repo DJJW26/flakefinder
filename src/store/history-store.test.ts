@@ -1,4 +1,4 @@
-import { appendFileSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { appendFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -102,5 +102,50 @@ describe('HistoryStore', () => {
 
   it('snapshotPath lives inside the store dir', () => {
     expect(snapshotPath(path.join('x', 'y'))).toBe(path.join('x', 'y', 'verdicts-snapshot.json'));
+  });
+});
+
+describe('store format header (v0.2.0)', () => {
+  it('writes a {"version":1} header when creating the file', () => {
+    const a = tmpStore();
+    a.append(record('r1', 'pass'));
+    const lines = readFileSync(a.path, 'utf8').trim().split('\n');
+    expect(JSON.parse(lines[0]!)).toEqual({ version: 1 });
+    expect(JSON.parse(lines[1]!).runId).toBe('r1');
+    expect(a.formatVersion).toBe(1);
+  });
+
+  it('loads legacy header-less stores (formatVersion null, records intact)', () => {
+    const a = tmpStore();
+    a.append(record('legacy', 'pass'));
+    // strip the header to simulate a v0.1.x store
+    const body =
+      readFileSync(a.path, 'utf8')
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .slice(1)
+        .join('\n') + '\n';
+    writeFileSync(a.path, body, 'utf8');
+    const b = new HistoryStore(path.dirname(a.path));
+    expect(b.formatVersion).toBeNull();
+    expect(b.loadAll()).toHaveLength(1);
+    expect(b.loadAll()[0]!.runId).toBe('legacy');
+  });
+
+  it('prune inserts the header on rewrite of a legacy store', () => {
+    const a = tmpStore();
+    for (let i = 1; i <= 6; i++) a.append(record(`r${i}`, 'pass'));
+    const body =
+      readFileSync(a.path, 'utf8')
+        .split('\n')
+        .filter((l) => l.trim() !== '')
+        .slice(1)
+        .join('\n') + '\n';
+    writeFileSync(a.path, body, 'utf8');
+    const b = new HistoryStore(path.dirname(a.path));
+    b.prune(2);
+    const lines = readFileSync(b.path, 'utf8').trim().split('\n');
+    expect(JSON.parse(lines[0]!)).toEqual({ version: 1 });
+    expect(lines).toHaveLength(3);
   });
 });

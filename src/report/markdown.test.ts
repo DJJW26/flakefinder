@@ -93,3 +93,20 @@ describe('buildPrComment', () => {
     expect(body).toContain('…and 2 more new flake(s)');
   });
 });
+
+describe('secret redaction (v0.2.0)', () => {
+  it('PR comment details redact tokens in failure messages before truncation', () => {
+    const long = `token ghp_0123456789abcdefABCDEF0123456789abcd leaked — ${'pad '.repeat(200)}`;
+    const body = buildPrComment([verdict({ lastMessage: long })], null);
+    expect(body).not.toContain('ghp_0123456789');
+    expect(body).toContain('ghp_[REDACTED]');
+  });
+
+  it('table cells are redacted too (test names can carry secrets)', () => {
+    const md = renderMarkdown([verdict({ name: 'check AKIAIOSFODNN7EXAMPLE works' })], {
+      flakesOnly: true,
+    });
+    expect(md).toContain('AKIA[REDACTED]');
+    expect(md).not.toContain('AKIAIOSFODNN7EXAMPLE');
+  });
+});

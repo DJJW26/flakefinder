@@ -9,7 +9,9 @@ import {
   loadConfig,
   resolveConfig,
   stripJsonComments,
+  validateConfig,
 } from './config.js';
+import type { FlakefinderConfig, RunnerKind } from './types.js';
 
 let dirs: string[] = [];
 function tmpDir(): string {
@@ -128,5 +130,91 @@ describe('detectRunner', () => {
   });
   it('empty dir → generic', () => {
     expect(detectRunner(tmpDir())).toBe('generic');
+  });
+});
+
+describe('validateConfig (v0.2.0)', () => {
+  it('accepts every documented key with a valid value', () => {
+    expect(() =>
+      validateConfig({
+        reports: ['junit*.xml'],
+        storeDir: '.ff',
+        maxRuns: 500,
+        minRuns: 2,
+        liveRetries: 1,
+        flakeScoreThreshold: 50,
+        slowThresholdMs: null,
+        slowMultiplier: 3,
+        quarantineFile: 'q.json',
+        runner: 'jest',
+        failOnFlakes: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it('rejects unknown keys (typo protection) listing valid keys', () => {
+    expect(() => validateConfig({ minRun: 3 } as FlakefinderConfig)).toThrow(
+      /minRun.*unknown key.*valid keys/s,
+    );
+  });
+
+  it('rejects wrong types with expected-vs-got in the message', () => {
+    expect(() => validateConfig({ maxRuns: '300' as unknown as number })).toThrow(
+      /maxRuns: expected integer 1–100000, got "300" \(string\)/,
+    );
+    expect(() => validateConfig({ reports: 'junit.xml' as unknown as string[] })).toThrow(
+      /reports: expected array of non-empty glob strings/,
+    );
+    expect(() => validateConfig({ failOnFlakes: 'yes' as unknown as boolean })).toThrow(
+      /failOnFlakes: expected boolean/,
+    );
+  });
+
+  it('rejects wrong-case runner with a did-you-mean hint', () => {
+    expect(() => validateConfig({ runner: 'Jest' as unknown as RunnerKind })).toThrow(
+      /did you mean "jest"\?/,
+    );
+    expect(() => validateConfig({ runner: 'sqlite' as RunnerKind })).toThrow(
+      /expected one of auto\|pytest\|jest\|mocha\|go\|generic/,
+    );
+  });
+
+  it('enforces ranges', () => {
+    expect(() => validateConfig({ liveRetries: -3 })).toThrow(/liveRetries: expected integer 0–10/);
+    expect(() => validateConfig({ minRuns: 0 })).toThrow(/minRuns: expected integer 1–1000/);
+    expect(() => validateConfig({ flakeScoreThreshold: 101 })).toThrow(
+      /flakeScoreThreshold: expected integer 0–100/,
+    );
+    expect(() => validateConfig({ slowThresholdMs: -5 })).toThrow(
+      /slowThresholdMs: expected positive number or null/,
+    );
+    expect(() => validateConfig({ slowMultiplier: 0 })).toThrow(
+      /slowMultiplier: expected positive number/,
+    );
+  });
+
+  it('collects ALL problems into one error', () => {
+    try {
+      validateConfig({
+        maxRuns: 'x' as unknown as number,
+        runner: 'Jest' as unknown as RunnerKind,
+        nope: 1,
+      } as unknown as FlakefinderConfig);
+      expect.unreachable('should have thrown');
+    } catch (err) {
+      const msg = (err as Error).message;
+      expect(msg).toContain('maxRuns');
+      expect(msg).toContain('runner');
+      expect(msg).toContain('nope');
+      expect(msg.match(/ {2}- /g)).toHaveLength(3);
+    }
+  });
+
+  it('resolveConfig validates both file config and overrides', () => {
+    expect(() => resolveConfig({ runner: 'Jest' as unknown as RunnerKind })).toThrow(
+      /did you mean "jest"\?/,
+    );
+    expect(() => resolveConfig({}, { liveRetries: 99 })).toThrow(/liveRetries/);
+    expect(resolveConfig({ minRuns: 2 }, { liveRetries: 1 }).liveRetries).toBe(1);
   });
 });
