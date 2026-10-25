@@ -6,7 +6,7 @@ dependency-light — please keep it that way.
 ## Setup
 
 ```bash
-git clone https://github.com/<YOUR_GITHUB>/flakefinder.git
+git clone https://github.com/DJJW26/flakefinder.git
 cd flakefinder
 npm install
 npm test          # unit tests (vitest)

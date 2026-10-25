@@ -40,12 +40,12 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/<YOUR_GITHUB>/flakefinder.git"
+    "url": "git+https://github.com/DJJW26/flakefinder.git"
   },
   "bugs": {
-    "url": "https://github.com/<YOUR_GITHUB>/flakefinder/issues"
+    "url": "https://github.com/DJJW26/flakefinder/issues"
   },
-  "homepage": "https://github.com/<YOUR_GITHUB>/flakefinder#readme",
+  "homepage": "https://github.com/DJJW26/flakefinder#readme",
   "dependencies": {
     "commander": "^15.0.0",
     "fast-xml-parser": "^5.11.2"

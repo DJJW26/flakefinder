@@ -24,7 +24,7 @@ jobs:
       - run: npm ci
       - run: npm test                       # your tests must write report files
       - name: flakefinder
-        uses: <YOUR_GITHUB>/flakefinder@main
+        uses: DJJW26/flakefinder@main
         if: always()                        # analyze even when tests fail
 ```
 

@@ -38,7 +38,7 @@ $ flakefinder run -- npm test
 **From source** (this repo):
 
 ```console
-$ git clone https://github.com/<YOUR_GITHUB>/flakefinder
+$ git clone https://github.com/DJJW26/flakefinder
 $ cd flakefinder && npm install && npm run build
 $ node dist/cli.js run -- npm test        # or: npm link
 ```
@@ -353,7 +353,7 @@ jobs:
       - run: npm ci
       - run: npm test                      # must write report files
       - name: flakefinder
-        uses: <YOUR_GITHUB>/flakefinder@main
+        uses: DJJW26/flakefinder@main
         if: always()                       # analyze even when tests fail
 ```
 
@@ -362,7 +362,7 @@ moment they're recorded — that's the point):
 
 ```yaml
       - name: flakefinder
-        uses: <YOUR_GITHUB>/flakefinder@main
+        uses: DJJW26/flakefinder@main
         if: always()
         with:
           fail-on-new-flakes: true
@@ -377,7 +377,7 @@ moment they're recorded — that's the point):
 
 ```yaml
       - name: flakefinder (services/api)
-        uses: <YOUR_GITHUB>/flakefinder@main
+        uses: DJJW26/flakefinder@main
         if: always()
         with:
           working-directory: services/api

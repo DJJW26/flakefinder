@@ -2,7 +2,7 @@
 
 **Find your flaky tests before they find your CI.**
 
-[![CI](https://github.com/<YOUR_GITHUB>/flakefinder/actions/workflows/ci.yml/badge.svg)](https://github.com/<YOUR_GITHUB>/flakefinder/actions/workflows/ci.yml)
+[![CI](https://github.com/DJJW26/flakefinder/actions/workflows/ci.yml/badge.svg)](https://github.com/DJJW26/flakefinder/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/flakefinder)](https://www.npmjs.com/package/flakefinder)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
@@ -126,7 +126,7 @@ repo are fine. Point `flakefinder.config.json` → `reports` globs at them.
 ```yaml
       - run: npm test            # your tests write report files
       - name: flakefinder
-        uses: <YOUR_GITHUB>/flakefinder@main
+        uses: DJJW26/flakefinder@main
         if: always()
 ```
 

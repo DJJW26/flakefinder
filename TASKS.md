@@ -69,8 +69,7 @@ file.** Agents report completion in their final message; the integrator ticks bo
 
 - ✅ P5.1 Full pipeline green: biome clean, tsc clean, 167 unit tests, build, e2e 10/10
 - ✅ P5.2 `npm pack` inspected: 85.3 KB / 5 files (CLI + map + README + LICENSE + package.json)
-- ✅ P5.3 dist/action/index.js committed (no sourcemap); placeholders <YOUR_GITHUB>/<YOUR_NPM> in
-  README/badges/package.json/action docs
+- ✅ P5.3 dist/action/index.js committed (no sourcemap); handle placeholders (README/badges/package.json/action docs) — replaced with DJJW26 at publish time
 - ✅ P5.4 Final commit + handoff summary
 
 ## Phase 6 — Post-release QA iteration (v0.1.1)
