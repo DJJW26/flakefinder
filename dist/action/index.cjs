@@ -129345,7 +129345,7 @@ var HistoryStore = class {
    */
   prune(maxRuns) {
     this.ensureLoaded();
-    if (this.records.length <= maxRuns) return;
+    if (!(0, import_node_fs4.existsSync)(this.path)) return;
     this.acquireLock();
     try {
       const fresh = [];
@@ -129365,6 +129365,10 @@ var HistoryStore = class {
       } catch {
       }
       const source = fresh.length > 0 ? fresh : this.records;
+      if (source.length <= maxRuns) {
+        this.records = source;
+        return;
+      }
       const keep = source.slice(-maxRuns);
       const tmp = `${this.path}.tmp`;
       const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}

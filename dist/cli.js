@@ -475,7 +475,7 @@ var HistoryStore = class {
    */
   prune(maxRuns) {
     this.ensureLoaded();
-    if (this.records.length <= maxRuns) return;
+    if (!existsSync3(this.path)) return;
     this.acquireLock();
     try {
       const fresh = [];
@@ -495,6 +495,10 @@ var HistoryStore = class {
       } catch {
       }
       const source = fresh.length > 0 ? fresh : this.records;
+      if (source.length <= maxRuns) {
+        this.records = source;
+        return;
+      }
       const keep = source.slice(-maxRuns);
       const tmp = `${this.path}.tmp`;
       const header = this.formatVersion === null ? `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
@@ -3841,6 +3845,14 @@ async function main(argv) {
   };
   program.command("init").description("detect your test runner and create flakefinder.config.json").option("--force", "overwrite an existing config").option("--runner <runner>", "explicit runner: pytest|jest|mocha|go|generic").action((opts) => {
     const g = globals();
+    const RUNNERS = ["auto", "pytest", "jest", "mocha", "go", "generic"];
+    if (opts.runner != null && !RUNNERS.includes(opts.runner)) {
+      console.error(
+        `flakefinder: --runner must be one of ${RUNNERS.join("|")} (got "${opts.runner}")`
+      );
+      exitCode = 2;
+      return;
+    }
     const runner = opts.runner ?? detectRunner(g.cwd);
     if (!runner || runner === "generic" && !opts.runner) {
       console.error(

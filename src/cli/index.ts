@@ -155,6 +155,14 @@ export async function main(argv: string[]): Promise<number> {
     .option('--runner <runner>', 'explicit runner: pytest|jest|mocha|go|generic')
     .action((opts: { force?: boolean; runner?: RunnerKind }) => {
       const g = globals();
+      const RUNNERS: readonly string[] = ['auto', 'pytest', 'jest', 'mocha', 'go', 'generic'];
+      if (opts.runner != null && !RUNNERS.includes(opts.runner)) {
+        console.error(
+          `flakefinder: --runner must be one of ${RUNNERS.join('|')} (got "${opts.runner}")`,
+        );
+        exitCode = 2;
+        return;
+      }
       const runner: RunnerKind | undefined = opts.runner ?? detectRunner(g.cwd);
       if (!runner || (runner === 'generic' && !opts.runner)) {
         console.error(
