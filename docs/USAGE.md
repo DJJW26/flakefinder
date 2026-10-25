@@ -239,6 +239,14 @@ flaky test — also understood by GitLab, Buildkite, and others), writes
 - `--fail-on-new-flakes` — exit `1` when flakes appear that were not flaky in
   the previous snapshot. Known flakes never fail the build; new ones do.
 
+On **GitLab**, `flakefinder ci` additionally upserts ONE merge-request note
+(marker-scoped, never duplicated) when these CI variables exist:
+`GITLAB_CI`, `CI_API_V4_URL`, `CI_PROJECT_ID`, `CI_MERGE_REQUEST_IID`, and a
+project/personal access token with `api` scope exposed as `GITLAB_TOKEN`
+(defined under Settings → CI/CD → Variables). Posting failures are warnings,
+never job failures — the annotations and exit codes work regardless.
+
+
 ### `version`
 
 Prints the flakefinder version.
@@ -278,6 +286,12 @@ Previously these silently misbehaved (a wrong-case runner fell back to
 These are stable and scriptable — gate CI on `run`'s exit code directly.
 
 ## Report formats
+
+Supported parsers (auto-detected per file): **JUnit XML** (pytest, jest-junit,
+surefire…), **Jest JSON** (jest + vitest), **Mocha JSON**, **`go test -json`**
+(NDJSON), **TAP** (node:test `--test-reporter=tap`; nested subtests become
+`ancestor > …` suites, `# SKIP`/`# TODO` map to skip), and **TRX**
+(.NET `dotnet test --logger trx`; suite = the test class name).
 
 - **table** — sections per classification (`FLAKY (confirmed)`,
   `FLAKY (retry-rescued)`, `FLAKY (suspected)`, `FAILING`, `NEW FAILURE`),

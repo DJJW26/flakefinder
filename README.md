@@ -117,6 +117,8 @@ design and `always-fail` never passes.
 | Jest JSON | Jest, vitest (`--json` stream) | `jest --json --outputFile=jest.json` (flakefinder also accepts jest-junit XML) |
 | Mocha JSON | Mocha, mocha-wrapper runners | `mocha --reporter json --reporter-options output=test-results/report.json` |
 | go test -json | Go | `go test -json ./... > test-output.jsonl` (add `-count=1` to defeat Go's result cache) |
+| TAP | node:test (`--test-reporter=tap`), TAP14 producers | `node --test --test-reporter=tap > tap.txt` |
+| TRX | .NET (`dotnet test`), VSTest | `dotnet test --logger "trx;LogFileName=results.trx"` |
 
 The parser is auto-detected per file from its content, so mixed reports in one
 repo are fine. Point `flakefinder.config.json` → `reports` globs at them.
@@ -200,8 +202,8 @@ Nothing is uploaded anywhere unless you use the GitHub Action, in which case
 history lives in your repository's actions cache.
 
 **Does it work with runner X?**
-If X can emit JUnit XML, Jest JSON, Mocha JSON, or `go test -json`, yes. That
-covers most of the ecosystem; see the roadmap for what's planned next.
+If X can emit JUnit XML, Jest JSON, Mocha JSON, `go test -json`, TAP, or TRX,
+yes — that covers most of the ecosystem.
 
 ## Development
 

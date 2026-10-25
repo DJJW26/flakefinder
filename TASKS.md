@@ -138,8 +138,8 @@ file.** Agents report completion in their final message; the integrator ticks bo
 ## Phase 11 — Phase D continuation (user-resumable: state kept in TASKS + commits)
 
 - ✅ P11.0 Continuation started (D1/D2/D5 already shipped in Phase 10; D3 un-deferred via real-output research, D4 GitLab MR notes)
-- 🔄 P11.1 D3a: node:test TAP parser (fixture from REAL `node --test --test-reporter=tap` output generated locally)
-- ⬜ P11.2 D3b: TRX (.NET) parser (fixture from Microsoft's documented schema via research)
-- ⬜ P11.3 D4: GitLab MR notes in `ci` (env-driven: GITLAB_CI/CI_MERGE_REQUEST_IID/GITLAB_TOKEN)
-- ⬜ P11.4 Docs (README formats table, USAGE) + PLAN sync
+- ✅ P11.1 D3a: TAP parser — fixture verified against real node 22 output; suite aggregates de-duplicated; SKIP/TODO + YAML diagnostics
+- ✅ P11.2 D3b: TRX parser — documented-schema fixture (dotnet unavailable locally); className suites, ErrorInfo→error, NotExecuted→skip, TRX duration parsing
+- ✅ P11.3 D4: GitLab MR notes — env-driven (src/report/gitlab.ts), marker-scoped upsert, fetch-injected tests, failures never fail the job
+- ✅ P11.4 Docs: README formats table (+TAP/TRX rows), USAGE report-formats + GitLab section, CHANGELOG 1.1.0
 - ⬜ P11.5 Release v1.1.0 via scripts/release.mjs --push + CI watch

@@ -15,9 +15,10 @@ import { runDoctor } from '../doctor.js';
 import { classifyAll } from '../engine/classify.js';
 import { detectParser } from '../parsers/index.js';
 import { exclusionArgs, QuarantineManager } from '../quarantine/manager.js';
+import { gitlabEnvFromProcess, upsertMrNote } from '../report/gitlab.js';
 import { renderDashboard } from '../report/html.js';
 import { renderJson } from '../report/json.js';
-import { renderMarkdown } from '../report/markdown.js';
+import { buildPrComment, renderMarkdown } from '../report/markdown.js';
 import { renderTerminal } from '../report/terminal.js';
 import { runLive } from '../runner/wrap.js';
 import { HistoryStore, snapshotPath } from '../store/history-store.js';
@@ -522,7 +523,7 @@ export async function main(argv: string[]): Promise<number> {
       '--fail-on-new-flakes',
       'exit 1 when flakes appear that were not flaky in the previous snapshot',
     )
-    .action((opts: { failOnNewFlakes?: boolean }) => {
+    .action(async (opts: { failOnNewFlakes?: boolean }) => {
       const g = globals();
       const cfg = resolveCfg(g);
       const targets = matchGlobs(g.cwd, cfg.reports);
@@ -588,6 +589,23 @@ export async function main(argv: string[]): Promise<number> {
       // same semantics as the GitHub Action — one implementation (src/action/diff.ts)
       const newFlakes = computeNewFlakes(verdicts, previous);
       writeFileSync(snap, JSON.stringify(verdicts), 'utf8');
+
+      // GitLab MR note (D4): activates only on GitLab CI with the user's vars set
+      const gl = gitlabEnvFromProcess();
+      if (gl) {
+        try {
+          const noteVerdict = await upsertMrNote(gl, buildPrComment(verdicts, previous));
+          if (noteVerdict === 'unavailable') {
+            console.warn(
+              'flakefinder: GitLab MR note could not be posted (check GITLAB_TOKEN scope)',
+            );
+          } else {
+            console.log(`gitlab: MR note ${noteVerdict}`);
+          }
+        } catch (err) {
+          console.warn(`flakefinder: GitLab MR note failed: ${(err as Error).message}`);
+        }
+      }
 
       if (opts.failOnNewFlakes && newFlakes.length > 0) {
         console.error(`flakefinder ci: ${newFlakes.length} NEW flake(s):`);

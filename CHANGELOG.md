@@ -1,8 +1,42 @@
+## 1.1.0
+
+- **feat: TAP parser** — `node --test --test-reporter=tap` (fixture verified
+  against real node 22 output) and generic TAP14. Nested subtests become
+  `ancestor > …` suites; `# SKIP`/`# TODO` directives map to skip; YAML
+  diagnostic blocks are harvested for failure messages/stacks; suite
+  aggregates are de-duplicated against their children so failures never
+  double-count.
+- **feat: TRX parser** — .NET `dotnet test` results. Suite = the test class
+  (`TestMethod/@className`), `duration` (`HH:MM:SS.f`) parsed to ms,
+  `ErrorInfo` → error status with message/stack, `NotExecuted` → skip.
+- **feat: GitLab MR notes** — on GitLab CI, `flakefinder ci` upserts one
+  marker-scoped merge-request note (env-driven: `GITLAB_TOKEN`,
+  `CI_MERGE_REQUEST_IID`); posting failures never fail the job.
+- Parsers are now six: JUnit XML, Jest JSON, Mocha JSON, `go test -json`,
+  TAP, TRX.
+
 ## 1.0.0
 
 - _(fill in before tagging — this stub is created by scripts/release.mjs)_
 
 # Changelog
+
+## 1.1.0
+
+- **feat: TAP parser** — `node --test --test-reporter=tap` (fixture verified
+  against real node 22 output) and generic TAP14. Nested subtests become
+  `ancestor > …` suites; `# SKIP`/`# TODO` directives map to skip; YAML
+  diagnostic blocks are harvested for failure messages/stacks; suite
+  aggregates are de-duplicated against their children so failures never
+  double-count.
+- **feat: TRX parser** — .NET `dotnet test` results. Suite = the test class
+  (`TestMethod/@className`), `duration` (`HH:MM:SS.f`) parsed to ms,
+  `ErrorInfo` → error status with message/stack, `NotExecuted` → skip.
+- **feat: GitLab MR notes** — on GitLab CI, `flakefinder ci` upserts one
+  marker-scoped merge-request note (env-driven: `GITLAB_TOKEN`,
+  `CI_MERGE_REQUEST_IID`); posting failures never fail the job.
+- Parsers are now six: JUnit XML, Jest JSON, Mocha JSON, `go test -json`,
+  TAP, TRX.
 
 ## 1.0.0
 
