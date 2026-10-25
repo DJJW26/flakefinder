@@ -1,0 +1,64 @@
+{
+  "name": "flakefinder",
+  "version": "0.1.0",
+  "description": "Detect, track, and quarantine flaky tests — from your CLI and CI. History-aware flake scores, retries, HTML dashboard, GitHub Action.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "bin": {
+    "flakefinder": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node scripts/clean-dist.mjs && tsup",
+    "test": "vitest run",
+    "typecheck": "tsc -p .",
+    "lint": "biome check src tests",
+    "format": "biome format --write src tests",
+    "e2e": "node scripts/e2e.mjs"
+  },
+  "keywords": [
+    "flaky",
+    "flaky-tests",
+    "testing",
+    "ci",
+    "quarantine",
+    "junit",
+    "jest",
+    "pytest",
+    "go",
+    "mocha",
+    "test-reliability",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/<YOUR_GITHUB>/flakefinder.git"
+  },
+  "bugs": {
+    "url": "https://github.com/<YOUR_GITHUB>/flakefinder/issues"
+  },
+  "homepage": "https://github.com/<YOUR_GITHUB>/flakefinder#readme",
+  "dependencies": {
+    "commander": "^15.0.0",
+    "fast-xml-parser": "^5.11.2"
+  },
+  "devDependencies": {
+    "@actions/artifact": "^6.3.1",
+    "@actions/cache": "^6.3.0",
+    "@actions/core": "^3.0.1",
+    "@actions/github": "^9.1.1",
+    "@actions/glob": "^0.7.0",
+    "@biomejs/biome": "^2.6.3",
+    "@types/node": "^26.6.5",
+    "tsup": "^8.5.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

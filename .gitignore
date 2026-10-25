@@ -1,0 +1,15 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.flakefinder/
+flakefinder-report.html
+flakefinder-report.json
+fixtures/**/node_modules/
+fixtures/**/.flakefinder/
+fixtures/**/junit*.xml
+fixtures/**/test-output.jsonl
+fixtures/**/.pytest_cache/
+fixtures/**/counter.txt
+fixtures/**/__pycache__/
+fixtures/**/*.test
