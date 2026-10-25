@@ -166,7 +166,9 @@ export function validateConfig(config: FlakefinderConfig): void {
   if (
     c.timeoutSeconds !== undefined &&
     c.timeoutSeconds !== null &&
-    (typeof c.timeoutSeconds !== 'number' || !Number.isFinite(c.timeoutSeconds) || c.timeoutSeconds <= 0)
+    (typeof c.timeoutSeconds !== 'number' ||
+      !Number.isFinite(c.timeoutSeconds) ||
+      c.timeoutSeconds <= 0)
   ) {
     problems.push(
       `timeoutSeconds: expected positive number or null, got ${describe(c.timeoutSeconds)}`,

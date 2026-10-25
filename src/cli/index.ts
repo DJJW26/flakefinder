@@ -11,6 +11,7 @@ import {
   resolveConfig,
   stripJsonComments,
 } from '../config.js';
+import { runDoctor } from '../doctor.js';
 import { classifyAll } from '../engine/classify.js';
 import { detectParser } from '../parsers/index.js';
 import { exclusionArgs, QuarantineManager } from '../quarantine/manager.js';
@@ -184,12 +185,21 @@ export async function main(argv: string[]): Promise<number> {
       '--retry-mode <mode>',
       'auto (targeted re-runs when possible) | failed (force targeted) | full (always re-run everything)',
     )
-    .option('--timeout <seconds>', 'kill the attempt after N seconds (default: config timeoutSeconds, itself unlimited)')
+    .option(
+      '--timeout <seconds>',
+      'kill the attempt after N seconds (default: config timeoutSeconds, itself unlimited)',
+    )
     .argument('<command...>', 'the test command, placed after --')
     .action(
       async (
         command: string[],
-        opts: { retries?: string; failOnFlake?: boolean; quarantine?: boolean; retryMode?: string; timeout?: string },
+        opts: {
+          retries?: string;
+          failOnFlake?: boolean;
+          quarantine?: boolean;
+          retryMode?: string;
+          timeout?: string;
+        },
       ) => {
         const g = globals();
         const retries = opts.retries != null ? Number.parseInt(opts.retries, 10) : undefined;
@@ -214,7 +224,9 @@ export async function main(argv: string[]): Promise<number> {
         if (opts.timeout != null) {
           const seconds = Number.parseInt(opts.timeout, 10);
           if (Number.isNaN(seconds) || seconds <= 0) {
-            console.error(`flakefinder: --timeout must be a positive number of seconds (got "${opts.timeout}")`);
+            console.error(
+              `flakefinder: --timeout must be a positive number of seconds (got "${opts.timeout}")`,
+            );
             exitCode = 2;
             return;
           }
@@ -242,7 +254,11 @@ export async function main(argv: string[]): Promise<number> {
     .argument('[files...]', 'report files (omit to use configured globs)')
     .option('--attempt <n>', 'attempt number to record', '1')
     .option('--source <source>', 'live | report | action', 'report')
-    .action((files: string[], opts: { attempt: string; source: string }) => {
+    .option(
+      '--run-id <id>',
+      'share a runId across ingests so fail→pass counts as a retry rescue (e.g. per CI job)',
+    )
+    .action((files: string[], opts: { attempt: string; source: string; runId?: string }) => {
       const g = globals();
       const cfg = resolveCfg(g);
       const attempt = Number.parseInt(opts.attempt, 10) || 1;
@@ -262,7 +278,17 @@ export async function main(argv: string[]): Promise<number> {
         exitCode = 2;
         return;
       }
-      const runId = randomUUID();
+      let runId: string = randomUUID();
+      if (opts.runId != null) {
+        if (!/^[0-9a-f-]{10,}$/i.test(opts.runId)) {
+          console.error(
+            `flakefinder: --run-id must look like a UUID/identifier (got "${opts.runId}")`,
+          );
+          exitCode = 2;
+          return;
+        }
+        runId = opts.runId;
+      }
       const store = storeFor(g, cfg);
       let total = 0;
       let used = 0;
@@ -569,6 +595,27 @@ export async function main(argv: string[]): Promise<number> {
           console.error(`  ${v.suite} :: ${v.name} (score ${v.flakeScore})`);
         exitCode = 1;
       }
+    });
+
+  program
+    .command('doctor')
+    .description('check the setup: config, runner, reports, history, git, quarantine')
+    .action(() => {
+      const g = globals();
+      const { lines, ok } = runDoctor(g.cwd);
+      const tag = { ok: '[ok]  ', warn: '[warn]', fail: '[FAIL]', info: '[info]' };
+      for (const line of lines) {
+        const paint =
+          line.status === 'fail'
+            ? (s: string) => `[31m${s}[0m`
+            : line.status === 'warn'
+              ? (s: string) => `[33m${s}[0m`
+              : (s: string) => s;
+        console.log(`${paint(tag[line.status])} ${line.message}`);
+        if (line.hint) console.log(`        ${paint('→')} ${line.hint}`);
+      }
+      console.log(ok ? '' : 'doctor: problems found (see FAIL lines above)');
+      exitCode = ok ? 0 : 1;
     });
 
   program

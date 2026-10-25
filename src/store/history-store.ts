@@ -124,11 +124,9 @@ export class HistoryStore {
     const deadline = Date.now() + 2000;
     for (;;) {
       try {
-        writeFileSync(
-          this.lockPath,
-          JSON.stringify({ pid: process.pid, epoch: Date.now() }),
-          { flag: 'wx' },
-        );
+        writeFileSync(this.lockPath, JSON.stringify({ pid: process.pid, epoch: Date.now() }), {
+          flag: 'wx',
+        });
         return;
       } catch {
         let ageMs = Infinity;

@@ -409,12 +409,14 @@ describe('attempt timeout (C2)', () => {
   it('kills an attempt that exceeds --timeout and records exit 124', async () => {
     const cwd = tmpCwd();
     // hangs forever; t sc spy keeps output quiet
-    writeFileSync(path.join(cwd, 'hang.js'), "setInterval(() => {}, 1000);", 'utf8');
+    writeFileSync(path.join(cwd, 'hang.js'), 'setInterval(() => {}, 1000);', 'utf8');
     vi.spyOn(console, 'log').mockImplementation(() => {});
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const t0 = Date.now();
     const result = await runLive(['node', 'hang.js'], cfg({ reports: [], timeoutSeconds: 1 }), {
-      retries: 0, cwd, applyQuarantine: false,
+      retries: 0,
+      cwd,
+      applyQuarantine: false,
     });
     const elapsed = Date.now() - t0;
     expect(result.finalExitCode).toBe(1); // 124 → nonzero → contract exit 1
