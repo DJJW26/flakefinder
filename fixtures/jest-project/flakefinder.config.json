@@ -1,0 +1,7 @@
+{
+  "reports": ["junit.xml"],
+  "storeDir": ".flakefinder",
+  "liveRetries": 2,
+  "minRuns": 1,
+  "slowThresholdMs": 50
+}

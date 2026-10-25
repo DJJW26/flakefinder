@@ -1,0 +1,7 @@
+node_modules/
+junit.xml
+.flakefinder/
+counter.txt
+dash.html
+flakefinder-report.html
+flakefinder.quarantine.json

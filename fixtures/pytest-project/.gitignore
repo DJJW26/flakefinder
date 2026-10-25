@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+junit.xml
+.flakefinder/
+counter.txt
+flakefinder-report.html
+flakefinder.quarantine.json

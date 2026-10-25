@@ -1,0 +1,5 @@
+test-output.jsonl
+.flakefinder/
+counter.txt
+flakefinder-report.html
+flakefinder.quarantine.json

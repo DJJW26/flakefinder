@@ -1,0 +1,7 @@
+{
+  "reports": ["test-output.jsonl"],
+  "storeDir": ".flakefinder",
+  "liveRetries": 1,
+  "minRuns": 1,
+  "slowThresholdMs": 50
+}
