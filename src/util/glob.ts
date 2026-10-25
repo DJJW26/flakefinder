@@ -1,4 +1,4 @@
-import { readdirSync, type Dirent } from 'node:fs';
+import { type Dirent, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage']);
