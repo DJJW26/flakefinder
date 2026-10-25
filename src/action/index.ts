@@ -49,11 +49,13 @@ async function actionMain(): Promise<void> {
 
   const { config } = loadConfig(cwd);
   const reportsInput = core.getInput('reports');
+  const historyMaxRuns = Number.parseInt(core.getInput('history-max-runs') || '300', 10);
   const cfg = resolveConfig(
     config,
-    reportsInput ? { reports: reportsInput.split(',').map((s) => s.trim()) } : {},
+    reportsInput
+      ? { reports: reportsInput.split(',').map((s) => s.trim()), maxRuns: historyMaxRuns }
+      : { maxRuns: historyMaxRuns },
   );
-  const historyMaxRuns = Number.parseInt(core.getInput('history-max-runs') || '300', 10);
   const storeDir = path.resolve(cwd, cfg.storeDir);
 
   // 1. restore history cache (best-effort — miss on first run is normal)

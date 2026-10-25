@@ -111,8 +111,7 @@ export function exclusionArgs(
       const flag = runner === 'jest' ? '-t' : '--grep';
       return [flag, `^(?!.*(?:${names.join('|')}))`];
     }
-    case 'go':
-    case 'generic':
+    // go / generic: no per-test exclusion — callers must warn
     default:
       return [];
   }

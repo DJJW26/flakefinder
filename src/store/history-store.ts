@@ -71,7 +71,7 @@ export class HistoryStore {
     if (this.records.length <= maxRuns) return;
     this.records = this.records.slice(-maxRuns);
     const tmp = `${this.path}.tmp`;
-    writeFileSync(tmp, this.records.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
+    writeFileSync(tmp, `${this.records.map((r) => JSON.stringify(r)).join('\n')}\n`, 'utf8');
     renameSync(tmp, this.path);
   }
 }

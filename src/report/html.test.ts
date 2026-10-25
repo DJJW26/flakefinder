@@ -93,7 +93,7 @@ function fixtureData(): DashboardData {
     verdict({
       testId: 'jest:tests/security.spec.ts::hostile',
       suite: 'tests/security.spec.ts',
-      name: '</script><script>alert(1)</script> ${template}',
+      name: '</script><script>alert(1)</script> <!-- not a comment -->',
       classification: 'new-failure',
       flakeScore: 0,
       confidence: 20,

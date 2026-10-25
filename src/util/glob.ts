@@ -1,4 +1,4 @@
-import { readdirSync } from 'node:fs';
+import { readdirSync, type Dirent } from 'node:fs';
 import path from 'node:path';
 
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage']);
@@ -43,7 +43,7 @@ export function matchGlobs(cwd: string, patterns: string[]): string[] {
 
   const matches = new Set<string>();
   const walk = (dir: string, rel: string): void => {
-    let entries;
+    let entries: Dirent[];
     try {
       entries = readdirSync(dir, { withFileTypes: true });
     } catch {
