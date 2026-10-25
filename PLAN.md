@@ -292,8 +292,11 @@ file format `{ "version": 1, "entries": [...] }`.
 - mocha: `--grep` with negative lookahead pattern, same construction.
 - go / generic: `[]` (unsupported — caller warns).
 
-`prune(verdicts)`: drop entries whose test is `gone` or whose classification is no longer
-flaky-* AND `passing` with ≥ 10 fresh runs. Returns removed entries; caller saves.
+`prune(verdicts)`: CONSERVATIVE — quarantined tests are excluded from runs, so
+"unseen lately" is not evidence of health. An entry leaves quarantine only on
+positive evidence (verdict `passing` with ≥ 10 runs observed) or when the test
+is `gone` AND the entry is older than 90 days. Empty verdicts → no-op.
+Returns removed entries; caller saves.
 
 ## 10. GitHub Action spec (Agent A)
 

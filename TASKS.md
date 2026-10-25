@@ -9,30 +9,32 @@ file.** Agents report completion in their final message; the integrator ticks bo
 
 - ✅ P0.1 Environment verified (node 22.13.1, npm 10.9.2, git 2.54, python 3.13.1, go 1.27.2)
 - ✅ P0.2 `git init` on `main`
-- 🔄 P0.3 PLAN.md (frozen architecture + contracts)
-- ⬜ P0.4 TASKS.md (this file)
-- ⬜ P0.5 Tooling scaffold: package.json, tsconfig, tsup, vitest, biome, .gitignore, LICENSE
-- ⬜ P0.6 Frozen contracts: `src/types.ts`, `src/util/test-id.ts`
-- ⬜ P0.7 Module stubs at every owned path (frozen signatures, trivial bodies)
-- ⬜ P0.8 `npm install` (runtime: commander, fast-xml-parser; dev: typescript, tsup, vitest,
+- ✅ P0.3 PLAN.md (frozen architecture + contracts)
+- ✅ P0.4 TASKS.md (this file)
+- ✅ P0.5 Tooling scaffold: package.json, tsconfig, tsup, vitest, biome, .gitignore, LICENSE
+- ✅ P0.6 Frozen contracts: `src/types.ts`, `src/util/test-id.ts`
+- ✅ P0.7 Module stubs at every owned path (frozen signatures, trivial bodies)
+- ✅ P0.8 `npm install` (runtime: commander, fast-xml-parser; dev: typescript, tsup, vitest,
   biome, @types/node, @actions/core, @actions/github, @actions/cache, @actions/glob,
   @actions/artifact)
-- ⬜ P0.9 Baseline green: `npx vitest run` passes (stub smoke tests), first commit
+- ✅ P0.9 Baseline green: tsc OK, vitest 3/3, build OK — committed `63a55cd` + amendment
 
 ## Phase 1 — Parallel core build (six agents, disjoint ownership)
 
-- ⬜ P1.1 **Agent P — parsers**: junit/jest/mocha/gotest + `detectParser`, fixture corpus,
-  unit tests passing (`npx vitest run src/parsers`)
-- ⬜ P1.2 **Agent E — engine + store**: stats, classify (exact PLAN §5), HistoryStore JSONL,
-  unit tests passing (`npx vitest run src/engine src/store`)
-- ⬜ P1.3 **Agent C — CLI + config + runner + quarantine + terminal/json reports**:
-  commander CLI (all §7 commands), config loader + `src/util/glob.ts`, `runLive`,
-  QuarantineManager + exclusionArgs, unit tests passing
-- ⬜ P1.4 **Agent D — dashboard**: self-contained HTML dashboard per PLAN §11, unit tests
-  passing (embedding, escaping, structure)
-- ⬜ P1.5 **Agent A — GitHub Action**: action.yml, src/action/index.ts (§10), markdown.ts +
-  buildPrComment, .github/workflows/ci.yml, docs/github-action.md, unit tests passing
-- ⬜ P1.6 **Agent F — fixtures + e2e + README/USAGE draft**: three fixture projects with
+> Adaptation: host concurrency limits killed 5 of 6 simultaneous agents at
+> launch; the build switched to "one background agent at a time + integrator
+> works the remaining scopes in the main thread". Same ownership map.
+
+- ✅ P1.1 **parsers** (Agent P): junit/jest/mocha/gotest + `detectParser`, fixture corpus — 46 tests green
+- ✅ P1.2 **engine + store** (integrator): stats, classify per PLAN §5, HistoryStore JSONL — 42 tests green
+- ✅ P1.3 **CLI surface** (integrator): commander CLI (init/run/ingest/report/html/quarantine/ci/version),
+  config loader + JSONC, glob matcher, runLive, QuarantineManager + exclusionArgs,
+  terminal/json reports — tests green (config/glob/quarantine/terminal/runner incl. live integration)
+- 🔄 P1.4 **dashboard** (Agent D, background): self-contained HTML dashboard per PLAN §11
+- ✅ P1.5 **GitHub Action** (integrator): action.yml, src/action (ingest/diff/index with cache,
+  PR-comment upsert, artifacts, fail gate), markdown.ts + buildPrComment, .github/workflows/ci.yml,
+  docs/github-action.md — tests green (diff + markdown)
+- ⬜ P1.6 **fixtures + e2e + README/USAGE draft** (Agent F, queued): three fixture projects with
   deterministic flakiness, scripts/e2e.mjs, README.md, docs/USAGE.md draft
 
 ## Phase 2 — Integration (integrator)
