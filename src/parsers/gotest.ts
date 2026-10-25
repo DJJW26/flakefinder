@@ -23,7 +23,7 @@ import { makeTestId } from '../util/test-id.js';
 import { errorMessage, firstNonEmptyLine, isObj, stripAnsi, stripBom } from './internal.js';
 
 const MAX_MALFORMED_DETAILS = 5;
-const MESSAGE_MAX_CHARS = 500;
+const MESSAGE_MAX_CHARS = 2000;
 
 interface TestAccumulator {
   pkg: string;
@@ -71,6 +71,7 @@ export const goTestParser: ReportParser = {
     const results: TestCaseResult[] = [];
     const warnings: string[] = [];
     const tests = new Map<string, TestAccumulator>();
+    const failedPackages = new Map<string, { failed: boolean; outputs: string[] }>();
     let malformed = 0;
 
     const lines = stripBom(content).split(/\r?\n/);
@@ -92,24 +93,47 @@ export const goTestParser: ReportParser = {
 
       const pkg = typeof ev.Package === 'string' ? ev.Package : '';
       const test = typeof ev.Test === 'string' && ev.Test.trim() !== '' ? ev.Test : null;
-      if (pkg === '' || test === null) continue; // package-level or foreign event
+      if (pkg === '') continue;
+
+      const action = ev.Action;
+      const out = ev.Output !== undefined ? ev.Output : ev.output;
+
+      // Package-level events (no Test): track build/run failures so a package
+      // that crashed before running any test still surfaces. Outputs are kept
+      // for every package (they precede the fail event in real streams).
+      if (test === null) {
+        if (action === 'fail') {
+          const entry = failedPackages.get(pkg) ?? { failed: false, outputs: [] };
+          entry.failed = true;
+          failedPackages.set(pkg, entry);
+        } else if (action === 'output' && typeof out === 'string') {
+          const entry = failedPackages.get(pkg) ?? { failed: false, outputs: [] };
+          entry.outputs.push(out);
+          failedPackages.set(pkg, entry);
+        }
+        continue;
+      }
 
       const key = `${pkg}\u0000${test}`;
       let acc = tests.get(key);
       if (acc === undefined) {
+        // Only start a test on 'run' or a terminal action: output/pause events
+        // for an unknown test (stream missing its head) must not invent a
+        // phantom "crashed" test.
+        if (action !== 'run' && action !== 'pass' && action !== 'fail' && action !== 'skip') {
+          continue;
+        }
         acc = { pkg, test, durationMs: null, outputs: [] };
         tests.set(key, acc);
       }
 
-      const action = ev.Action;
       if (action === 'pass' || action === 'fail' || action === 'skip') {
         acc.status = action;
         acc.durationMs = elapsedToMs(ev);
       } else if (action === 'output') {
-        const out = ev.Output !== undefined ? ev.Output : ev.output;
         if (typeof out === 'string') acc.outputs.push(out);
       }
-      // 'run' | 'pause' | 'cont' | 'bench' | … — no state change.
+      // 'pause' | 'cont' | 'bench' | … — no state change.
     }
 
     if (malformed > MAX_MALFORMED_DETAILS) {
@@ -152,6 +176,28 @@ export const goTestParser: ReportParser = {
     if (dangling > 0) {
       warnings.push(
         `go: ${sourcePath}: ${dangling} test(s) started but never reported a result — synthesized as error (package crash?)`,
+      );
+    }
+
+    const pkgsWithTests = new Set([...tests.values()].map((a) => a.pkg));
+    for (const [pkg, entry] of failedPackages) {
+      if (!entry.failed || pkgsWithTests.has(pkg)) continue; // per-test results already reflect it
+      const output = messageFromOutputs(entry.outputs);
+      results.push({
+        testId: makeTestId(pkg, '(package)'),
+        suite: pkg,
+        name: '(package)',
+        status: 'error',
+        durationMs: null,
+        message: `package failed before any test completed (build or init crash?)${
+          output
+            ? `
+${output}`
+            : ''
+        }`,
+      });
+      warnings.push(
+        `go: ${sourcePath}: package ${pkg} failed with no test results — synthesized as error`,
       );
     }
     return { results, warnings };

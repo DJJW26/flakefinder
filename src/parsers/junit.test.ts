@@ -139,14 +139,14 @@ describe('junitParser', () => {
     ]);
   });
 
-  it('truncates message to 500 and stack to 1000 characters', () => {
+  it('truncates message to 2000 and stack to 1000 characters', () => {
     const content =
       `<testsuites><testsuite name="s"><testcase classname="c" name="n" time="0.1">` +
-      `<failure message="${'M'.repeat(600)}">${'S'.repeat(1200)}</failure>` +
+      `<failure message="${'M'.repeat(3000)}">${'S'.repeat(1200)}</failure>` +
       `</testcase></testsuite></testsuites>`;
     const { results } = junitParser.parse(content, 'inline');
-    expect(results[0]?.message).toHaveLength(500);
-    expect(results[0]?.message).toBe('M'.repeat(500));
+    expect(results[0]?.message).toHaveLength(2000);
+    expect(results[0]?.message).toBe('M'.repeat(2000));
     expect(results[0]?.stack).toHaveLength(1000);
   });
 

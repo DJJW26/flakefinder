@@ -235,7 +235,7 @@ Previously these silently misbehaved (a wrong-case runner fell back to
 | `maxRuns` | integer 1–100000 | `300` | Prune history to the last N runs after each append |
 | `minRuns` | integer 1–1000 | `3` | Minimum observations before statistical claims (gates `flaky-suspected` and `failing`) |
 | `liveRetries` | integer 0–10 | `2` | Extra attempts for `run` (override per invocation with `-R`) |
-| `flakeScoreThreshold` | integer 0–100 | `40` | Score bar for including `flaky-suspected` in reports; confirmed/retry always included |
+| `flakeScoreThreshold` | integer 0–100 | `30` | Score bar for including `flaky-suspected` in reports; confirmed/retry always included |
 | `slowThresholdMs` | number \| null | `10000` | Absolute bar for the `slow` tag (median duration above this) |
 | `slowMultiplier` | number > 0 | `5` | Relative bar: p95 above `slowMultiplier ×` suite median also tags `slow` |
 | `quarantineFile` | string | `"flakefinder.quarantine.json"` | Quarantine list location |

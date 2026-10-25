@@ -47,18 +47,45 @@ export class HistoryStore {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!.trim();
       if (!line) continue;
+      let parsed: Record<string, unknown>;
       try {
-        const parsed = JSON.parse(line) as Record<string, unknown>;
-        if (i === 0 && typeof parsed.version === 'number' && parsed.runId === undefined) {
-          this.formatVersion = parsed.version;
-          continue;
-        }
-        this.records.push(parsed as unknown as RunRecord);
+        parsed = JSON.parse(line) as Record<string, unknown>;
       } catch {
         if (this.warnings.length < 10) {
           this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
         }
+        continue;
       }
+      // Schema marker: {"version":N} with no record fields. Legitimate at
+      // line 0; elsewhere it means a merged/partial write — skip it, don't
+      // crash downstream (RunRecord consumers iterate `results`).
+      if (parsed.runId === undefined && parsed.results === undefined) {
+        if (typeof parsed.version === 'number') {
+          if (i === 0) this.formatVersion = parsed.version;
+          else if (this.warnings.length < 10) {
+            this.warnings.push(`unexpected schema marker at line ${i + 1} — skipped`);
+          }
+          continue;
+        }
+        if (this.warnings.length < 10) {
+          this.warnings.push(`skipping record-shaped garbage at line ${i + 1} in ${this.path}`);
+        }
+        continue;
+      }
+      // Record shape validation: anything without a runId + results array is
+      // skipped with a warning instead of blowing up the classifier later.
+      if (typeof parsed.runId !== 'string' || !Array.isArray(parsed.results)) {
+        if (this.warnings.length < 10) {
+          this.warnings.push(`skipping invalid record at line ${i + 1} in ${this.path}`);
+        }
+        continue;
+      }
+      this.records.push(parsed as unknown as RunRecord);
+    }
+    if (this.formatVersion !== null && this.formatVersion > STORE_FORMAT_VERSION) {
+      this.warnings.unshift(
+        `store format v${this.formatVersion} is newer than this flakefinder (v${STORE_FORMAT_VERSION}) — unknown fields will be preserved`,
+      );
     }
   }
 

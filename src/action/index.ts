@@ -12,6 +12,7 @@ import { buildPrComment, PR_COMMENT_MARKER } from '../report/markdown.js';
 import { snapshotPath } from '../store/history-store.js';
 import type { TestVerdict } from '../types.js';
 import { FLAKEFINDER_VERSION } from '../types.js';
+import { redact } from '../util/redact.js';
 import { computeNewFlakes } from './diff.js';
 import { ingestReports } from './ingest.js';
 
@@ -139,7 +140,11 @@ async function actionMain(): Promise<void> {
         .filter((v) => v.classification.startsWith('flaky-'))
         .sort((a, b) => b.flakeScore - a.flakeScore)
         .slice(0, 20)
-        .map((v) => [`${v.suite} :: ${v.name}`, v.classification, String(v.flakeScore)]),
+        .map((v) => [
+          `${redact(v.suite)} :: ${redact(v.name)}`,
+          v.classification,
+          String(v.flakeScore),
+        ]),
     ])
     .write();
 

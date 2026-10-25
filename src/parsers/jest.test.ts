@@ -105,8 +105,8 @@ describe('jestParser', () => {
     });
   });
 
-  it('maps todo to skip and truncates messages to 500 chars', () => {
-    const longMessage = 'x'.repeat(600);
+  it('maps todo to skip and truncates messages to 2000 chars', () => {
+    const longMessage = 'x'.repeat(3000);
     const content = JSON.stringify({
       testResults: [
         {
@@ -125,7 +125,7 @@ describe('jestParser', () => {
     });
     const { results } = jestParser.parse(content, 'inline');
     expect(results[0]).toMatchObject({ name: 'someday', status: 'skip', durationMs: null });
-    expect(results[0]?.message).toBe('x'.repeat(500));
+    expect(results[0]?.message).toBe('x'.repeat(2000));
   });
 
   it('collects a warning instead of throwing on invalid JSON', () => {

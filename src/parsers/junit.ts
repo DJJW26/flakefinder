@@ -82,7 +82,7 @@ function mapTestCase(tc: unknown, suiteName: string, ctx: Ctx): void {
   };
   if (detail !== undefined) {
     const detailMessage = isObj(detail) ? attr(detail, '@_message') : undefined;
-    const message = trimTo(detailMessage, 500) ?? trimTo(textOf(detail), 500);
+    const message = trimTo(detailMessage, 2000) ?? trimTo(textOf(detail), 2000);
     const stack = trimTo(textOf(detail), 1000);
     if (message !== undefined) result.message = message;
     if (stack !== undefined) result.stack = stack;

@@ -146,3 +146,32 @@ describe('threshold filter (v0.2.0 — table matches md behavior)', () => {
     expect(out).toContain('FLAKY (suspected)');
   });
 });
+
+describe('threshold honesty (review round)', () => {
+  it('reports hidden-row count instead of silently dropping', () => {
+    const out = renderTerminal(
+      [
+        verdict({
+          testId: 'lo',
+          name: 'suspected low',
+          classification: 'flaky-suspected',
+          flakeScore: 10,
+        }),
+        verdict({ testId: 'p', classification: 'passing' }),
+      ],
+      { color: false, flakesOnly: false, threshold: 40 },
+    );
+    expect(out).toContain('hidden below score 40');
+    expect(out).toContain('1 tracked test(s)');
+  });
+
+  it('never claims "no test history" when the store has tests but all rows are filtered', () => {
+    const out = renderTerminal([verdict({ classification: 'flaky-suspected', flakeScore: 5 })], {
+      color: false,
+      flakesOnly: false,
+      threshold: 40,
+    });
+    expect(out).not.toContain('no test history yet');
+    expect(out).toContain('hidden below score 40');
+  });
+});

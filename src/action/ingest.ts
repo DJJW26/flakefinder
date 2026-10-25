@@ -48,7 +48,7 @@ export function ingestReports(
       continue;
     }
     const parsed = parser.parse(content, file);
-    warnings.push(...parsed.warnings.map((w) => `${parser.name}: ${w}`));
+    warnings.push(...parsed.warnings);
     const record: RunRecord = {
       runId,
       timestamp: new Date().toISOString(),

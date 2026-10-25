@@ -32,7 +32,7 @@ describe('resolveConfig defaults (PLAN §6)', () => {
       maxRuns: 300,
       minRuns: 3,
       liveRetries: 2,
-      flakeScoreThreshold: 40,
+      flakeScoreThreshold: 30,
       slowThresholdMs: 10_000,
       slowMultiplier: 5,
       quarantineFile: 'flakefinder.quarantine.json',

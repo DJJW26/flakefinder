@@ -27,16 +27,20 @@ import { redact } from '../util/redact.js';
 
 /**
  * The dashboard is uploaded as a CI artifact — redact credential-shaped
- * strings from failure messages before embedding. Other fields (names,
- * suites) come from test code and stay as-is; the raw store remains the
+ * strings from every free-text field (failure messages AND test names/suites,
+ * which can embed leaked tokens) before embedding. The raw store remains the
  * unredacted source of truth on the user's machine.
  */
 function redactData(data: DashboardData): DashboardData {
   return {
     ...data,
-    verdicts: data.verdicts.map((v) =>
-      v.lastMessage ? { ...v, lastMessage: redact(v.lastMessage) } : v,
-    ),
+    verdicts: data.verdicts.map((v) => {
+      const name = redact(v.name);
+      const suite = redact(v.suite);
+      const lastMessage = v.lastMessage ? redact(v.lastMessage) : v.lastMessage;
+      if (name === v.name && suite === v.suite && lastMessage === v.lastMessage) return v;
+      return { ...v, name, suite, lastMessage };
+    }),
   };
 }
 

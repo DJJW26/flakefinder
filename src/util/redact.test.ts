@@ -65,3 +65,18 @@ describe('redact', () => {
     expect(redact('monkey patching xoxo-brownies')).toBe('monkey patching xoxo-brownies');
   });
 });
+
+describe('redaction hardening (review round)', () => {
+  it('catches tokens embedded in words (test names like Test_ghp_… / TestAKIA…)', () => {
+    expect(redact('Test_ghp_0123456789abcdefABCDEF0123456789abcd')).toBe('Test_ghp_[REDACTED]');
+    expect(redact('TestAKIAIOSFODNN7EXAMPLE_passes')).toBe('TestAKIA[REDACTED]_passes');
+  });
+
+  it('spares ordinary prose that used to over-redact', () => {
+    expect(redact('password: required field')).toBe('password: required field');
+    expect(redact('Unexpected token 1234567890123456789 in JSON')).toBe(
+      'Unexpected token 1234567890123456789 in JSON',
+    );
+    expect(redact('access denied for user')).toBe('access denied for user');
+  });
+});

@@ -149,3 +149,40 @@ describe('store format header (v0.2.0)', () => {
     expect(lines).toHaveLength(3);
   });
 });
+
+describe('store robustness (review round)', () => {
+  it('skips a schema marker that appears mid-file (merged/partial writes) without crashing', () => {
+    const a = tmpStore();
+    a.append(record('r1', 'pass'));
+    appendFileSync(a.path, `${JSON.stringify({ version: 1 })}\n`, 'utf8');
+    a.append(record('r2', 'fail'));
+    const b = new HistoryStore(path.dirname(a.path));
+    expect(b.loadAll().map((r) => r.runId)).toEqual(['r1', 'r2']);
+    expect(b.warnings.some((w) => w.includes('schema marker'))).toBe(true);
+  });
+
+  it('skips garbage and invalid records instead of crashing the classifier', () => {
+    const a = tmpStore();
+    a.append(record('good', 'pass'));
+    appendFileSync(a.path, `${JSON.stringify({ version: '1' })}\n`, 'utf8');
+    appendFileSync(
+      a.path,
+      `${JSON.stringify({ runId: 'x', timestamp: 't', source: 'report' })}\n`,
+      'utf8',
+    );
+    const b = new HistoryStore(path.dirname(a.path));
+    expect(b.loadAll().map((r) => r.runId)).toEqual(['good']);
+    expect(b.warnings.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('warns when the store format is newer than this build', () => {
+    const a = tmpStore();
+    a.append(record('r1', 'pass'));
+    const body = readFileSync(a.path, 'utf8').split('\n');
+    body[0] = JSON.stringify({ version: 999 });
+    writeFileSync(a.path, body.join('\n'), 'utf8');
+    const b = new HistoryStore(path.dirname(a.path));
+    b.loadAll();
+    expect(b.warnings[0]).toContain('newer than this flakefinder');
+  });
+});

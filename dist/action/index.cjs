@@ -127608,7 +127608,7 @@ function resolveConfig(config = {}, overrides = {}) {
     maxRuns: 300,
     minRuns: 3,
     liveRetries: 2,
-    flakeScoreThreshold: 40,
+    flakeScoreThreshold: 30,
     slowThresholdMs: 1e4,
     slowMultiplier: 5,
     quarantineFile: "flakefinder.quarantine.json",
@@ -127645,39 +127645,41 @@ function loadConfig(cwd) {
 
 // src/util/redact.ts
 var PATTERNS = [
-  { name: "github-pat-classic", re: /\bghp_[A-Za-z0-9]{30,}\b/g, replacement: "ghp_[REDACTED]" },
+  { name: "github-pat-classic", re: /ghp_[A-Za-z0-9]{30,}/g, replacement: "ghp_[REDACTED]" },
   {
     name: "github-pat-fine",
-    re: /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+    re: /github_pat_[A-Za-z0-9_]{20,}/g,
     replacement: "github_pat_[REDACTED]"
   },
-  { name: "aws-access-key", re: /\bAKIA[0-9A-Z]{16}\b/g, replacement: "AKIA[REDACTED]" },
-  { name: "openai-key", re: /\bsk-[A-Za-z0-9_-]{20,}\b/g, replacement: "sk-[REDACTED]" },
-  { name: "slack-token", re: /\bxox[baprs]-[A-Za-z0-9-]{10,}\b/g, replacement: "xox[REDACTED]" },
-  { name: "gitlab-pat", re: /\bglpat-[A-Za-z0-9_-]{20,}\b/g, replacement: "glpat-[REDACTED]" },
+  { name: "aws-access-key", re: /AKIA[0-9A-Z]{16}/g, replacement: "AKIA[REDACTED]" },
+  { name: "openai-key", re: /sk-[A-Za-z0-9_-]{20,}/g, replacement: "sk-[REDACTED]" },
+  { name: "slack-token", re: /xox[baprs]-[A-Za-z0-9-]{10,}/g, replacement: "xox[REDACTED]" },
+  { name: "gitlab-pat", re: /glpat-[A-Za-z0-9_-]{20,}/g, replacement: "glpat-[REDACTED]" },
   {
     name: "npm-token",
-    re: /\bnpm_[A-Za-z0-9]{30,}\b/g,
+    re: /npm_[A-Za-z0-9]{30,}/g,
     replacement: "npm_[REDACTED]"
   },
   // JWT-shaped: three base64url segments
   {
     name: "jwt",
-    re: /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}\b/g,
+    re: /eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{4,}/g,
     replacement: "[REDACTED-JWT]"
   },
-  // Authorization headers with raw tokens
+  // Authorization header schemes with raw tokens. `token` is deliberately
+  // absent — "Unexpected token 1234567890123456789" is ordinary JSON-error prose.
   {
-    name: "bearer",
-    re: /\b(Bearer|Basic|token)\s+[A-Za-z0-9._~+/=-]{18,}/gi,
+    name: "auth-header",
+    re: /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{18,}/gi,
     replacement: "$1 [REDACTED]"
   },
   // Assignment forms: SECRET_KEY=... / "api_key": "..." (quoted or not). No
   // leading \b on purpose: compound names like AWS_SECRET_ACCESS_KEY have an
-  // underscore before the matched fragment, which is a word char.
+  // underscore before the matched fragment, which is a word char. Values must
+  // reach 12+ chars so validation-error prose ("password: required") survives.
   {
     name: "secret-assignment",
-    re: /((?:api[_-]?key|secret[_-]?key|access[_-]?key|auth[_-]?token|password|passwd|client[_-]?secret)["']?\s*[:=]\s*["']?)([^\s"']{8,})/gi,
+    re: /((?:api[_-]?key|secret[_-]?key|access[_-]?key|auth[_-]?token|password|passwd|client[_-]?secret)["']?\s*[:=]\s*["']?)([^\s"']{12,})/gi,
     replacement: "$1[REDACTED]"
   }
 ];
@@ -127693,9 +127695,13 @@ function redact(text) {
 function redactData(data) {
   return {
     ...data,
-    verdicts: data.verdicts.map(
-      (v) => v.lastMessage ? { ...v, lastMessage: redact(v.lastMessage) } : v
-    )
+    verdicts: data.verdicts.map((v) => {
+      const name = redact(v.name);
+      const suite = redact(v.suite);
+      const lastMessage = v.lastMessage ? redact(v.lastMessage) : v.lastMessage;
+      if (name === v.name && suite === v.suite && lastMessage === v.lastMessage) return v;
+      return { ...v, name, suite, lastMessage };
+    })
   };
 }
 function embedJson(data) {
@@ -129040,7 +129046,7 @@ ${hasVerdicts ? drawerMarkup : ""}
 }
 
 // src/types.ts
-var FLAKEFINDER_VERSION = "0.1.1";
+var FLAKEFINDER_VERSION = "0.2.0";
 
 // src/report/json.ts
 function renderJson(verdicts, cfg) {
@@ -129048,7 +129054,13 @@ function renderJson(verdicts, cfg) {
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
     flakefinderVersion: FLAKEFINDER_VERSION,
     config: cfg,
-    verdicts
+    verdicts: verdicts.map((v) => {
+      const name = redact(v.name);
+      const suite = redact(v.suite);
+      const lastMessage = v.lastMessage ? redact(v.lastMessage) : v.lastMessage;
+      if (name === v.name && suite === v.suite && lastMessage === v.lastMessage) return v;
+      return { ...v, name, suite, lastMessage };
+    })
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -129172,18 +129184,40 @@ var HistoryStore = class {
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
+      let parsed;
       try {
-        const parsed = JSON.parse(line);
-        if (i === 0 && typeof parsed.version === "number" && parsed.runId === void 0) {
-          this.formatVersion = parsed.version;
-          continue;
-        }
-        this.records.push(parsed);
+        parsed = JSON.parse(line);
       } catch {
         if (this.warnings.length < 10) {
           this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
         }
+        continue;
       }
+      if (parsed.runId === void 0 && parsed.results === void 0) {
+        if (typeof parsed.version === "number") {
+          if (i === 0) this.formatVersion = parsed.version;
+          else if (this.warnings.length < 10) {
+            this.warnings.push(`unexpected schema marker at line ${i + 1} \u2014 skipped`);
+          }
+          continue;
+        }
+        if (this.warnings.length < 10) {
+          this.warnings.push(`skipping record-shaped garbage at line ${i + 1} in ${this.path}`);
+        }
+        continue;
+      }
+      if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
+        if (this.warnings.length < 10) {
+          this.warnings.push(`skipping invalid record at line ${i + 1} in ${this.path}`);
+        }
+        continue;
+      }
+      this.records.push(parsed);
+    }
+    if (this.formatVersion !== null && this.formatVersion > STORE_FORMAT_VERSION) {
+      this.warnings.unshift(
+        `store format v${this.formatVersion} is newer than this flakefinder (v${STORE_FORMAT_VERSION}) \u2014 unknown fields will be preserved`
+      );
     }
   }
   ensureHeader() {
@@ -129519,7 +129553,7 @@ function firstNonEmptyLine(content) {
 
 // src/parsers/gotest.ts
 var MAX_MALFORMED_DETAILS = 5;
-var MESSAGE_MAX_CHARS = 500;
+var MESSAGE_MAX_CHARS = 2e3;
 function elapsedToMs(ev) {
   const raw = ev.elapsed !== void 0 ? ev.elapsed : ev.Elapsed;
   if (typeof raw !== "number" || !Number.isFinite(raw) || raw < 0) return null;
@@ -129547,6 +129581,7 @@ var goTestParser = {
     const results = [];
     const warnings = [];
     const tests = /* @__PURE__ */ new Map();
+    const failedPackages = /* @__PURE__ */ new Map();
     let malformed = 0;
     const lines = stripBom(content).split(/\r?\n/);
     for (let i = 0; i < lines.length; i++) {
@@ -129565,19 +129600,34 @@ var goTestParser = {
       if (!isObj(ev)) continue;
       const pkg = typeof ev.Package === "string" ? ev.Package : "";
       const test = typeof ev.Test === "string" && ev.Test.trim() !== "" ? ev.Test : null;
-      if (pkg === "" || test === null) continue;
+      if (pkg === "") continue;
+      const action6 = ev.Action;
+      const out = ev.Output !== void 0 ? ev.Output : ev.output;
+      if (test === null) {
+        if (action6 === "fail") {
+          const entry = failedPackages.get(pkg) ?? { failed: false, outputs: [] };
+          entry.failed = true;
+          failedPackages.set(pkg, entry);
+        } else if (action6 === "output" && typeof out === "string") {
+          const entry = failedPackages.get(pkg) ?? { failed: false, outputs: [] };
+          entry.outputs.push(out);
+          failedPackages.set(pkg, entry);
+        }
+        continue;
+      }
       const key = `${pkg}\0${test}`;
       let acc = tests.get(key);
       if (acc === void 0) {
+        if (action6 !== "run" && action6 !== "pass" && action6 !== "fail" && action6 !== "skip") {
+          continue;
+        }
         acc = { pkg, test, durationMs: null, outputs: [] };
         tests.set(key, acc);
       }
-      const action6 = ev.Action;
       if (action6 === "pass" || action6 === "fail" || action6 === "skip") {
         acc.status = action6;
         acc.durationMs = elapsedToMs(ev);
       } else if (action6 === "output") {
-        const out = ev.Output !== void 0 ? ev.Output : ev.output;
         if (typeof out === "string") acc.outputs.push(out);
       }
     }
@@ -129616,6 +129666,23 @@ ${output}`;
     if (dangling > 0) {
       warnings.push(
         `go: ${sourcePath}: ${dangling} test(s) started but never reported a result \u2014 synthesized as error (package crash?)`
+      );
+    }
+    const pkgsWithTests = new Set([...tests.values()].map((a) => a.pkg));
+    for (const [pkg, entry] of failedPackages) {
+      if (!entry.failed || pkgsWithTests.has(pkg)) continue;
+      const output = messageFromOutputs(entry.outputs);
+      results.push({
+        testId: makeTestId(pkg, "(package)"),
+        suite: pkg,
+        name: "(package)",
+        status: "error",
+        durationMs: null,
+        message: `package failed before any test completed (build or init crash?)${output ? `
+${output}` : ""}`
+      });
+      warnings.push(
+        `go: ${sourcePath}: package ${pkg} failed with no test results \u2014 synthesized as error`
       );
     }
     return { results, warnings };
@@ -129689,7 +129756,7 @@ var jestParser = {
         const suite = ancestors.length > 0 ? ancestors.join(" > ") : filePath;
         const name = typeof assertion.title === "string" && assertion.title.trim() !== "" ? assertion.title : typeof assertion.fullName === "string" && assertion.fullName.trim() !== "" ? assertion.fullName : "(unnamed)";
         const durationMs = typeof assertion.duration === "number" && Number.isFinite(assertion.duration) ? assertion.duration : null;
-        const message = trimTo(toArray(assertion.failureMessages)[0], 500);
+        const message = trimTo(toArray(assertion.failureMessages)[0], 2e3);
         const result = {
           testId: makeTestId(suite, name),
           suite,
@@ -129701,7 +129768,7 @@ var jestParser = {
         results.push(result);
       }
       if (assertions.length === 0 && file.status === "failed") {
-        const message = trimTo(file.message, 500);
+        const message = trimTo(file.message, 2e3);
         const result = {
           testId: makeTestId(filePath, SUITE_PLACEHOLDER),
           suite: filePath,
@@ -129766,7 +129833,7 @@ function mapTestCase(tc, suiteName, ctx) {
   };
   if (detail !== void 0) {
     const detailMessage = isObj(detail) ? attr(detail, "@_message") : void 0;
-    const message = trimTo(detailMessage, 500) ?? trimTo(textOf(detail), 500);
+    const message = trimTo(detailMessage, 2e3) ?? trimTo(textOf(detail), 2e3);
     const stack = trimTo(textOf(detail), 1e3);
     if (message !== void 0) result.message = message;
     if (stack !== void 0) result.stack = stack;
@@ -129906,10 +129973,10 @@ var mochaParser = {
       };
       const err = entry.err;
       if (typeof err === "string") {
-        const message = trimTo(err, 500);
+        const message = trimTo(err, 2e3);
         if (message !== void 0) result.message = message;
       } else if (isObj(err) && Object.keys(err).length > 0) {
-        const message = trimTo(err.message, 500);
+        const message = trimTo(err.message, 2e3);
         const stack = trimTo(err.stack, 1e3);
         if (message !== void 0) result.message = message;
         if (stack !== void 0) result.stack = stack;
@@ -129952,7 +130019,7 @@ function ingestReports(files, cfg, storeDir, ctx) {
       continue;
     }
     const parsed = parser.parse(content, file);
-    warnings.push(...parsed.warnings.map((w) => `${parser.name}: ${w}`));
+    warnings.push(...parsed.warnings);
     const record = {
       runId,
       timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -130071,7 +130138,11 @@ async function actionMain() {
       { data: "Class", header: true },
       { data: "Score", header: true }
     ],
-    ...verdicts.filter((v) => v.classification.startsWith("flaky-")).sort((a, b) => b.flakeScore - a.flakeScore).slice(0, 20).map((v) => [`${v.suite} :: ${v.name}`, v.classification, String(v.flakeScore)])
+    ...verdicts.filter((v) => v.classification.startsWith("flaky-")).sort((a, b) => b.flakeScore - a.flakeScore).slice(0, 20).map((v) => [
+      `${redact(v.suite)} :: ${redact(v.name)}`,
+      v.classification,
+      String(v.flakeScore)
+    ])
   ]).write();
   if (getBooleanInput("comment") && context4.payload.pull_request) {
     const token = getInput("github-token");

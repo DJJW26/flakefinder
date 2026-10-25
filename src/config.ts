@@ -161,7 +161,10 @@ export function validateConfig(config: FlakefinderConfig): void {
   }
 }
 
-/** Defaults per PLAN §6. User-supplied values are validated before merging. */
+/** Defaults per PLAN §6. User-supplied values are validated before merging.
+ * flakeScoreThreshold defaults to 30: flaky-suspected scores cap at 34
+ * (directionChanges ≤ 24 + data bonus 10), so a 40 default would make the
+ * class invisible at default settings. */
 export function resolveConfig(
   config: FlakefinderConfig = {},
   overrides: Partial<FlakefinderConfig> = {},
@@ -174,7 +177,7 @@ export function resolveConfig(
     maxRuns: 300,
     minRuns: 3,
     liveRetries: 2,
-    flakeScoreThreshold: 40,
+    flakeScoreThreshold: 30,
     slowThresholdMs: 10_000,
     slowMultiplier: 5,
     quarantineFile: 'flakefinder.quarantine.json',

@@ -259,7 +259,7 @@ export async function main(argv: string[]): Promise<number> {
         }
         const parsed = parser.parse(content, file);
         warnings += parsed.warnings.length;
-        for (const w of parsed.warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
+        for (const w of parsed.warnings) console.warn(`flakefinder: ${w}`);
         const record: RunRecord = {
           runId,
           timestamp: new Date().toISOString(),
@@ -290,7 +290,17 @@ export async function main(argv: string[]): Promise<number> {
       const g = globals();
       const cfg = resolveCfg(g);
       const verdicts = classifyAll(storeFor(g, cfg).runs(), cfg);
-      const threshold = opts.threshold != null ? Number.parseInt(opts.threshold, 10) : undefined;
+      let threshold: number | undefined;
+      if (opts.threshold != null) {
+        threshold = Number.parseInt(opts.threshold, 10);
+        if (Number.isNaN(threshold) || threshold < 0 || threshold > 100) {
+          console.error(
+            `flakefinder: --threshold must be an integer 0-100 (got "${opts.threshold}")`,
+          );
+          exitCode = 2;
+          return;
+        }
+      }
       if (opts.format === 'json') {
         console.log(renderJson(verdicts, cfg));
         return;
@@ -489,7 +499,7 @@ export async function main(argv: string[]): Promise<number> {
           continue;
         }
         const parsed = parser.parse(content, file);
-        for (const w of parsed.warnings) console.warn(`flakefinder: ${parser.name}: ${w}`);
+        for (const w of parsed.warnings) console.warn(`flakefinder: ${w}`);
         store.append({
           runId,
           timestamp: new Date().toISOString(),

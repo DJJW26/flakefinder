@@ -57,14 +57,29 @@ describe('goTestParser', () => {
     });
     expect(results[3]).not.toHaveProperty('message');
 
-    // TestLong: oversized output → last 500 chars kept
+    // TestLong: fixture output is small enough to survive uncapped (600 L's)
     const longText = ['=== RUN   TestLong', 'L'.repeat(600), '--- FAIL: TestLong (0.10s)'].join(
       '\n',
     );
     expect(results[4]).toMatchObject({ status: 'fail', durationMs: 100 });
-    expect(results[4]?.message).toBe(longText.slice(-500));
-    expect(results[4]?.message).toHaveLength(500);
+    expect(results[4]?.message).toBe(longText);
     expect(results[4]?.message?.endsWith('(0.10s)')).toBe(true);
+  });
+
+  it('keeps the LAST 2000 chars of oversized test output', () => {
+    const lines = [
+      JSON.stringify({ Action: 'run', Package: 'big', Test: 'TestBig' }),
+      JSON.stringify({
+        Action: 'output',
+        Package: 'big',
+        Test: 'TestBig',
+        Output: 'x'.repeat(3000),
+      }),
+      JSON.stringify({ Action: 'fail', Package: 'big', Test: 'TestBig', Elapsed: 0.4 }),
+    ];
+    const { results } = goTestParser.parse(lines.join('\n'), 'inline');
+    expect(results[0]?.message).toHaveLength(2000);
+    expect(results[0]?.message).toBe('x'.repeat(2000)); // tail kept (failure detail lives at the end)
   });
 
   it('parses old-format output (no elapsed on test events → null durations)', () => {
@@ -157,5 +172,43 @@ describe('dangling runs (v0.2.0 — crash coverage)', () => {
     ].join('\n');
     const { warnings } = goTestParser.parse(content, 'ok.jsonl');
     expect(warnings).toEqual([]);
+  });
+});
+
+describe('go parser robustness (review round)', () => {
+  it('does not invent phantom crashes from output-only events', () => {
+    const content = [
+      '{"Action":"output","Package":"p","Test":"TestGhost","Output":"orphan line"}',
+      '{"Action":"pause","Package":"p","Test":"TestGhost"}',
+    ].join('\n');
+    const { results, warnings } = goTestParser.parse(content, 'ghost.jsonl');
+    expect(results).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('synthesizes a (package) error when a package fails before running any test', () => {
+    const content = [
+      '{"Action":"start","Package":"p2"}',
+      '{"Action":"output","Package":"p2","Output":"# p2"}',
+      '{"Action":"output","Package":"p2","Output":"main.go:5:2: syntax error"}',
+      '{"Action":"fail","Package":"p2"}',
+    ].join('\n');
+    const { results, warnings } = goTestParser.parse(content, 'build.jsonl');
+    expect(results).toHaveLength(1);
+    expect(results[0]!.name).toBe('(package)');
+    expect(results[0]!.status).toBe('error');
+    expect(results[0]!.message).toContain('build or init crash');
+    expect(results[0]!.message).toContain('syntax error');
+    expect(warnings.some((w) => w.includes('no test results'))).toBe(true);
+  });
+
+  it('does not double-report when a package fails WITH tests (dangling logic covers it)', () => {
+    const content = [
+      '{"Action":"run","Package":"p3","Test":"TestA"}',
+      '{"Action":"fail","Package":"p3"}', // package-level
+    ].join('\n');
+    const { results } = goTestParser.parse(content, 'mixed.jsonl');
+    expect(results).toHaveLength(1); // dangling TestA only, no (package) row
+    expect(results[0]!.name).toBe('TestA');
   });
 });

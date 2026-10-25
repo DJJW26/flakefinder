@@ -58,12 +58,14 @@ export function renderTerminal(
   const dim = (s: string): string => color('2', s);
   const lines: string[] = [];
 
+  const beforeFilter = allVerdicts.length;
   const verdicts =
     opts.threshold == null
       ? allVerdicts
       : allVerdicts.filter(
           (v) => v.classification !== 'flaky-suspected' || v.flakeScore >= opts.threshold!,
         );
+  const hiddenBelowThreshold = beforeFilter - verdicts.length;
 
   const byClass = new Map<Classification, TestVerdict[]>();
   for (const v of verdicts) {
@@ -76,7 +78,7 @@ export function renderTerminal(
   }
 
   const problemCount = PROBLEM_CLASSES.reduce((n, c) => n + (byClass.get(c)?.length ?? 0), 0);
-  if (verdicts.length === 0) {
+  if (allVerdicts.length === 0) {
     lines.push(
       `${bold('flakefinder')} — no test history yet.`,
       '',
@@ -91,6 +93,14 @@ export function renderTerminal(
     bold(`flakefinder — ${verdicts.length} tracked test(s), ${problemCount} need attention`),
     '',
   );
+  if (hiddenBelowThreshold > 0) {
+    lines.push(
+      dim(
+        `${hiddenBelowThreshold} flaky-suspected test(s) hidden below score ${opts.threshold} — raise --threshold visibility with --all or a lower --threshold`,
+      ),
+      '',
+    );
+  }
 
   for (const cls of PROBLEM_CLASSES) {
     const list = byClass.get(cls);

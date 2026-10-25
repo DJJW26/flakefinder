@@ -108,7 +108,7 @@ export const jestParser: ReportParser = {
           typeof assertion.duration === 'number' && Number.isFinite(assertion.duration)
             ? assertion.duration
             : null;
-        const message = trimTo(toArray(assertion.failureMessages)[0], 500);
+        const message = trimTo(toArray(assertion.failureMessages)[0], 2000);
 
         const result: TestCaseResult = {
           testId: makeTestId(suite, name),
@@ -123,7 +123,7 @@ export const jestParser: ReportParser = {
 
       // Suite-level failure (e.g. the file failed to even run): keep it as one synthetic test.
       if (assertions.length === 0 && file.status === 'failed') {
-        const message = trimTo(file.message, 500);
+        const message = trimTo(file.message, 2000);
         const result: TestCaseResult = {
           testId: makeTestId(filePath, SUITE_PLACEHOLDER),
           suite: filePath,

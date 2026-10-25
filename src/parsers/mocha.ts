@@ -135,10 +135,10 @@ export const mochaParser: ReportParser = {
 
       const err = entry.err;
       if (typeof err === 'string') {
-        const message = trimTo(err, 500);
+        const message = trimTo(err, 2000);
         if (message !== undefined) result.message = message;
       } else if (isObj(err) && Object.keys(err).length > 0) {
-        const message = trimTo(err.message, 500);
+        const message = trimTo(err.message, 2000);
         const stack = trimTo(err.stack, 1000);
         if (message !== undefined) result.message = message;
         if (stack !== undefined) result.stack = stack;

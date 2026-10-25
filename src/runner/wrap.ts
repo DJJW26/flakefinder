@@ -155,6 +155,11 @@ export async function runLive(
       dim(`flakefinder: attempt ${attempt}/${maxAttempts} → ${effectiveCommand.join(' ')}`),
     );
     const code = await spawnCommand(effectiveCommand, cwd, quarantineQuoteIdx);
+    if (code === 127 || code === 9009) {
+      console.error(
+        `flakefinder: exit ${code} usually means the command was not found — check spelling and PATH`,
+      );
+    }
     exitCodes.push(code);
 
     const after = snapshotReports(cwd, cfg);

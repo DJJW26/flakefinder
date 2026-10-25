@@ -97,5 +97,5 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P7.6 UX debts: `html -o` mkdir, command-not-found message
 - ✅ P7.7 Store schema version header + legacy tolerance + PLAN.md §4 sync + tests
 - ✅ P7.8 Full pipeline green (193 tests / 18 files, tsc, biome, build, e2e 10/10)
-- 🔄 P7.9 Independent reviewer pass on the v0.2.0 diff → findings to address
-- 🔄 P7.10 Release v0.2.0 (version bump, tag, push, CI green)
+- ✅ P7.9 Independent reviewer pass: 12 verified findings (3 MAJOR), ALL fixed + regression-tested (193 → 205 tests)
+- ✅ P7.10 Release v0.2.0 (version bump both places, tag, push, CI green)
