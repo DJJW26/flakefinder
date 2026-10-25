@@ -69,6 +69,30 @@ describe('renderTerminal', () => {
     expect(out).toContain('flakefinder quarantine add worst');
   });
 
+  it('allRows lists passing tests; default only summarizes them', () => {
+    const verdicts = [
+      verdict(),
+      verdict({ testId: 'p1', classification: 'passing', name: 'calm test', flakeScore: 0 }),
+    ];
+    const summary = renderTerminal(verdicts, { color: false, flakesOnly: false });
+    expect(summary).toContain('ok: 1 passing');
+    expect(summary).not.toContain('calm test');
+    const all = renderTerminal(verdicts, { color: false, flakesOnly: false, allRows: true });
+    expect(all).toContain('ok: 1 passing');
+    expect(all).toContain('calm test');
+    expect(all).toContain('PASSING — 1');
+  });
+
+  it('header counts every tracked test, not just problem rows', () => {
+    const verdicts = [
+      verdict(),
+      verdict({ testId: 'p1', classification: 'passing' }),
+      verdict({ testId: 'p2', classification: 'passing' }),
+    ];
+    const out = renderTerminal(verdicts, { color: false, flakesOnly: false });
+    expect(out).toContain('3 tracked test(s), 1 need attention');
+  });
+
   it('long test names are middle-truncated to keep rows readable', () => {
     const out = renderTerminal(
       [verdict({ name: 'x'.repeat(120), suite: 's'.repeat(40) })],

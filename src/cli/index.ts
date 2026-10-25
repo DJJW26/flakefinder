@@ -294,9 +294,10 @@ export async function main(argv: string[]): Promise<number> {
         return;
       }
       console.log(
-        renderTerminal(filterVerdicts(verdicts, { all: opts.all, threshold }, cfg), {
+        renderTerminal(verdicts, {
           color: g.color && process.stdout.isTTY === true,
           flakesOnly: opts.flakesOnly === true,
+          allRows: opts.all === true,
         }),
       );
     });

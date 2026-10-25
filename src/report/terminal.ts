@@ -44,10 +44,12 @@ function truncateMiddle(s: string, max: number): string {
 /**
  * Terminal report. Sections per problem classification, a summary line for
  * healthy tests, and actionable next steps. ANSI only when opts.color.
+ * Receives the FULL verdict set — filtering by class would make the
+ * "N tracked / ok:" numbers lie.
  */
 export function renderTerminal(
   verdicts: TestVerdict[],
-  opts: { color: boolean; flakesOnly: boolean },
+  opts: { color: boolean; flakesOnly: boolean; allRows?: boolean },
 ): string {
   const color = makeColor(opts.color);
   const bold = (s: string): string => color('1', s);
@@ -95,6 +97,25 @@ export function renderTerminal(
       );
     }
     lines.push('');
+  }
+
+  if (opts.allRows) {
+    for (const cls of ['passing', 'skipped', 'gone'] as Classification[]) {
+      const list = byClass.get(cls);
+      if (!list || list.length === 0) continue;
+      const meta = CLASS_META[cls];
+      lines.push(dim(`${meta.label} — ${list.length}`));
+      const shown = cls === 'passing' ? list.slice(0, 20) : list;
+      for (const v of shown) {
+        const med = fmtMs(v.medianDurationMs).padStart(6);
+        const tags = v.tags.length > 0 ? dim(` [${v.tags.join(', ')}]`) : '';
+        lines.push(
+          `  ${dim(String(v.flakeScore).padStart(3))}  runs ${String(v.runsObserved).padStart(3)}  med ${med}  ${v.suite} ${dim('::')} ${truncateMiddle(v.name, 48)}${tags}`,
+        );
+      }
+      if (cls === 'passing' && list.length > 20) lines.push(dim(`  …and ${list.length - 20} more`));
+      lines.push('');
+    }
   }
 
   if (!opts.flakesOnly) {
