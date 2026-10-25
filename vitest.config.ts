@@ -6,5 +6,10 @@ export default defineConfig({
     environment: 'node',
     passWithNoTests: true,
     testTimeout: 30000,
+    coverage: {
+      provider: 'v8',
+      include: ['src/engine/**', 'src/parsers/**', 'src/store/**'],
+      thresholds: { lines: 85, functions: 80, branches: 80, statements: 85 },
+    },
   },
 });

@@ -25,7 +25,11 @@ jobs:
       - run: npx biome check src tests
       - run: npx tsc -p .
       - run: npx vitest run
+      - name: coverage gate (engine/parsers/store ≥85% lines)
+        run: npx vitest run --coverage
       - run: npm run build
+      - name: performance smoke (150k observations)
+        run: node scripts/perf-smoke.mjs
       - name: dist is committed and up to date
         run: |
           git diff --exit-code dist/ || (echo '::error::dist/ is stale — run "npm run build" and commit' && exit 1)

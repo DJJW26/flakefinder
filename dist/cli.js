@@ -2676,7 +2676,7 @@ function renderTerminal(allVerdicts, opts) {
 // src/runner/wrap.ts
 import { spawn, spawnSync } from "child_process";
 import { createHash as createHash2, randomUUID } from "crypto";
-import { readFileSync as readFileSync4 } from "fs";
+import { readFileSync as readFileSync4, statSync as statSync3 } from "fs";
 import path5 from "path";
 
 // src/store/history-store.ts
@@ -2709,45 +2709,54 @@ var HistoryStore = class {
     if (this.loaded) return;
     this.loaded = true;
     if (!existsSync3(this.path)) return;
-    const lines = readFileSync3(this.path, "utf8").split(/\r?\n/);
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      let parsed;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      if (parsed.runId === void 0 && parsed.results === void 0) {
-        if (typeof parsed.version === "number") {
-          if (i === 0) this.formatVersion = parsed.version;
-          else if (this.warnings.length < 10) {
-            this.warnings.push(`unexpected schema marker at line ${i + 1} \u2014 skipped`);
-          }
-          continue;
-        }
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping record-shaped garbage at line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping invalid record at line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      this.records.push(parsed);
+    const raw = readFileSync3(this.path, "utf8");
+    let start = 0;
+    let lineNo = 0;
+    while (start < raw.length) {
+      let end = raw.indexOf("\n", start);
+      if (end === -1) end = raw.length;
+      const line = raw.slice(start, end).trim();
+      lineNo++;
+      this.processLine(line, lineNo);
+      start = end + 1;
     }
     if (this.formatVersion !== null && this.formatVersion > STORE_FORMAT_VERSION) {
       this.warnings.unshift(
         `store format v${this.formatVersion} is newer than this flakefinder (v${STORE_FORMAT_VERSION}) \u2014 unknown fields will be preserved`
       );
     }
+  }
+  processLine(line, i) {
+    if (!line) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping corrupt line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    if (parsed.runId === void 0 && parsed.results === void 0) {
+      if (typeof parsed.version === "number") {
+        if (i === 1) this.formatVersion = parsed.version;
+        else if (this.warnings.length < 10) {
+          this.warnings.push(`unexpected schema marker at line ${i} \u2014 skipped`);
+        }
+        return;
+      }
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping record-shaped garbage at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping invalid record at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    this.records.push(parsed);
   }
   ensureHeader() {
     if (existsSync3(this.path) && statSync2(this.path).size > 0) return;
@@ -2880,16 +2889,33 @@ function failedOnlyArgs(runner, failedNames, quarantinedNames = []) {
 }
 
 // src/runner/wrap.ts
-function hashFile(file) {
+function statOf(file) {
+  try {
+    const s = statSync3(file);
+    return { size: s.size, mtimeMs: s.mtimeMs };
+  } catch {
+    return null;
+  }
+}
+function shaOf(file) {
   try {
     return createHash2("sha256").update(readFileSync4(file)).digest("hex");
   } catch {
     return null;
   }
 }
-function snapshotReports(cwd, cfg) {
+function snapshotReports(cwd, cfg, previous) {
   const snapshot = /* @__PURE__ */ new Map();
-  for (const file of matchGlobs(cwd, cfg.reports)) snapshot.set(file, hashFile(file));
+  for (const file of matchGlobs(cwd, cfg.reports)) {
+    const stat = statOf(file);
+    if (!stat) continue;
+    const prev = previous?.get(file);
+    if (prev && prev.size === stat.size && prev.mtimeMs === stat.mtimeMs && prev.sha !== null) {
+      snapshot.set(file, prev);
+      continue;
+    }
+    snapshot.set(file, { ...stat, sha: shaOf(file) });
+  }
   return snapshot;
 }
 function needsShell(command) {
@@ -3019,9 +3045,9 @@ async function runLive(command, cfg, opts) {
       );
     }
     exitCodes.push(code);
-    const after = snapshotReports(cwd, cfg);
-    for (const [file, hash] of after) {
-      if (snapshot.get(file) === hash) continue;
+    const after = snapshotReports(cwd, cfg, snapshot);
+    for (const [file, stamp] of after) {
+      if (snapshot.get(file)?.sha === stamp.sha) continue;
       let content;
       try {
         content = readFileSync4(file, "utf8");

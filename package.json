@@ -22,7 +22,9 @@
     "typecheck": "tsc -p .",
     "lint": "biome check src tests",
     "format": "biome format --write src tests",
-    "e2e": "node scripts/e2e.mjs"
+    "e2e": "node scripts/e2e.mjs",
+    "test:coverage": "vitest run --coverage",
+    "perf": "node scripts/perf-smoke.mjs"
   },
   "keywords": [
     "flaky",
@@ -58,6 +60,7 @@
     "@actions/glob": "^0.7.0",
     "@biomejs/biome": "^2.6.3",
     "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "^5.0.5",
     "tsup": "^8.5.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.5"

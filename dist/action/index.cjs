@@ -129190,45 +129190,54 @@ var HistoryStore = class {
     if (this.loaded) return;
     this.loaded = true;
     if (!(0, import_node_fs4.existsSync)(this.path)) return;
-    const lines = (0, import_node_fs4.readFileSync)(this.path, "utf8").split(/\r?\n/);
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (!line) continue;
-      let parsed;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping corrupt line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      if (parsed.runId === void 0 && parsed.results === void 0) {
-        if (typeof parsed.version === "number") {
-          if (i === 0) this.formatVersion = parsed.version;
-          else if (this.warnings.length < 10) {
-            this.warnings.push(`unexpected schema marker at line ${i + 1} \u2014 skipped`);
-          }
-          continue;
-        }
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping record-shaped garbage at line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
-        if (this.warnings.length < 10) {
-          this.warnings.push(`skipping invalid record at line ${i + 1} in ${this.path}`);
-        }
-        continue;
-      }
-      this.records.push(parsed);
+    const raw = (0, import_node_fs4.readFileSync)(this.path, "utf8");
+    let start = 0;
+    let lineNo = 0;
+    while (start < raw.length) {
+      let end = raw.indexOf("\n", start);
+      if (end === -1) end = raw.length;
+      const line = raw.slice(start, end).trim();
+      lineNo++;
+      this.processLine(line, lineNo);
+      start = end + 1;
     }
     if (this.formatVersion !== null && this.formatVersion > STORE_FORMAT_VERSION) {
       this.warnings.unshift(
         `store format v${this.formatVersion} is newer than this flakefinder (v${STORE_FORMAT_VERSION}) \u2014 unknown fields will be preserved`
       );
     }
+  }
+  processLine(line, i) {
+    if (!line) return;
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping corrupt line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    if (parsed.runId === void 0 && parsed.results === void 0) {
+      if (typeof parsed.version === "number") {
+        if (i === 1) this.formatVersion = parsed.version;
+        else if (this.warnings.length < 10) {
+          this.warnings.push(`unexpected schema marker at line ${i} \u2014 skipped`);
+        }
+        return;
+      }
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping record-shaped garbage at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
+      if (this.warnings.length < 10) {
+        this.warnings.push(`skipping invalid record at line ${i} in ${this.path}`);
+      }
+      return;
+    }
+    this.records.push(parsed);
   }
   ensureHeader() {
     if ((0, import_node_fs4.existsSync)(this.path) && (0, import_node_fs4.statSync)(this.path).size > 0) return;
