@@ -54,6 +54,8 @@ export interface Observation {
   attempt: number;
   commitSha?: string;
   message?: string;
+  /** Carried from TestCaseResult when available. */
+  durationMs?: number;
 }
 
 /** All observations for one test, chronological. */
