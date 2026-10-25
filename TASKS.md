@@ -132,4 +132,5 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P10.5 C4 release automation: scripts/release.mjs (two-place bump, changelog stub, full pipeline, tag, --push) + release.yml (npm publish w/ NPM_TOKEN guard + GitHub Release)
 - ✅ P10.6 v1.0.0 release (CI + release workflow green; npm publish auto-skips without NPM_TOKEN)
 - ✅ P10.7 Phase D: D5 community templates (bug/parser-request/PR) · D2 dashboard render cap 500 + show-all toggle · D1 PR comments → plain fetch + env-parsed context (octokit removed from OUR code; bundle unchanged because @actions/artifact depends on it transitively — raw blob-upload protocol rejected as fragile) · D3 TRX/TAP DEFERRED (needs real tool-output samples to avoid shipping guesswork parsers)
-- 🔄 P10.8 docs/CLOUD_SCALING.md research → OVERNIGHT_DONE
+- ✅ P10.8 docs/CLOUD_SCALING.md — cloud migration research (competitor landscape, staged path: engine extraction → ingest API → hosted dashboard → GitHub App → self-hosted; Postgres/JSONB storage rationale; security/privacy requirements; pricing sketch)
+- ✅ P10.9 OVERNIGHT_DONE — loop complete
