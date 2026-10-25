@@ -113,7 +113,7 @@ describe('junitParser', () => {
   });
 
   it('yields warnings (and never throws) for truncated XML', () => {
-    let parsed: { results: unknown[]; warnings: string[] };
+    let parsed: { results: unknown[]; warnings: string[] } = { results: [], warnings: [] };
     expect(() => {
       parsed = junitParser.parse(load('malformed-xml.xml'), 'malformed-xml.xml');
     }).not.toThrow();
