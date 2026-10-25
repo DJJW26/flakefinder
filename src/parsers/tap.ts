@@ -52,14 +52,14 @@ export const tapParser: ReportParser = {
 
     const lines = body.split(/\r?\n/);
     // ancestry of the currently open `# Subtest:` declarations
-    const ancestors: string[] = [];
+    const ancestors: Array<{ name: string; children: number }> = [];
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i]!;
 
       const sub = line.match(/^\s*# Subtest: (.+?)\s*$/);
       if (sub) {
-        ancestors.push(sub[1]!);
+        ancestors.push({ name: sub[1]!, children: 0 });
         continue;
       }
 
@@ -84,15 +84,19 @@ export const tapParser: ReportParser = {
           }
           yaml = parseYamlBlock(block, sourcePath, warnings);
         }
-        const ownDeclaration = ancestors.length > 0 && ancestors[ancestors.length - 1] === name;
-        const isAggregate = ownDeclaration && yaml.isSuite;
+        const ownDeclaration =
+          ancestors.length > 0 && ancestors[ancestors.length - 1]!.name === name;
+        const isAggregate =
+          ownDeclaration && (yaml.isSuite || ancestors[ancestors.length - 1]!.children > 0);
         if (isAggregate) {
-          ancestors.pop();
+          const popped = ancestors.pop()!;
+          // the popped suite is itself a child of the next level up
+          if (ancestors.length > 0) ancestors[ancestors.length - 1]!.children++;
           continue;
         }
         // suite = ancestors WITHOUT the leaf's own declaration
         const chain = ownDeclaration ? ancestors.slice(0, -1) : ancestors;
-        const suite = chain.length > 0 ? chain.join(' > ') : ROOT_SUITE;
+        const suite = chain.length > 0 ? chain.map((a) => a.name).join(' > ') : ROOT_SUITE;
         let status: TestStatus = verdict === 'not ok' ? 'fail' : 'pass';
         let message = yaml.error;
         if (directive === 'SKIP' || directive === 'TODO') {
@@ -113,7 +117,12 @@ export const tapParser: ReportParser = {
           result.stack = trimTo(yaml.stack, 1000);
         }
         results.push(result);
-        if (ownDeclaration) ancestors.pop();
+        if (ownDeclaration) {
+          ancestors.pop();
+          // the emitted leaf counts as a child of its PARENT (the new top),
+          // not of its own (now-popped) declaration
+          if (ancestors.length > 0) ancestors[ancestors.length - 1]!.children++;
+        }
       }
       // 'TAP version', plans (1..N), summary comments, diagnostics comments — ignored
     }

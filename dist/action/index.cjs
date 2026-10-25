@@ -130165,7 +130165,7 @@ var tapParser = {
       const line = lines[i];
       const sub = line.match(/^\s*# Subtest: (.+?)\s*$/);
       if (sub) {
-        ancestors.push(sub[1]);
+        ancestors.push({ name: sub[1], children: 0 });
         continue;
       }
       const assertion = line.match(
@@ -130184,14 +130184,15 @@ var tapParser = {
           }
           yaml = parseYamlBlock(block, sourcePath, warnings);
         }
-        const ownDeclaration = ancestors.length > 0 && ancestors[ancestors.length - 1] === name;
-        const isAggregate = ownDeclaration && yaml.isSuite;
+        const ownDeclaration = ancestors.length > 0 && ancestors[ancestors.length - 1].name === name;
+        const isAggregate = ownDeclaration && (yaml.isSuite || ancestors[ancestors.length - 1].children > 0);
         if (isAggregate) {
-          ancestors.pop();
+          const popped = ancestors.pop();
+          if (ancestors.length > 0) ancestors[ancestors.length - 1].children++;
           continue;
         }
         const chain = ownDeclaration ? ancestors.slice(0, -1) : ancestors;
-        const suite = chain.length > 0 ? chain.join(" > ") : ROOT_SUITE;
+        const suite = chain.length > 0 ? chain.map((a) => a.name).join(" > ") : ROOT_SUITE;
         let status = verdict === "not ok" ? "fail" : "pass";
         let message = yaml.error;
         if (directive === "SKIP" || directive === "TODO") {
@@ -130212,7 +130213,10 @@ var tapParser = {
           result.stack = trimTo(yaml.stack, 1e3);
         }
         results.push(result);
-        if (ownDeclaration) ancestors.pop();
+        if (ownDeclaration) {
+          ancestors.pop();
+          if (ancestors.length > 0) ancestors[ancestors.length - 1].children++;
+        }
       }
     }
     if (ancestors.length > 0) {
