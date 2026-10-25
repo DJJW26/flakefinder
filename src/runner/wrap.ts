@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 import { detectRunner } from '../config.js';
 import { classifyAll } from '../engine/classify.js';
@@ -19,7 +19,22 @@ export interface LiveRunResult {
   suiteFlake: boolean;
 }
 
-function hashFile(file: string): string | null {
+interface FileStamp {
+  size: number;
+  mtimeMs: number;
+  sha: string | null;
+}
+
+function statOf(file: string): { size: number; mtimeMs: number } | null {
+  try {
+    const s = statSync(file);
+    return { size: s.size, mtimeMs: s.mtimeMs };
+  } catch {
+    return null; // gone
+  }
+}
+
+function shaOf(file: string): string | null {
   try {
     return createHash('sha256').update(readFileSync(file)).digest('hex');
   } catch {
@@ -27,9 +42,28 @@ function hashFile(file: string): string | null {
   }
 }
 
-function snapshotReports(cwd: string, cfg: ResolvedConfig): Map<string, string | null> {
-  const snapshot = new Map<string, string | null>();
-  for (const file of matchGlobs(cwd, cfg.reports)) snapshot.set(file, hashFile(file));
+/**
+ * Report-change detection, stat-first: size+mtime identify unchanged files
+ * without re-reading them; sha256 runs only when the stat differs. Walking
+ * the globs on EVERY attempt is deliberate — that is how newly created
+ * report files are caught.
+ */
+function snapshotReports(
+  cwd: string,
+  cfg: ResolvedConfig,
+  previous?: Map<string, FileStamp>,
+): Map<string, FileStamp> {
+  const snapshot = new Map<string, FileStamp>();
+  for (const file of matchGlobs(cwd, cfg.reports)) {
+    const stat = statOf(file);
+    if (!stat) continue; // vanished between walk and stat
+    const prev = previous?.get(file);
+    if (prev && prev.size === stat.size && prev.mtimeMs === stat.mtimeMs && prev.sha !== null) {
+      snapshot.set(file, prev); // unchanged: reuse the hash, skip the read
+      continue;
+    }
+    snapshot.set(file, { ...stat, sha: shaOf(file) });
+  }
   return snapshot;
 }
 
@@ -166,8 +200,7 @@ export async function runLive(
   const attempts: RunRecord[] = [];
   const usedReportFiles = new Set<string>();
   const exitCodes: number[] = [];
-  let snapshot = snapshotReports(cwd, cfg);
-  const maxAttempts = Math.max(1, opts.retries + 1);
+  let snapshot = snapshotReports(cwd, cfg);  const maxAttempts = Math.max(1, opts.retries + 1);
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     // Attempt 1 runs the full suite (with quarantine exclusions). Attempts 2+
@@ -204,9 +237,9 @@ export async function runLive(
     }
     exitCodes.push(code);
 
-    const after = snapshotReports(cwd, cfg);
-    for (const [file, hash] of after) {
-      if (snapshot.get(file) === hash) continue;
+    const after = snapshotReports(cwd, cfg, snapshot);
+    for (const [file, stamp] of after) {
+      if (snapshot.get(file)?.sha === stamp.sha) continue;
       let content: string;
       try {
         content = readFileSync(file, 'utf8');
