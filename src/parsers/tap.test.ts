@@ -78,3 +78,29 @@ describe('tapParser', () => {
     expect(warnings[0]).toContain('file is empty');
   });
 });
+
+describe('TAP directive case-insensitivity (QA B-F2)', () => {
+  it('lowercase and mixed-case directives are honored (perl-style output)', () => {
+    const content = [
+      'TAP version 13',
+      'ok 1 - network test # skip no network available',
+      'not ok 2 - upload test # Skip flaky',
+      'not ok 3 - verify # tOdO after migration',
+      'ok 4 - normal test',
+    ].join('\n');
+    const { results } = tapParser.parse(content, 'inline');
+    expect(results).toHaveLength(4);
+    expect(results[0]).toMatchObject({
+      name: 'network test',
+      status: 'skip',
+      message: 'no network available',
+    });
+    expect(results[1]).toMatchObject({ name: 'upload test', status: 'skip', message: 'flaky' });
+    expect(results[2]).toMatchObject({
+      name: 'verify',
+      status: 'skip',
+      message: 'after migration',
+    });
+    expect(results[3]).toMatchObject({ name: 'normal test', status: 'pass' });
+  });
+});

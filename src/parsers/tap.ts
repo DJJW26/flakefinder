@@ -64,7 +64,7 @@ export const tapParser: ReportParser = {
       }
 
       const assertion = line.match(
-        /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s+#\s*(SKIP|TODO)\b(.*))?$/,
+        /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s+#\s*([A-Za-z]+)\b(.*))?$/,
       );
       if (assertion) {
         const [, verdict, rawName, directive, directiveText] = assertion;
@@ -99,7 +99,9 @@ export const tapParser: ReportParser = {
         const suite = chain.length > 0 ? chain.map((a) => a.name).join(' > ') : ROOT_SUITE;
         let status: TestStatus = verdict === 'not ok' ? 'fail' : 'pass';
         let message = yaml.error;
-        if (directive === 'SKIP' || directive === 'TODO') {
+        // TAP spec: directives are case-insensitive (# SKIP, # skip, # Skip …)
+        const directiveKind = directive?.toUpperCase();
+        if (directiveKind === 'SKIP' || directiveKind === 'TODO') {
           status = 'skip';
           const reason = directiveText?.replace(/^\s*-\s*/, '').trim();
           if (reason) message = reason;
