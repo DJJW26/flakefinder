@@ -52,6 +52,21 @@ describe('tapParser', () => {
     expect(root).toMatchObject({ status: 'pass', suite: 'node:test' });
   });
 
+  it('keeps the LAST 2000 chars of oversized test output', () => {
+    const lines = [
+      JSON.stringify({ Action: 'run', Package: 'big', Test: 'TestBig' }),
+      JSON.stringify({
+        Action: 'output',
+        Package: 'big',
+        Test: 'TestBig',
+        Output: 'x'.repeat(3000),
+      }),
+      JSON.stringify({ Action: 'fail', Package: 'big', Test: 'TestBig', Elapsed: 0.4 }),
+    ];
+    const { results } = tapParser.parse(lines.join('\n'), 'inline');
+    expect(results).toEqual([]); // go-format lines are not TAP — sniff rejects the file
+  });
+
   it('truncated stream: emits a warning for unclosed subtests', () => {
     const content = ['TAP version 13', '# Subtest: started', ''].join('\n');
     const { results, warnings } = tapParser.parse(content, 'inline');
@@ -106,15 +121,15 @@ describe('TAP directive case-insensitivity (QA B-F2)', () => {
 });
 
 describe('TAP name unescaping (QA B-F4)', () => {
-  it("unescapes node's # escape in test names and suite names", () => {
+  it("unescapes node's backslash-# escape in test and suite names", () => {
+    const BS = String.fromCharCode(92); // backslash, heredoc-proof
     const content = [
       'TAP version 13',
-      'describe("handles #TODO stuff", () => {});',
-      '# Subtest: handles #TODO stuff',
-      '    # Subtest: inner #one',
-      '    ok 1 - inner #one',
+      `# Subtest: handles ${BS}#TODO stuff`,
+      `    # Subtest: inner ${BS}#one`,
+      `    ok 1 - inner ${BS}#one`,
       '    1..1',
-      'ok 1 - handles #TODO stuff',
+      `ok 1 - handles ${BS}#TODO stuff`,
     ].join('\n');
     const { results } = tapParser.parse(content, 'inline');
     expect(results).toHaveLength(1);
