@@ -80,3 +80,20 @@ describe('duplicate roots (QA B-F6)', () => {
     expect(warnings.some((w) => w.includes('multiple <TestRun> roots'))).toBe(true);
   });
 });
+
+describe('TRX durations (QA B-F5)', () => {
+  it('parses day-inclusive durations (d.hh:mm:ss.f)', () => {
+    const content =
+      '<TestRun><Results><UnitTestResult testName="Slow" outcome="Passed" duration="2.04:00:05.5" /></Results></TestRun>';
+    const { results } = trxParser.parse(content, 'inline');
+    // 2 days + 4h + 0m + 5.5s = 187205500 ms
+    expect(results[0]!.durationMs).toBe(187205500);
+  });
+  it('zero and plain durations still parse (regression)', () => {
+    const content =
+      '<TestRun><Results><UnitTestResult testName="z" outcome="Passed" duration="00:00:00" /><UnitTestResult testName="o" outcome="Passed" duration="00:00:01.5" /></Results></TestRun>';
+    const { results } = trxParser.parse(content, 'inline');
+    expect(results[0]!.durationMs).toBe(0);
+    expect(results[1]!.durationMs).toBe(1500);
+  });
+});

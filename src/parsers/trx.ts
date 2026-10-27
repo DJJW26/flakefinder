@@ -50,16 +50,17 @@ function textOf(node: unknown): string | undefined {
   return undefined;
 }
 
-/** TRX duration "HH:MM:SS.fraction" → ms. */
+/** TRX duration "[d.]HH:MM:SS.fraction" (.NET TimeSpan) → ms. */
 function durationMs(raw: string | undefined): number | null {
   if (raw === undefined) return null;
-  const m = raw.match(/^(?:(\d+)):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/);
+  const m = raw.match(/^(?:(\d+)\.)?(?:(\d+)):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/);
   if (!m) return null;
-  const h = Number.parseInt(m[1]!, 10);
-  const min = Number.parseInt(m[2]!, 10);
-  const sec = Number.parseFloat(m[3]!);
+  const days = m[1] !== undefined ? Number.parseInt(m[1]!, 10) : 0;
+  const h = Number.parseInt(m[2]!, 10);
+  const min = Number.parseInt(m[3]!, 10);
+  const sec = Number.parseFloat(m[4]!);
   if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec) || sec < 0) return null;
-  return Math.round(((h * 60 + min) * 60 + sec) * 1000);
+  return Math.round((((days * 24 + h) * 60 + min) * 60 + sec) * 1000);
 }
 
 function outcomeStatus(outcome: string | undefined, hasErrorInfo: boolean): TestStatus | null {
