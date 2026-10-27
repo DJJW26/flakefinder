@@ -68,3 +68,15 @@ describe('trxParser', () => {
     expect(results).toEqual([]);
   });
 });
+
+describe('duplicate roots (QA B-F6)', () => {
+  it('two <TestRun> blocks: first wins with a warning, not silent zero results', () => {
+    const content =
+      '<TestRun><Results><UnitTestResult testName="first" outcome="Passed" /></Results></TestRun>' +
+      '<TestRun><Results><UnitTestResult testName="second" outcome="Passed" /></Results></TestRun>';
+    const { results, warnings } = trxParser.parse(content, 'inline');
+    expect(results).toHaveLength(1);
+    expect(results[0]!.name).toBe('first');
+    expect(warnings.some((w) => w.includes('multiple <TestRun> roots'))).toBe(true);
+  });
+});

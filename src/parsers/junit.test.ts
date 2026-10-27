@@ -196,3 +196,15 @@ describe('namespace tolerance (QA round 2)', () => {
     });
   });
 });
+
+describe('duplicate roots (QA B-F6)', () => {
+  it('two <testsuites> blocks: first wins with a warning, not silent zero results', () => {
+    const content =
+      '<testsuites><testsuite name="a"><testcase name="first"/></testsuite></testsuites>' +
+      '<testsuites><testsuite name="b"><testcase name="second"/></testsuite></testsuites>';
+    const { results, warnings } = junitParser.parse(content, 'inline');
+    expect(results).toHaveLength(1);
+    expect(results[0]!.name).toBe('first');
+    expect(warnings.some((w) => w.includes('multiple <testsuites> roots'))).toBe(true);
+  });
+});

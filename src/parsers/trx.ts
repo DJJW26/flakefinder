@@ -108,7 +108,13 @@ export const trxParser: ReportParser = {
       ctx.warnings.push(`trx: ${sourcePath}: no <TestRun> root element found`);
       return { results: ctx.results, warnings: ctx.warnings };
     }
-    const root = doc[rootKey];
+    let root = doc[rootKey];
+    if (Array.isArray(root)) {
+      // two <TestRun> blocks in one file: fast-xml-parser yields an array —
+      // use the first and say so rather than silently dropping everything
+      ctx.warnings.push(`trx: ${sourcePath}: multiple <TestRun> roots found — using the first`);
+      root = root[0];
+    }
     if (!isObj(root)) return { results: ctx.results, warnings: ctx.warnings };
 
     // TestDefinitions → className per test name (suite lookup)

@@ -151,7 +151,13 @@ export const junitParser: ReportParser = {
 
     // namespace-tolerant root lookup: <testsuites>, <testsuite>, <x:testsuites>…
     const rootKey = Object.keys(doc).find((k) => /(?:^|:)testsuites?$/.test(k));
-    const root = rootKey !== undefined ? doc[rootKey] : undefined;
+    let root = rootKey !== undefined ? doc[rootKey] : undefined;
+    if (Array.isArray(root)) {
+      // two <testsuites> blocks in one file: fast-xml-parser yields an array —
+      // use the first and say so rather than silently dropping everything
+      ctx.warnings.push(`junit: ${sourcePath}: multiple <testsuites> roots found — using the first`);
+      root = root[0];
+    }
     if (root === undefined) {
       ctx.warnings.push(`junit: ${sourcePath}: no <testsuites> or <testsuite> root element found`);
       return { results: ctx.results, warnings: ctx.warnings };
