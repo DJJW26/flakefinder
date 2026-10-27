@@ -139,3 +139,25 @@ describe('mochaParser', () => {
     expect(mochaParser.sniff(load('jest.json'))).toBe(false);
   });
 });
+
+describe('mocha pass/fail-only shape (QA B-F1)', () => {
+  it('parses a report with only passes/failures buckets (no tests/results array)', () => {
+    const { results, warnings } = mochaParser.parse(load('mocha-passfail.json'), 'inline');
+    expect(warnings).toEqual([]);
+    expect(results).toHaveLength(2);
+    // merged order: passes, then failures, then pending
+    expect(results[0]).toMatchObject({
+      suite: 'calc',
+      name: 'adds up',
+      status: 'pass',
+      durationMs: 4,
+    });
+    expect(results[1]).toMatchObject({
+      suite: 'calc',
+      name: 'divides by zero',
+      status: 'fail',
+      durationMs: 2,
+      message: 'Infinity is not a number',
+    });
+  });
+});

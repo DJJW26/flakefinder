@@ -81,7 +81,14 @@ export const mochaParser: ReportParser = {
       ? doc.results
       : Array.isArray(doc.tests)
         ? doc.tests
-        : null;
+        : Array.isArray(doc.passes) || Array.isArray(doc.failures)
+          ? // passes/failures-only shape (sniff accepts it): merge the buckets
+            [
+              ...(Array.isArray(doc.passes) ? doc.passes : []),
+              ...(Array.isArray(doc.failures) ? doc.failures : []),
+              ...(Array.isArray(doc.pending) ? doc.pending : []),
+            ]
+          : null;
     if (all === null) {
       return { results, warnings: [`mocha: ${sourcePath}: missing "tests"/"results" array`] };
     }

@@ -1,0 +1,22 @@
+{
+  "stats": { "passes": 1, "failures": 1, "pending": 0 },
+  "passes": [
+    {
+      "title": "adds up",
+      "fullTitle": "calc adds up",
+      "duration": 4,
+      "err": {}
+    }
+  ],
+  "failures": [
+    {
+      "title": "divides by zero",
+      "fullTitle": "calc divides by zero",
+      "duration": 2,
+      "err": {
+        "message": "Infinity is not a number",
+        "stack": "at calc.js:9:5"
+      }
+    }
+  ]
+}
