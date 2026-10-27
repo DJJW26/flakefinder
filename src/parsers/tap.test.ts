@@ -104,3 +104,24 @@ describe('TAP directive case-insensitivity (QA B-F2)', () => {
     expect(results[3]).toMatchObject({ name: 'normal test', status: 'pass' });
   });
 });
+
+describe('TAP name unescaping (QA B-F4)', () => {
+  it("unescapes node's # escape in test names and suite names", () => {
+    const content = [
+      'TAP version 13',
+      'describe("handles #TODO stuff", () => {});',
+      '# Subtest: handles #TODO stuff',
+      '    # Subtest: inner #one',
+      '    ok 1 - inner #one',
+      '    1..1',
+      'ok 1 - handles #TODO stuff',
+    ].join('\n');
+    const { results } = tapParser.parse(content, 'inline');
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({
+      suite: 'handles #TODO stuff',
+      name: 'inner #one',
+      status: 'pass',
+    });
+  });
+});

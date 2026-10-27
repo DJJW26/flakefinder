@@ -59,7 +59,7 @@ export const tapParser: ReportParser = {
 
       const sub = line.match(/^\s*# Subtest: (.+?)\s*$/);
       if (sub) {
-        ancestors.push({ name: sub[1]!, children: 0 });
+        ancestors.push({ name: sub[1]!.replace(/\\#/g, '#'), children: 0 });
         continue;
       }
 
@@ -68,7 +68,9 @@ export const tapParser: ReportParser = {
       );
       if (assertion) {
         const [, verdict, rawName, directive, directiveText] = assertion;
-        const name = rawName!.trim();
+        // unescape node's \# AFTER directive parsing (an escaped # is not a
+        // directive marker — the raw stream stores it as \#)
+        const name = rawName!.trim().replace(/\\#/g, '#');
         // In node:test TAP, EVERY test's assertion repeats its own `# Subtest:`
         // name (children first, then the parent suite's aggregate). A true
         // suite aggregate carries `type: 'suite'` in its YAML block — pop it
