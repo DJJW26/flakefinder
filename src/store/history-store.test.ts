@@ -252,3 +252,23 @@ describe('prune fresh-read under lock (QA A2)', () => {
     expect(a.runs().map((r) => r.runId)).toEqual(['r2', 'r3', 'r4']);
   });
 });
+
+describe('read paths do not create directories (QA A4)', () => {
+  it('constructing + runs() on a missing storeDir creates nothing', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ff-nomkdir-'));
+    dirs.push(dir);
+    const storeDir = path.join(dir, 'does-not-exist');
+    const s = new HistoryStore(storeDir);
+    expect(s.runs()).toEqual([]);
+    expect(existsSync(storeDir)).toBe(false);
+  });
+  it('append creates the directory on demand', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ff-nomkdir-'));
+    dirs.push(dir);
+    const storeDir = path.join(dir, 'created-on-write');
+    const s = new HistoryStore(storeDir);
+    s.append(record('r1', 'pass'));
+    expect(existsSync(storeDir)).toBe(true);
+    expect(s.runs()).toHaveLength(1);
+  });
+});

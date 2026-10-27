@@ -36,8 +36,14 @@ export class HistoryStore {
   private records: RunRecord[] = [];
 
   constructor(storeDir: string) {
-    mkdirSync(storeDir, { recursive: true });
+    // deliberately does NOT create the directory: read-only commands (report,
+    // doctor) must not leave a .flakefinder/ behind when nothing exists. Write
+    // paths call ensureStoreDir() instead.
     this.path = path.join(storeDir, 'history.jsonl');
+  }
+
+  private ensureStoreDir(): void {
+    mkdirSync(path.dirname(this.path), { recursive: true });
   }
 
   private ensureLoaded(): void {
@@ -167,6 +173,7 @@ export class HistoryStore {
 
   append(run: RunRecord): void {
     this.ensureLoaded();
+    this.ensureStoreDir(); // the lock file lives in the store dir — it must exist first
     this.acquireLock();
     try {
       this.ensureHeader();
@@ -187,6 +194,7 @@ export class HistoryStore {
   prune(maxRuns: number): void {
     this.ensureLoaded();
     if (!existsSync(this.path)) return;
+    this.ensureStoreDir(); // lock file lives in the store dir
     this.acquireLock();
     try {
       // fresh read under the lock — the on-disk state may include other
