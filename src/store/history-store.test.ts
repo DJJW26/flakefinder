@@ -272,3 +272,15 @@ describe('read paths do not create directories (QA A4)', () => {
     expect(s.runs()).toHaveLength(1);
   });
 });
+
+describe('history.jsonl as a directory degrades gracefully (QA A5)', () => {
+  it('runs() returns [] with a warning instead of throwing EISDIR', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'ff-eisdir-'));
+    dirs.push(dir);
+    const s = new HistoryStore(dir);
+    // constructor no longer mkdirs; create the dir-shaped store file ourselves
+    mkdirSync(s.path, { recursive: true });
+    expect(s.runs()).toEqual([]);
+    expect(s.warnings.some((w) => w.includes('history store unreadable'))).toBe(true);
+  });
+});

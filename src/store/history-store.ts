@@ -53,7 +53,16 @@ export class HistoryStore {
     // Indexed line iteration instead of split(): stores hold large records
     // (a run with 500 tests ≈ 44 KB/line), and split() duplicates the whole
     // file as a string array — this keeps peak memory to one copy.
-    const raw = readFileSync(this.path, 'utf8');
+    let raw: string;
+    try {
+      raw = readFileSync(this.path, 'utf8');
+    } catch (err) {
+      // e.g. the path exists but is a DIRECTORY (EISDIR) — degrade, don't die
+      if (this.warnings.length < 10) {
+        this.warnings.push(`history store unreadable: ${(err as Error).message}`);
+      }
+      return;
+    }
     let start = 0;
     let lineNo = 0;
     while (start < raw.length) {

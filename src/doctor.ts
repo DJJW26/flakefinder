@@ -77,31 +77,47 @@ export function runDoctor(cwd: string): DoctorResult {
 
   // 4. history store
   const storeDir = path.resolve(cwd, config.storeDir);
-  if (existsSync(new HistoryStore(storeDir).path)) {
-    const store = new HistoryStore(storeDir);
-    const runs = store.runs();
-    const sizeKb = Math.round(statSync(store.path).size / 1024);
+  const historyFile = path.join(storeDir, 'history.jsonl');
+  if (existsSync(historyFile) && !statSync(historyFile).isFile()) {
+    ok = false;
     lines.push({
-      status: 'ok',
-      message: `history: ${runs.length} run(s), ${sizeKb} KB${store.formatVersion ? `, format v${store.formatVersion}` : ' (legacy, no header)'}`,
+      status: 'fail',
+      message: `history: ${historyFile} exists but is not a regular file`,
+      hint: 'delete or rename it — flakefinder cannot read a directory as a store',
     });
-    if (store.warnings.length > 0) {
+  } else if (existsSync(historyFile)) {
+    try {
+      const store = new HistoryStore(storeDir);
+      const runs = store.runs();
+      const sizeKb = Math.round(statSync(store.path).size / 1024);
       lines.push({
-        status: 'warn',
-        message: `history: ${store.warnings.length}+ skipped/corrupt line(s)`,
-        hint: 'history is tolerant, but repeated corruption suggests parallel writers — give each CI shard its own storeDir',
+        status: 'ok',
+        message: `history: ${runs.length} run(s), ${sizeKb} KB${store.formatVersion ? `, format v${store.formatVersion}` : ' (legacy, no header)'}`,
       });
-    }
-    if (runs.length > 0) {
-      const last = runs[runs.length - 1]!.timestamp;
-      const ageDays = (Date.now() - Date.parse(last)) / DAY_MS;
-      if (Number.isFinite(ageDays) && ageDays > 7) {
+      if (store.warnings.length > 0) {
         lines.push({
           status: 'warn',
-          message: `history: last run ${Math.round(ageDays)} days ago`,
-          hint: 'flakefinder only knows what it ingests — is CI actually calling it?',
+          message: `history: ${store.warnings.length}+ skipped/corrupt line(s)`,
+          hint: 'history is tolerant, but repeated corruption suggests parallel writers — give each CI shard its own storeDir',
         });
       }
+      if (runs.length > 0) {
+        const last = runs[runs.length - 1]!.timestamp;
+        const ageDays = (Date.now() - Date.parse(last)) / DAY_MS;
+        if (Number.isFinite(ageDays) && ageDays > 7) {
+          lines.push({
+            status: 'warn',
+            message: `history: last run ${Math.round(ageDays)} days ago`,
+            hint: 'flakefinder only knows what it ingests — is CI actually calling it?',
+          });
+        }
+      }
+    } catch (err) {
+      ok = false;
+      lines.push({
+        status: 'fail',
+        message: `history: unreadable — ${(err as Error).message}`,
+      });
     }
   } else {
     lines.push({
