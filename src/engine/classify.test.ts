@@ -238,16 +238,42 @@ describe('score arithmetic and caps', () => {
     expect(v.flakeScore).toBe(60); // 50 same-sha + 0 direction + 10 bonus
   });
 
-  it('recency multiplier tiers: 1.0 (≤14d), 0.6 (≤30d), 0.3 (older)', () => {
-    const seq = (failDaysAgo: number): TestSpec[] => [
+  it('recency multiplier tiers keyed on the most recent flip: 1.0 (≤14d), 0.6 (≤30d), 0.3 (older)', () => {
+    const seq = (flipDaysAgo: number): TestSpec[] => [
       { status: 'fail', sha: 'a', daysAgo: 100 },
       { status: 'pass', sha: 'b', daysAgo: 99 },
-      { status: 'fail', sha: 'c', daysAgo: failDaysAgo },
-      { status: 'pass', sha: 'd', daysAgo: 0 },
+      { status: 'fail', sha: 'c', daysAgo: 98 },
+      { status: 'pass', sha: 'd', daysAgo: flipDaysAgo },
     ];
     expect(verdictOf(history(...seq(5))).flakeScore).toBe(24); // 3×8×1.0
     expect(verdictOf(history(...seq(20))).flakeScore).toBe(14); // round(3×8×0.6)=14.4→14
     expect(verdictOf(history(...seq(90))).flakeScore).toBe(7); // round(3×8×0.3)=7.2→7
+  });
+
+  it('recency keys on the latest flip, not the latest failure (RUN-9)', () => {
+    // F/P/F 60 days ago, then the F→P flip yesterday: the flip is fresh
+    const v = verdictOf(
+      history(
+        { status: 'fail', sha: 'a', daysAgo: 60 },
+        { status: 'pass', sha: 'b', daysAgo: 60 },
+        { status: 'fail', sha: 'c', daysAgo: 60 },
+        { status: 'pass', sha: 'd', daysAgo: 1 },
+      ),
+    );
+    expect(v.directionChanges).toBe(3);
+    expect(v.flakeScore).toBe(24);
+    // passes after the flip do not move the anchor: the flip itself is 40 days old
+    const stale = verdictOf(
+      history(
+        { status: 'fail', sha: 'a', daysAgo: 60 },
+        { status: 'pass', sha: 'b', daysAgo: 50 },
+        { status: 'fail', sha: 'c', daysAgo: 45 },
+        { status: 'pass', sha: 'd', daysAgo: 40 },
+        { status: 'pass', sha: 'e', daysAgo: 1 },
+      ),
+    );
+    expect(stale.directionChanges).toBe(3);
+    expect(stale.flakeScore).toBe(7); // round(3×8×0.3)
   });
 
   it('unparseable timestamp treated as recent (multiplier 1.0)', () => {
@@ -342,7 +368,7 @@ describe('misc verdict fields', () => {
     expect(v.lastMessage).toBe('latest failure');
   });
 
-  it('runsObserved counts each (runId, attempt) once even with duplicate report lines', () => {
+  it('runsObserved counts each invocation once, even with retries and duplicate report lines', () => {
     const cases: Array<{ runId: string; attempt: number; specs: TestSpec[] }> = [
       { runId: 'R', attempt: 1, specs: [{ status: 'fail' }, { status: 'fail' }] },
       { runId: 'R', attempt: 2, specs: [{ status: 'pass' }] },
@@ -355,8 +381,9 @@ describe('misc verdict fields', () => {
       return rec;
     });
     const v = verdictOf(runs);
-    expect(v.runsObserved).toBe(2);
+    expect(v.runsObserved).toBe(1); // one runId = one run (RUN-8)
     expect(v.retryRescues).toBe(1);
+    expect(v.passRate).toBe(0.5); // over executions: attempt 1 fail, attempt 2 pass
   });
 });
 

@@ -119,6 +119,10 @@ design and `always-fail` never passes.
 | go test -json | Go | `go test -json ./... > test-output.jsonl` (add `-count=1` to defeat Go's result cache) |
 | TAP | node:test (`--test-reporter=tap`), TAP14 producers | `node --test --test-reporter=tap > tap.txt` |
 | TRX | .NET (`dotnet test`), VSTest | `dotnet test --logger "trx;LogFileName=results.trx"` |
+| Playwright JSON | Playwright (per-attempt retries) | `PLAYWRIGHT_JSON_OUTPUT_NAME=pw.json npx playwright test --reporter=json` |
+| pytest-json-report | pytest with the `pytest-json-report` plugin | `pytest --json-report --json-report-file=report.json` |
+
+Reports may be UTF-8 or UTF-16 (e.g. PowerShell `>` output) and may be gzip-compressed.
 
 The parser is auto-detected per file from its content, so mixed reports in one
 repo are fine. Point `flakefinder.config.json` → `reports` globs at them.
@@ -128,14 +132,18 @@ repo are fine. Point `flakefinder.config.json` → `reports` globs at them.
 ```yaml
       - run: npm test            # your tests write report files
       - name: flakefinder
-        uses: DJJW26/flakefinder@main
+        uses: DJJW26/flakefinder@v1
         if: always()
 ```
 
 The action caches `.flakefinder/` between runs (history-aware verdicts),
 comments on PRs with **new vs known** flakes, uploads the HTML dashboard as an
-artifact, and can fail the job when *new* flakes appear. Full input/output
-reference and monorepo recipes: [docs/github-action.md](docs/github-action.md).
+artifact, and can fail the job when *new* flakes appear. Matrix legs keep
+separate histories automatically. Full input/output reference, matrix and
+monorepo recipes: [docs/github-action.md](docs/github-action.md).
+
+Pin `@v1` (or a full release tag/commit SHA), not `@main`: `main` can carry
+unreleased changes and a stale `dist/`.
 
 ## Quarantine
 
@@ -202,7 +210,8 @@ Nothing is uploaded anywhere unless you use the GitHub Action, in which case
 history lives in your repository's actions cache.
 
 **Does it work with runner X?**
-If X can emit JUnit XML, Jest JSON, Mocha JSON, `go test -json`, TAP, or TRX,
+If X can emit JUnit XML, Jest JSON, Mocha JSON, `go test -json`, TAP, TRX,
+Playwright JSON, or pytest-json-report,
 yes — that covers most of the ecosystem.
 
 ## Development
@@ -232,4 +241,5 @@ Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The GitHub Action bundle includes third-party packages; their
+licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

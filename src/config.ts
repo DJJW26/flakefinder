@@ -44,8 +44,42 @@ export function stripJsonComments(text: string): string {
     out += c;
     i++;
   }
-  // tolerate trailing commas before } or ]
-  return out.replace(/,(\s*[}\]])/g, '$1');
+  return stripTrailingCommas(out);
+}
+
+/**
+ * Drop a comma whose next non-whitespace character is `}` or `]` — but only
+ * OUTSIDE string literals, so a glob like "r-{a,}.xml" is left intact.
+ * Runs after comment stripping, so comments between the comma and the
+ * bracket are already gone.
+ */
+function stripTrailingCommas(text: string): string {
+  let out = '';
+  let inString = false;
+  let quote = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i]!;
+    if (inString) {
+      out += c;
+      if (c === '\\') {
+        out += text[i + 1] ?? '';
+        i++;
+      } else if (c === quote) {
+        inString = false;
+      }
+      continue;
+    }
+    if (c === '"' || c === "'") {
+      inString = true;
+      quote = c;
+    } else if (c === ',') {
+      let j = i + 1;
+      while (j < text.length && /\s/.test(text[j]!)) j++;
+      if (text[j] === '}' || text[j] === ']') continue; // trailing comma: drop it
+    }
+    out += c;
+  }
+  return out;
 }
 
 export function defaultConfig(): FlakefinderConfig {
@@ -80,6 +114,9 @@ function describe(v: unknown): string {
   return `${String(v)} (${typeof v})`;
 }
 
+/** Upper bound for `timeoutSeconds` / `run --timeout`: setTimeout's ceiling (2^31-1 ms) in whole seconds — larger values would fire at once. */
+export const TIMEOUT_MAX_SECONDS = 2_147_483;
+
 function checkInt(problems: string[], key: string, v: unknown, min: number, max: number): void {
   if (v === undefined) return; // absent keys fall back to defaults
   if (typeof v !== 'number' || !Number.isInteger(v) || v < min || v > max) {
@@ -94,6 +131,13 @@ function checkInt(problems: string[], key: string, v: unknown, min: number, max:
  * disables quarantine without a warning).
  */
 export function validateConfig(config: FlakefinderConfig): void {
+  // `null`, `[]`, `42`, `"abc"` are valid JSON but not a config: without this
+  // `null` died with a TypeError and arrays/numbers were silently accepted
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) {
+    throw new ConfigValidationError(
+      `invalid flakefinder config: config must be a JSON object, got ${describe(config)}`,
+    );
+  }
   const problems: string[] = [];
   for (const key of Object.keys(config)) {
     if (!KNOWN_KEYS.has(key)) {
@@ -163,16 +207,10 @@ export function validateConfig(config: FlakefinderConfig): void {
       problems.push(`retryMode: expected one of ${modes.join('|')}, got ${describe(c.retryMode)}`);
     }
   }
-  if (
-    c.timeoutSeconds !== undefined &&
-    c.timeoutSeconds !== null &&
-    (typeof c.timeoutSeconds !== 'number' ||
-      !Number.isFinite(c.timeoutSeconds) ||
-      c.timeoutSeconds <= 0)
-  ) {
-    problems.push(
-      `timeoutSeconds: expected positive number or null, got ${describe(c.timeoutSeconds)}`,
-    );
+  // same range as `run --timeout`; fractions (0.5) and huge values (1e12,
+  // which setTimeout would fire immediately) are rejected
+  if (c.timeoutSeconds !== null) {
+    checkInt(problems, 'timeoutSeconds', c.timeoutSeconds, 1, TIMEOUT_MAX_SECONDS);
   }
 
   if (problems.length > 0) {
@@ -209,28 +247,68 @@ export function resolveConfig(
   };
 }
 
-/** Look for flakefinder.config.json in `cwd` and up to 3 parent directories. */
+/**
+ * Anchor the file-system paths written IN a config file (`storeDir`,
+ * `quarantineFile`) to that file's directory, so a config discovered in a
+ * parent directory (or passed with --config) points at the same store and
+ * quarantine list no matter which subdirectory flakefinder runs from.
+ * Returns a copy; absolute paths and non-string (invalid — validation
+ * reports them) values are left alone. `reports` globs are intentionally NOT
+ * anchored: they stay relative to the working directory, where test runners
+ * write their reports.
+ */
+export function anchorConfigPaths(config: FlakefinderConfig, configDir: string): FlakefinderConfig {
+  if (config === null || typeof config !== 'object' || Array.isArray(config)) return config;
+  const out: FlakefinderConfig = { ...config };
+  for (const key of ['storeDir', 'quarantineFile'] as const) {
+    const v = out[key];
+    if (typeof v === 'string' && v.trim() !== '' && !path.isAbsolute(v)) {
+      out[key] = path.resolve(configDir, v);
+    }
+  }
+  return out;
+}
+
+/**
+ * Read and parse one config file (JSONC, UTF-8 BOM tolerated). Paths written
+ * in it are anchored to its directory (anchorConfigPaths). Not validated here —
+ * resolveConfig does that — except that the top level must be an object.
+ */
+export function readConfigFile(file: string): FlakefinderConfig {
+  const abs = path.resolve(file);
+  let raw: string;
+  try {
+    raw = readFileSync(abs, 'utf8');
+  } catch (err) {
+    throw new Error(`cannot read config ${abs}: ${(err as Error).message}`);
+  }
+  let parsed: unknown;
+  try {
+    // strip a UTF-8 BOM — PowerShell's Out-File and Notepad emit one, and
+    // JSON.parse rejects it
+    parsed = JSON.parse(stripJsonComments(raw.replace(/^\uFEFF/, '')));
+  } catch (err) {
+    throw new Error(`invalid config in ${abs}: ${(err as Error).message}`);
+  }
+  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(
+      `invalid config in ${abs}: config must be a JSON object, got ${describe(parsed)}`,
+    );
+  }
+  return anchorConfigPaths(parsed as FlakefinderConfig, path.dirname(abs));
+}
+
+/**
+ * Look for flakefinder.config.json in `cwd` and up to 3 parent directories.
+ * `storeDir`/`quarantineFile` set in the file come back resolved against the
+ * file's directory (see anchorConfigPaths).
+ */
 export function loadConfig(cwd: string): { config: FlakefinderConfig; path: string | null } {
   let dir = path.resolve(cwd);
   for (let depth = 0; depth <= 3; depth++) {
     const candidate = path.join(dir, CONFIG_FILE_NAME);
     if (existsSync(candidate)) {
-      let raw: string;
-      try {
-        raw = readFileSync(candidate, 'utf8');
-      } catch (err) {
-        throw new Error(`cannot read ${candidate}: ${(err as Error).message}`);
-      }
-      try {
-        // strip a UTF-8 BOM — PowerShell's Out-File and Notepad emit one, and
-        // JSON.parse rejects it
-        const parsed = JSON.parse(
-          stripJsonComments(raw.replace(/^\uFEFF/, '')),
-        ) as FlakefinderConfig;
-        return { config: parsed, path: candidate };
-      } catch (err) {
-        throw new Error(`invalid config in ${candidate}: ${(err as Error).message}`);
-      }
+      return { config: readConfigFile(candidate), path: candidate };
     }
     const parent = path.dirname(dir);
     if (parent === dir) break;

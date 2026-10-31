@@ -38,7 +38,7 @@ Honest, deterministic, zero cloud. No telemetry. Two runtime dependencies (`comm
 ├── TASKS.md                 # ordered task checklist w/ ownership + status (integrator-maintained)
 ├── package.json             # name: flakefinder, bin: flakefinder → dist/cli.js
 ├── tsconfig.json            # strict, NodeNext, noEmit (typecheck only; tsup builds)
-├── tsup.config.ts           # bundles dist/cli.js and dist/action/index.js
+├── tsup.config.ts           # bundles dist/cli.js and dist/action/index.cjs
 ├── vitest.config.ts
 ├── biome.json
 ├── action.yml               # GitHub Action definition (repo root)
@@ -158,23 +158,48 @@ buildPrComment(verdicts: TestVerdict[], previous: TestVerdict[] | null): string 
 // src/report/html.ts  (Agent D)
 renderDashboard(data: DashboardData): string   // single self-contained HTML file content
 
-// src/action/index.ts  (Agent A)  — entry, no exported contract; bundled to dist/action/index.js
+// src/action/index.ts  (Agent A)  — entry, wires real services into runAction() (src/action/main.ts); bundled to dist/action/index.cjs
 // src/cli/index.ts  (Agent C)    — entry; commander program; bin banner shebang added by tsup
 ```
 
 ## 5. Detection algorithm (Agent E implements EXACTLY this)
 
-Given chronological `Observation[]` per test (from `RunRecord`s sorted by timestamp then attempt):
+Given chronological `Observation[]` per test (from `RunRecord`s grouped by `runId`, groups
+ordered by their earliest timestamp, attempts ascending within a group):
 
 - **fail family** = status `fail` or `error`. Skips are excluded from flake math.
-- `sameShaFlips`: count of distinct `commitSha` values that observed BOTH families.
-- `retryRescues`: count of consecutive pairs `(attempt k → k+1)` with the SAME `runId` where
-  k is fail-family and k+1 is pass-family.
-- `directionChanges`: over the sequence of distinct code-state observations, the number of
-  times family changes between consecutive distinct states. A state is a `commitSha` bucket;
-  observations WITHOUT a commitSha (no git repo) bucket by `runId` instead, so SHA-less
-  histories still get statistical flip-flop detection (same-runId retry attempts collapse to
-  one state). Family per state = latest family seen in that state.
+- **Executions vs runs.** An *execution* is one (`runId`, `attempt`, in-report attempt) — a
+  live retry attempt, or one entry of a result's in-report `attempts` (the reporter retried
+  the test itself: jest/vitest/mocha retries, Surefire reruns, go `-count`, …). A result
+  with `attempts` expands into one execution per entry, oldest first; its final entry is
+  always the result's `status`. Results without `attempts` are one execution, as before.
+  A *run* is one invocation = one `runId`; its outcome is its final non-skip execution.
+  Retry attempts are evidence for `sameShaFlips` / `retryRescues`, but are NOT extra runs:
+  `runsObserved`, `cfg.minRuns`, the 5-run `failing` / `recently-fixed` windows and the
+  `+10` data bonus all count **runs** (one `-R 2` invocation that fails 3 times is 1 run →
+  `new-failure`, never `failing`). `passRate` = pass-family executions / all non-skip
+  executions (a rescued F,P run reads 50%).
+- `sameShaFlips`: count of distinct `commitSha` values whose executions include BOTH families.
+- `retryRescues`: count of consecutive execution pairs with the SAME `runId` where the first
+  is fail-family and the next is pass-family. Consecutive = live attempt k → k+1 (last
+  in-report attempt of k → first of k+1), or in-report attempt i → i+1 within one result.
+  An in-report retry-then-pass therefore scores exactly like a live retry rescue.
+- `directionChanges`: walk executions chronologically. A code state is the `commitSha`;
+  executions WITHOUT a commitSha (no git repo) use their `runId`, so SHA-less histories
+  still get statistical flip-flop detection while a run's own retries stay one state.
+  Consecutive executions of the same state form one **visit** whose family is the latest
+  family seen in it. `directionChanges` = number of family changes between consecutive
+  visits. Returning to an earlier commit is a NEW visit: a revert A(pass) → B(fail) →
+  A(pass) counts 2 changes (→ `flaky-suspected` at `minRuns` 3), as does alternating
+  between branches whose commits differ in outcome.
+- The time of a direction change is when the new family was first seen in that visit; the
+  **most recent flip** is the time of the latest direction change.
+- **Dirty working trees** (`run` only): a run with uncommitted changes to tracked files
+  (ignoring flakefinder's store, quarantine, config and report files) is recorded with
+  `commitSha = "<HEAD sha>-dirty-<hash>"` (hash over the changed tracked files' paths and
+  contents; untracked files ignored), a code state distinct from HEAD — so a local,
+  uncommitted fix of a real failure is a direction change, never a same-SHA flip, while
+  re-running identical edits is still the same state.
 
 Classification precedence (first match wins):
 
@@ -185,8 +210,8 @@ Classification precedence (first match wins):
 | 3 | `flaky-confirmed` | `sameShaFlips > 0` |
 | 4 | `flaky-retry` | `retryRescues > 0` |
 | 5 | `flaky-suspected` | `directionChanges >= 2` AND `runsObserved >= cfg.minRuns` AND both families seen |
-| 6 | `failing` | last 5 observations all fail-family AND `runsObserved >= cfg.minRuns` |
-| 7 | `new-failure` | last observation is fail-family (insufficient data for the above) |
+| 6 | `failing` | last 5 runs all ended fail-family AND `runsObserved >= cfg.minRuns` |
+| 7 | `new-failure` | last run ended fail-family (insufficient data for the above) |
 | 8 | `passing` | everything else (pass-family + skips) |
 
 `flakeScore` 0–100 (only computed when both families have been seen; else 0):
@@ -194,12 +219,14 @@ Classification precedence (first match wins):
 ```
 + 50 per sameShaFlips                          (cap 50)
 + 40 per retryRescue                           (cap 40)
-+ 8  per directionChange  × recencyMultiplier  (cap 24)
-+ 10 if runsObserved >= 10
-recencyMultiplier = 1.0 if most recent flip ≤ 14 days ago
++ min(24, 8 × directionChanges × recencyMultiplier)   (cap applied AFTER the multiplier)
++ 10 if runsObserved >= 10                             (runs, not attempts)
+recencyMultiplier = 1.0 if the most recent flip (latest direction change) ≤ 14 days ago
                   | 0.6 if ≤ 30 days
                   | 0.3 otherwise
-final = min(100, sum)
+                  (keyed on the flip, NOT the last failure: F,P,F 60 days ago then a
+                   P yesterday on a new commit → 3 × 8 × 1.0 = 24)
+final = min(100, round(sum))
 ```
 
 `confidence` 0–100:
@@ -207,16 +234,20 @@ final = min(100, sum)
 ```
 flaky-confirmed | flaky-retry → 100
 flaky-suspected            → min(70, round(35 × runsObserved / cfg.minRuns))
-failing                    → min(95, 25 + 5 × consecutive trailing fails)
-new-failure                → min(50, 10 + 5 × total fail-family count)
+failing                    → min(95, 25 + 5 × consecutive trailing failed RUNS)
+new-failure                → min(50, 10 + 5 × total fail-family EXECUTIONS)
 passing | skipped | gone   → 100
 ```
 
 Tags:
 
-- `slow`: `medianMs > cfg.slowThresholdMs` OR (`p95Ms > cfg.slowMultiplier × suiteMedianMs`,
-  where suiteMedianMs = median of all per-test medians in the same suite).
-- `recently-fixed`: any fail-family observation in the first half of history AND last 5 all pass.
+- `slow`: `medianMs > cfg.slowThresholdMs` OR (`p95Ms > cfg.slowMultiplier × suiteMedianMs`
+  AND `p95Ms >= 100`, where suiteMedianMs = median of all per-test medians in the same
+  suite; the 100 ms floor keeps 1 ms tests in a 0 ms-median suite from being "slow").
+  Durations are per execution; an expanded in-report attempt carries no duration except
+  the final one.
+- `recently-fixed`: any run in the first half of the test's runs ended fail-family AND the
+  last 5 runs all ended pass-family.
 - `long-unseen`: not observed in the last 30 runs (co-occurs with `gone`).
 
 ## 6. Config spec
@@ -288,7 +319,8 @@ reports (jest-junit config / `pytest --junitxml=...` / `go test -json > test-out
    are ignored (close-race guard).
 3. After each attempt: hash report files again; new-or-changed files are parsed
    (`detectParser`), results → `RunRecord` with the SAME `runId` across attempts, `attempt`
-   set, `source: 'live'`, best-effort `commitSha` via `git rev-parse HEAD` (absent → undefined).
+   set, `source: 'live'`, best-effort `commitSha` via `git rev-parse HEAD` (absent → undefined; a dirty tracked tree
+   records `<HEAD>-dirty-<12-hex content hash>` so uncommitted edits never count as same-SHA flips).
 4. Append all records to `HistoryStore`, then `classifyAll`.
 5. `suiteFlake` fallback: if zero report files ever matched, classify the SUITE: attempts with
    differing exit codes → print warning + suite-level flake verdict (no per-test data).
@@ -334,34 +366,44 @@ inputs:
   upload-dashboard:   { description: 'Upload HTML dashboard artifact', default: 'true' }
   history-max-runs:   { description: 'History retention', default: '300' }
   working-directory:  { description: 'Where reports/config live', default: '.' }
+  history-key:        { description: 'Extra cache-stream key', default: '${{ toJSON(matrix) }}' }
 outputs:
   flaky-count: { description: 'Total flaky tests' }
   new-flaky-count: { description: 'Flakes not previously flagged' }
   failing-count: { description: 'Deterministically failing tests' }
   report-json: { description: 'Path to written JSON report' }
 runs:
-  using: node20
-  main: dist/action/index.js
+  using: node24
+  main: dist/action/index.cjs
 ```
 
-Flow in `src/action/index.ts`:
+Flow in `runAction()` (`src/action/main.ts`; env, `@actions/core`, cache, artifact upload,
+glob and fetch are injected — `src/action/index.ts` only wires the real services):
 
-1. `@actions/core` getInputs; `working-directory` → chdir context for config/store.
-2. `@actions/cache.restoreCache([storeDir], 'flakefinder-history-<sha>', ['flakefinder-history-'])`.
-3. `@actions/glob` expand report globs (input overrides config `reports`); read files;
-   `detectParser` parse → one `RunRecord` (source `action`, attempt 1, `ciRunId = runId`,
-   `commitSha` from context, `branch` from context).
-4. Append to store; `prune(historyMaxRuns)`; `classifyAll`.
-5. Load previous `verdicts-snapshot.json` (if cached) → `newFlakes` = flaky-* verdicts whose
-   testId wasn't flaky-* in the snapshot. Write fresh snapshot.
-6. `cache.saveCache` best-effort (wrap in try — cache save may fail on default branch races).
-7. `core.summary` — headline counts + table of flakes; `core.setOutput`s; write JSON report
-   file `flakefinder-report.json` via `renderJson`.
-8. If PR context and `comment` and token: upsert comment (find existing by marker
-   `<!-- flakefinder:report -->` via octokit; edit else create) using `buildPrComment`.
-9. If `upload-dashboard`: build `DashboardData` (last 50 runs) → `renderDashboard` → upload
-   `flakefinder-dashboard.html` via `@actions/artifact`.
-10. If `fail-on-new-flakes` and newFlakes > 0 → `core.setFailed(...)` with a helpful message.
+1. Read and validate EVERY input first (`readInputs`; one failure listing all problems,
+   nothing done yet); `working-directory` → chdir context for config/store.
+2. Cache keys (`cacheKeys`): stream = short hash of job + working directory + `history-key`
+   (`null`/empty = no key; matrix JSON canonicalised). Save key
+   `flakefinder-history-<stream>-<sha>-<run id>-<run attempt>` (immutable per attempt);
+   restore keys `flakefinder-history-<stream>-`, then `flakefinder-history-` (warm start).
+   Skipped with one warning when the cache service is unavailable.
+3. Baseline (`resolveBaseline`): the restored `verdicts-snapshot.json`, unless
+   `action-baseline.json` shows this same run id already recorded one (re-run / second job)
+   — then that recorded baseline, so re-runs can't bypass the gate.
+4. `@actions/glob` expand report globs (input overrides config `reports`); read files
+   (UTF-8/UTF-16 aware); `detectParser` parse → one `RunRecord` per file (source `action`,
+   attempt 1, `ciRunId = runId`, `commitSha`/`branch` from context). Unparsable files warn.
+5. Append to store; `prune(historyMaxRuns)`; `classifyAll`. `newFlakes` = flaky-* verdicts
+   whose testId wasn't flaky-* in the baseline. Write fresh snapshot + `recordBaseline`.
+6. `saveHistory` best-effort (a taken key or failure is a warning).
+7. `core.setOutput`s; JSON report `flakefinder-report.json` via `renderJson`; job summary
+   (HTML, redacted + escaped).
+8. If `upload-dashboard`: build `DashboardData` (last 50 runs) → `renderDashboard` → upload
+   `flakefinder-dashboard.html` via `@actions/artifact` (failure = warning).
+9. If PR context and `comment`: upsert ONE comment (marker `<!-- flakefinder:report -->`,
+   only our own/bot-authored comment is updated, plain `fetch`, all pages, 15 s timeout,
+   no cross-origin redirects) using `buildPrComment`; mentions the dashboard only if uploaded.
+10. If `fail-on-new-flakes` and newFlakes > 0 → `core.setFailed(...)` naming them.
 
 `buildPrComment` format (Agent A, in `src/report/markdown.ts`):
 marker line; `## 🐍 flakefinder` heading; one-line summary (counts, new vs known);

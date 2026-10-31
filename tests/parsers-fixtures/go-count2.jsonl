@@ -1,0 +1,68 @@
+{"Time":"2026-10-28T10:41:59.18427658Z","Action":"start","Package":"example.com/ffdemo/flaky"}
+{"Time":"2026-10-28T10:41:59.185065198Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestFlaky"}
+{"Time":"2026-10-28T10:41:59.185090976Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Output":"=== RUN   TestFlaky\n"}
+{"Time":"2026-10-28T10:41:59.185134278Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Output":"    flaky_test.go:14: first attempt fails: got 1, want 2\n"}
+{"Time":"2026-10-28T10:41:59.185160467Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Output":"--- FAIL: TestFlaky (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.18516742Z","Action":"fail","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185172891Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestStable"}
+{"Time":"2026-10-28T10:41:59.185175125Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestStable","Output":"=== RUN   TestStable\n"}
+{"Time":"2026-10-28T10:41:59.185177399Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestStable","Output":"    flaky_test.go:20: always fine\n"}
+{"Time":"2026-10-28T10:41:59.18518871Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestStable","Output":"--- PASS: TestStable (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185194341Z","Action":"pass","Package":"example.com/ffdemo/flaky","Test":"TestStable","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185196665Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestTable"}
+{"Time":"2026-10-28T10:41:59.185198789Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable","Output":"=== RUN   TestTable\n"}
+{"Time":"2026-10-28T10:41:59.185200903Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestTable/one"}
+{"Time":"2026-10-28T10:41:59.18520481Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/one","Output":"=== RUN   TestTable/one\n"}
+{"Time":"2026-10-28T10:41:59.185208057Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/one","Output":"--- PASS: TestTable/one (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185210341Z","Action":"pass","Package":"example.com/ffdemo/flaky","Test":"TestTable/one","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185214529Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestTable/two"}
+{"Time":"2026-10-28T10:41:59.185216532Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Output":"=== RUN   TestTable/two\n"}
+{"Time":"2026-10-28T10:41:59.185218546Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Output":"    flaky_test.go:32: in=2 want=3\n"}
+{"Time":"2026-10-28T10:41:59.185220961Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Output":"--- FAIL: TestTable/two (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185223806Z","Action":"fail","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185227122Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable","Output":"--- FAIL: TestTable (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185229226Z","Action":"fail","Package":"example.com/ffdemo/flaky","Test":"TestTable","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.18523147Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure"}
+{"Time":"2026-10-28T10:41:59.185233464Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Output":"=== RUN   TestParentOwnFailure\n"}
+{"Time":"2026-10-28T10:41:59.185237201Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child"}
+{"Time":"2026-10-28T10:41:59.185241409Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child","Output":"=== RUN   TestParentOwnFailure/child\n"}
+{"Time":"2026-10-28T10:41:59.185243944Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child","Output":"--- PASS: TestParentOwnFailure/child (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.18525278Z","Action":"pass","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185254994Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Output":"    flaky_test.go:40: parent assertion after children\n"}
+{"Time":"2026-10-28T10:41:59.185259493Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Output":"--- FAIL: TestParentOwnFailure (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185265183Z","Action":"fail","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185267257Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestFlaky"}
+{"Time":"2026-10-28T10:41:59.185269582Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Output":"=== RUN   TestFlaky\n"}
+{"Time":"2026-10-28T10:41:59.185271435Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Output":"    flaky_test.go:16: marker present, passing\n"}
+{"Time":"2026-10-28T10:41:59.185273549Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Output":"--- PASS: TestFlaky (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185275543Z","Action":"pass","Package":"example.com/ffdemo/flaky","Test":"TestFlaky","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185277577Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestStable"}
+{"Time":"2026-10-28T10:41:59.18527931Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestStable","Output":"=== RUN   TestStable\n"}
+{"Time":"2026-10-28T10:41:59.185281183Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestStable","Output":"    flaky_test.go:20: always fine\n"}
+{"Time":"2026-10-28T10:41:59.185283648Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestStable","Output":"--- PASS: TestStable (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185285491Z","Action":"pass","Package":"example.com/ffdemo/flaky","Test":"TestStable","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185287385Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestTable"}
+{"Time":"2026-10-28T10:41:59.185289248Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable","Output":"=== RUN   TestTable\n"}
+{"Time":"2026-10-28T10:41:59.185291082Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestTable/one"}
+{"Time":"2026-10-28T10:41:59.185292825Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/one","Output":"=== RUN   TestTable/one\n"}
+{"Time":"2026-10-28T10:41:59.185295089Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/one","Output":"--- PASS: TestTable/one (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185297123Z","Action":"pass","Package":"example.com/ffdemo/flaky","Test":"TestTable/one","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185299267Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestTable/two"}
+{"Time":"2026-10-28T10:41:59.185301101Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Output":"=== RUN   TestTable/two\n"}
+{"Time":"2026-10-28T10:41:59.185303014Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Output":"    flaky_test.go:32: in=2 want=3\n"}
+{"Time":"2026-10-28T10:41:59.185305228Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Output":"--- FAIL: TestTable/two (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185309957Z","Action":"fail","Package":"example.com/ffdemo/flaky","Test":"TestTable/two","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185312612Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestTable","Output":"--- FAIL: TestTable (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185315998Z","Action":"fail","Package":"example.com/ffdemo/flaky","Test":"TestTable","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185320637Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure"}
+{"Time":"2026-10-28T10:41:59.185325777Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Output":"=== RUN   TestParentOwnFailure\n"}
+{"Time":"2026-10-28T10:41:59.185328111Z","Action":"run","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child"}
+{"Time":"2026-10-28T10:41:59.185330145Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child","Output":"=== RUN   TestParentOwnFailure/child\n"}
+{"Time":"2026-10-28T10:41:59.185332519Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child","Output":"--- PASS: TestParentOwnFailure/child (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.185334874Z","Action":"pass","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure/child","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185336827Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Output":"    flaky_test.go:40: parent assertion after children\n"}
+{"Time":"2026-10-28T10:41:59.185340705Z","Action":"output","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Output":"--- FAIL: TestParentOwnFailure (0.00s)\n"}
+{"Time":"2026-10-28T10:41:59.18534283Z","Action":"fail","Package":"example.com/ffdemo/flaky","Test":"TestParentOwnFailure","Elapsed":0}
+{"Time":"2026-10-28T10:41:59.185346687Z","Action":"output","Package":"example.com/ffdemo/flaky","Output":"FAIL\n"}
+{"Time":"2026-10-28T10:41:59.185450371Z","Action":"output","Package":"example.com/ffdemo/flaky","Output":"FAIL\texample.com/ffdemo/flaky\t0.001s\n"}
+{"Time":"2026-10-28T10:41:59.185470088Z","Action":"fail","Package":"example.com/ffdemo/flaky","Elapsed":0.001}

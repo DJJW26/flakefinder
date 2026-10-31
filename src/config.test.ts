@@ -3,12 +3,15 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  anchorConfigPaths,
   CONFIG_FILE_NAME,
   defaultConfig,
   detectRunner,
   loadConfig,
+  readConfigFile,
   resolveConfig,
   stripJsonComments,
+  TIMEOUT_MAX_SECONDS,
   validateConfig,
 } from './config.js';
 import type { FlakefinderConfig, RunnerKind } from './types.js';
@@ -70,6 +73,17 @@ describe('stripJsonComments', () => {
   it('drops trailing commas', () => {
     expect(JSON.parse(stripJsonComments('{"a": [1, 2,],}'))).toEqual({ a: [1, 2] });
   });
+  it('drops trailing commas separated by whitespace and comments', () => {
+    expect(JSON.parse(stripJsonComments('{"a": [1, 2, // last\n ], /* end */\n}'))).toEqual({
+      a: [1, 2],
+    });
+  });
+  it('does not rewrite ",}" / ",]" inside string literals (R5 #5)', () => {
+    const src = '{"reports": ["r-{a,}.xml", "x[1,]", "esc\\",}"],}';
+    expect(JSON.parse(stripJsonComments(src))).toEqual({
+      reports: ['r-{a,}.xml', 'x[1,]', 'esc",}'],
+    });
+  });
 });
 
 describe('loadConfig discovery', () => {
@@ -101,6 +115,39 @@ describe('loadConfig discovery', () => {
     expect(loadConfig(dir).config.liveRetries).toBe(4);
     writeFileSync(file, '{ broken', 'utf8');
     expect(() => loadConfig(dir)).toThrow(dir);
+  });
+});
+
+describe('config-relative paths (R5 #6)', () => {
+  it('storeDir/quarantineFile from a parent-dir config resolve against the CONFIG dir', () => {
+    const root = tmpDir();
+    writeFileSync(
+      path.join(root, CONFIG_FILE_NAME),
+      '{"storeDir": ".ff", "quarantineFile": "q/quarantine.json", "reports": ["junit.xml"]}',
+      'utf8',
+    );
+    const deep = path.join(root, 'packages', 'a');
+    mkdirSync(deep, { recursive: true });
+    const cfg = resolveConfig(loadConfig(deep).config);
+    expect(cfg.storeDir).toBe(path.join(root, '.ff'));
+    expect(cfg.quarantineFile).toBe(path.join(root, 'q', 'quarantine.json'));
+    // reports globs stay relative to the working directory
+    expect(cfg.reports).toEqual(['junit.xml']);
+    // callers' path.resolve(cwd, …) is a no-op on the anchored values
+    expect(path.resolve(deep, cfg.storeDir)).toBe(path.join(root, '.ff'));
+  });
+  it('a config in cwd resolves exactly as before; defaults stay cwd-relative', () => {
+    const dir = tmpDir();
+    writeFileSync(path.join(dir, CONFIG_FILE_NAME), '{"storeDir": "hist"}', 'utf8');
+    const cfg = resolveConfig(loadConfig(dir).config);
+    expect(path.resolve(dir, cfg.storeDir)).toBe(path.join(dir, 'hist'));
+    expect(cfg.quarantineFile).toBe('flakefinder.quarantine.json');
+  });
+  it('absolute and invalid values are left for validation', () => {
+    const abs = path.resolve('/abs/store');
+    expect(anchorConfigPaths({ storeDir: abs }, '/x').storeDir).toBe(abs);
+    const bad = anchorConfigPaths({ storeDir: 5 as unknown as string }, '/x');
+    expect(() => resolveConfig(bad)).toThrow('storeDir');
   });
 });
 
@@ -228,5 +275,52 @@ describe('BOM tolerance (QA round 2)', () => {
     writeFileSync(file, '\uFEFF{\n  "liveRetries": 4,\n}', 'utf8');
     const { config } = loadConfig(dir);
     expect(config.liveRetries).toBe(4);
+  });
+});
+
+describe('top-level config shape (QA CLI-16)', () => {
+  it.each([
+    ['null', 'null'],
+    ['[]', 'array'],
+    ['42', '42 \\(number\\)'],
+    ['"abc"', '"abc" \\(string\\)'],
+  ])('%s → "config must be a JSON object"', (json, got) => {
+    const dir = tmpDir();
+    writeFileSync(path.join(dir, CONFIG_FILE_NAME), json, 'utf8');
+    expect(() => loadConfig(dir)).toThrow(new RegExp(`config must be a JSON object, got ${got}`));
+    expect(() => readConfigFile(path.join(dir, CONFIG_FILE_NAME))).toThrow(
+      /config must be a JSON object/,
+    );
+    expect(() => validateConfig(JSON.parse(json))).toThrow(/config must be a JSON object/);
+  });
+
+  it('readConfigFile anchors paths to the file directory and names the file on errors', () => {
+    const dir = tmpDir();
+    const file = path.join(dir, 'custom.json');
+    writeFileSync(file, '{ "storeDir": "h" }', 'utf8');
+    expect(readConfigFile(file).storeDir).toBe(path.join(dir, 'h'));
+    expect(() => readConfigFile(path.join(dir, 'missing.json'))).toThrow(/cannot read config/);
+    writeFileSync(file, '{ nope', 'utf8');
+    expect(() => readConfigFile(file)).toThrow(/invalid config in .*custom\.json/);
+  });
+});
+
+describe('timeoutSeconds validation (QA CLI-17)', () => {
+  it('accepts a positive integer within the run --timeout range, or null', () => {
+    expect(() => validateConfig({ timeoutSeconds: 1 })).not.toThrow();
+    expect(() => validateConfig({ timeoutSeconds: TIMEOUT_MAX_SECONDS })).not.toThrow();
+    expect(() => validateConfig({ timeoutSeconds: null })).not.toThrow();
+  });
+
+  it.each([0.5, 0, -1, 1e12, TIMEOUT_MAX_SECONDS + 1, Number.NaN])('rejects %s', (v) => {
+    expect(() => validateConfig({ timeoutSeconds: v })).toThrow(
+      new RegExp(`timeoutSeconds: expected integer 1–${TIMEOUT_MAX_SECONDS}`),
+    );
+  });
+
+  it('rejects a non-number', () => {
+    expect(() => validateConfig({ timeoutSeconds: '30' as unknown as number })).toThrow(
+      /timeoutSeconds: expected integer/,
+    );
   });
 });

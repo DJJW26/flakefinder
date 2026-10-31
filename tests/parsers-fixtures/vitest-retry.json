@@ -1,0 +1,80 @@
+{
+  "numTotalTestSuites": 2,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 2,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 3,
+  "numPassedTests": 2,
+  "numFailedTests": 1,
+  "numPendingTests": 0,
+  "numTodoTests": 0,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1793447426518,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["R"],
+          "fullName": "R flaky twice",
+          "status": "passed",
+          "title": "flaky twice",
+          "duration": 5.059429000000009,
+          "failureMessages": [
+            "AssertionError: expected 1 to be greater than 2\n    at /repo/vt/retry.test.ts:5:58\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64",
+            "AssertionError: expected 2 to be greater than 2\n    at /repo/vt/retry.test.ts:5:58\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["R"],
+          "fullName": "R always fails",
+          "status": "failed",
+          "title": "always fails",
+          "duration": 3.5881490000000014,
+          "failureMessages": [
+            "AssertionError: expected 1 to be +0 // Object.is equality\n    at /repo/vt/retry.test.ts:6:59\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64",
+            "AssertionError: expected 2 to be +0 // Object.is equality\n    at /repo/vt/retry.test.ts:6:59\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64",
+            "AssertionError: expected 3 to be +0 // Object.is equality\n    at /repo/vt/retry.test.ts:6:59\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:1632:35\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:2801:26\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3338:20\n    at new Promise (<anonymous>)\n    at runWithCancel (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3333:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3318:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3276:10)\n    at file:///home/user/repos/ff-wt/all/node_modules/vitest/dist/chunks/run.BPv-BBRv.js:3904:64"
+          ],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        },
+        {
+          "ancestorTitles": ["R"],
+          "fullName": "R passes",
+          "status": "passed",
+          "title": "passes",
+          "duration": 0.17887600000000248,
+          "failureMessages": [],
+          "meta": {},
+          "tags": [],
+          "benchmarks": []
+        }
+      ],
+      "startTime": 1793447426643,
+      "endTime": 1793447426652.5881,
+      "status": "failed",
+      "message": "",
+      "name": "/repo/vt/retry.test.ts"
+    }
+  ]
+}

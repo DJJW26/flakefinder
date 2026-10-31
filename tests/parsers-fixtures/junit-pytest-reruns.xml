@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="0.018" timestamp="2026-10-28T10:37:22.040977+00:00" hostname="box-node-2cb57c48bf75eafe"><testcase classname="rr.test_rr" name="test_flips" time="0.000" /><testcase classname="rr.test_rr" name="test_flips" time="0.000" /><testcase classname="rr.test_rr" name="test_always" time="0.000" /><testcase classname="rr.test_rr" name="test_always" time="0.000" /><testcase classname="rr.test_rr" name="test_always" time="0.000"><failure message="AssertionError: always&#10;assert False">&gt;   def test_always(): assert False, "always"
+                       ^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: always
+E   assert False
+
+rr/test_rr.py:6: AssertionError</failure></testcase></testsuite></testsuites>

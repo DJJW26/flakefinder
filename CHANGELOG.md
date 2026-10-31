@@ -1,25 +1,178 @@
-## 1.1.0
-
-- **feat: TAP parser** — `node --test --test-reporter=tap` (fixture verified
-  against real node 22 output) and generic TAP14. Nested subtests become
-  `ancestor > …` suites; `# SKIP`/`# TODO` directives map to skip; YAML
-  diagnostic blocks are harvested for failure messages/stacks; suite
-  aggregates are de-duplicated against their children so failures never
-  double-count.
-- **feat: TRX parser** — .NET `dotnet test` results. Suite = the test class
-  (`TestMethod/@className`), `duration` (`HH:MM:SS.f`) parsed to ms,
-  `ErrorInfo` → error status with message/stack, `NotExecuted` → skip.
-- **feat: GitLab MR notes** — on GitLab CI, `flakefinder ci` upserts one
-  marker-scoped merge-request note (env-driven: `GITLAB_TOKEN`,
-  `CI_MERGE_REQUEST_IID`); posting failures never fail the job.
-- Parsers are now six: JUnit XML, Jest JSON, Mocha JSON, `go test -json`,
-  TAP, TRX.
-
-## 1.0.0
-
-- _(fill in before tagging — this stub is created by scripts/release.mjs)_
-
 # Changelog
+
+## 1.2.0
+
+QA rounds 5 and 6. Round 5 fixed every High finding. Round 6 closes the
+remaining QA items except the deferred test-identity decision (PAR-4/5/15).
+
+### Round 6 behavior changes
+
+**Scoring (PLAN §5 now states these rules explicitly)**
+
+- One invocation (runId) counts as **one run** for `runsObserved`,
+  `minRuns`, the failing/recently-fixed windows and the +10 bonus. A single
+  failing `run -R 2` is `new-failure`, not `failing`. Attempts still count
+  as same-SHA / retry evidence, and `passRate` is still over executions.
+- Recency keys on the most recent flip, not the last failure.
+- Flips are counted between chronological visits to a code state, so a
+  revert A→B→A counts 2.
+- **In-report retries are scored.** Results now carry `attempts` (jest/vitest
+  `invocations`, mocha `currentRetry`, Surefire reruns, pytest-rerunfailures,
+  go `-count`, Playwright retries); fail-then-pass scores as a retry rescue.
+- `slow` additionally needs p95 ≥ 100 ms.
+
+**Runner (`run`)**
+
+- A tree with uncommitted tracked changes records `<HEAD>-dirty-<hash>`, so
+  an uncommitted fix is never a same-SHA flip.
+- A missing binary in a shell-mode command exits 2 after one attempt.
+- Byte-identical rewritten reports are recorded.
+- With a TTY, stdin is inherited (watch modes work); the process tree is
+  still killed on timeout/Ctrl-C.
+- pytest quarantine deselects exact node ids (via a temporary plugin);
+  `no:cacheprovider` in ini/pyproject/tox/setup.cfg addopts is honoured.
+- Store warnings are printed after `run`.
+
+**Parsers**
+
+- New formats: Playwright JSON (`playwright`) and pytest-json-report
+  (`pytest-json`).
+- UTF-16 (e.g. PowerShell `>`), BOM-prefixed and gzip-compressed reports are
+  read everywhere.
+- Unparseable files say why (truncated JSON, gzip, binary, empty…).
+- Go messages drop `=== RUN`/`--- PASS` framing; passing tests carry no
+  message. jest/vitest/mocha durations are whole milliseconds.
+
+**CLI**
+
+- Exit codes: `ingest` with nothing parsed → 2; `quarantine add/remove` of
+  an unknown id → 1; `help <unknown>` → 2; a missing or non-directory `--cwd`
+  → 2 everywhere; `doctor --config bad.json` → 1.
+- `--config` resolves against `--cwd`; doctor honours `--config` and the
+  configured `quarantineFile`.
+- Config must be a JSON object; `timeoutSeconds` must be an integer
+  (1–2147483); `timeoutSeconds` and `retryMode` are documented.
+- `maxRuns` keeps the last N distinct runs (retry attempts stay together).
+- `--run-id` must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$` (long numeric
+  CI ids accepted).
+- `NO_COLOR`/`--no-color`/non-TTY are honoured by every command.
+- `ci` records `GITHUB_SHA` / `CI_COMMIT_SHA` and treats a corrupt snapshot
+  as no baseline, with a warning.
+- JSON report gains `schemaVersion: 1`.
+- `html --open` without an opener only warns; quarantine output escapes
+  control characters; `init --runner auto` detects like the default.
+
+**GitHub Action / reports**
+
+- The action runs on **node24**, and the bundle now includes all
+  dependencies (it previously required `fast-xml-parser` at runtime).
+- Matrix legs get separate histories by default (`history-key` defaults to
+  `toJSON(matrix)`).
+- PR comments and GitLab MR notes are found across all pages (cap 5000).
+- The dashboard follows the OS light/dark preference and escapes bidi and
+  control characters.
+- `THIRD_PARTY_NOTICES.md` is added; CI actions are pinned to commit SHAs;
+  docs use `@v1`.
+
+### Round 5
+QA round 5: about 80 fixes across the runner, quarantine, engine, store,
+config, parsers, reports, GitHub Action and release tooling. The per-fix
+detail is in the commit history (`fix(runner|quarantine|engine|store|config|parsers|report|action|gitlab|release)`).
+
+**Behavior changes to know about**
+
+- Retries re-run only the **previous** attempt's failures. Oversized name
+  selectors (more than 32 KiB) fall back to a full re-run.
+- The exit gates check each test's last *real* execution. Quarantined tests
+  and tests that were only skipped never trip `--fail-on-flake`.
+- Timeouts and Ctrl-C kill the whole process tree (POSIX process group).
+- pytest quarantine uses real node ids (`path/test_x.py::Class::test`).
+  jest/mocha exclusion matches whole titles, not substrings.
+- `storeDir` / `quarantineFile` in a config file resolve relative to that
+  file's directory.
+- History-store lock errors fail fast (exit 2). The store header survives
+  pruning, and a newer-format store is never downgraded.
+- The Action's cache key now includes a stream id (job + working-directory
+  + the new `history-key` input). Expect one warm-start restore after
+  upgrading.
+- PR/MR comments are capped at 50 table rows and 60k chars. Terminal output
+  escapes control characters and is redacted.
+- Parsers add Surefire reruns, go `-count`/benchmarks/build events,
+  mochawesome, TAP block scalars and headerless TAP12, TRX outcome/class
+  join/data rows, and jest/vitest/mocha retry-then-pass notes.
+  Retry-then-pass inside a single report is reported as a `pass` with a
+  `flaky: failed k of n attempts` message plus a warning. It is not yet
+  scored as flaky.
+
+## 1.1.1
+
+Bug-fix release from QA round 4. No new features; one stricter-input change
+(numeric flags) and one exit-code change (unstartable commands → 2).
+
+**Runner (`run`)**
+
+- **fix: retry re-record semantics** — retry attempts re-record *every*
+  matched report, even byte-identical ones: a fail-fail-pass sequence with a
+  deterministic report is now detected as a retry rescue (attempt 1 still
+  skips stale pre-existing reports).
+- **fix: unstartable command exits 2, not 1** — `run -- not-installed` used
+  to retry and exit 1 like a test failure; it now stops after attempt 1 with
+  `command not found: …`, records nothing, and exits 2 (usage/environment
+  error). A test command that itself exits 2 or 127 is unaffected.
+
+**Engine**
+
+- **fix: runId-grouped chronological ordering** — retry pairs are no longer
+  split by same-timestamp interleaving across runs, which silently lost
+  retry rescues.
+
+**History store**
+
+- **fix: prune concurrency** — `prune` re-reads the store fresh under the
+  write lock (and decides its early return from that fresh count), so a
+  concurrent writer's appends are no longer deleted.
+- **fix: read paths never create directories** — `report`/`doctor` on a
+  missing store leave nothing behind; write paths create the store dir
+  before taking the lock.
+- **fix: `history.jsonl` as a directory (EISDIR) / unreadable (EACCES)** —
+  reads degrade to an empty history with a warning; writes fail with an
+  error naming the path instead of a raw `EISDIR`; `doctor` reports FAIL.
+
+**CLI**
+
+- **fix: `init --runner`** is validated against the runner enum.
+- **fix: `ingest r.xml r.xml`** no longer double-counts — explicit files are
+  resolved, then deduplicated.
+- **fix: strict numeric flags** — `-R/--retries` (0–10), `--timeout`
+  (1–2147483 s), `ingest --attempt` (1–1000000) and `report --threshold`
+  (0–100) reject `2.5`, `2x`, `50abc`, `abc`, `0`/negatives where invalid,
+  with an error naming the flag and range (exit 2). `-R 50` now blames the
+  flag, not the config.
+- **fix: usage errors print once** (commander's message was repeated).
+
+**Doctor**
+
+- **fix: resilience** — a corrupt quarantine file is a FAIL instead of a
+  crash; the git probe is bounded by a 5 s timeout; an unreadable history
+  store is a FAIL (exit 1) instead of `ok "0 run(s)"`.
+
+**Parsers**
+
+- **fix: TAP `t.test()` parents** no longer double-emit (children-count
+  aggregate detection, verified against real output).
+- **fix: TAP directives** (`# SKIP`/`# TODO`) are case-insensitive per spec;
+  node's backslash-escaped `#` in names is unescaped consistently.
+- **fix: mocha** parses the passes/failures-only JSON shape the sniffer
+  already accepted.
+- **fix: TRX** day-inclusive durations (`d.hh:mm:ss.f`); duplicate XML roots
+  (JUnit/TRX) warn and use the first root instead of yielding zero results.
+
+**Docs**
+
+- USAGE: `doctor` section and exit-code rows, run re-record semantics,
+  `ingest --run-id`, numeric flag ranges, unstartable-command exit code,
+  unreadable-store behavior, and the symlink/junction limitation of report
+  globs (deliberate, for cycle safety).
 
 ## 1.1.0
 

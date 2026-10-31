@@ -1,0 +1,173 @@
+{
+  "numTotalTestSuites": 6,
+  "numPassedTestSuites": 0,
+  "numFailedTestSuites": 6,
+  "numPendingTestSuites": 0,
+  "numTotalTests": 12,
+  "numPassedTests": 5,
+  "numFailedTests": 4,
+  "numPendingTests": 2,
+  "numTodoTests": 1,
+  "snapshot": {
+    "added": 0,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0,
+    "didUpdate": false
+  },
+  "startTime": 1793183954841,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "fullName": "Outer Inner passes",
+          "status": "passed",
+          "title": "passes",
+          "duration": 1.8651269999999727,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "fullName": "Outer Inner fails",
+          "status": "failed",
+          "title": "fails",
+          "duration": 6.302760000000006,
+          "failureMessages": [
+            "AssertionError: expected { a: 1 } to deeply equal { a: 2 }\n    at /repo/vt/t/a.test.ts:5:41\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "fullName": "Outer Inner add 1 == 1",
+          "status": "passed",
+          "title": "add 1 == 1",
+          "duration": 0.16032099999998195,
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "fullName": "Outer Inner add 2 == 3",
+          "status": "failed",
+          "title": "add 2 == 3",
+          "duration": 0.7599050000000034,
+          "failureMessages": [
+            "AssertionError: expected 2 to be 3 // Object.is equality\n    at /repo/vt/t/a.test.ts:6:67\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:861:59\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "fullName": "Outer skipped one",
+          "status": "skipped",
+          "title": "skipped one",
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "fullName": "Outer todo one",
+          "status": "todo",
+          "title": "todo one",
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "fullName": "Outer retried",
+          "status": "passed",
+          "title": "retried",
+          "duration": 0.49518799999998464,
+          "failureMessages": [
+            "AssertionError: expected 1 to be 2 // Object.is equality\n    at /repo/vt/t/a.test.ts:11:56\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "fullName": "Outer always fails retried",
+          "status": "failed",
+          "title": "always fails retried",
+          "duration": 0.5390409999999974,
+          "failureMessages": [
+            "AssertionError: expected 1 to be 2 // Object.is equality\n    at /repo/vt/t/a.test.ts:12:64\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)",
+            "AssertionError: expected 1 to be 2 // Object.is equality\n    at /repo/vt/t/a.test.ts:12:64\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:155:11\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:752:26\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1897:20\n    at new Promise (<anonymous>)\n    at runWithTimeout (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1863:10)\n    at runTest (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1574:12)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)\n    at runSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1729:8)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "fullName": "Outer slow",
+          "status": "failed",
+          "title": "slow",
+          "duration": 50.664297000000005,
+          "failureMessages": [
+            "Error: STACK_TRACE_ERROR\n    at task (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:638:27)\n    at Object.<anonymous> (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:662:16)\n    at Object.<anonymous> (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:458:28)\n    at chain (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:369:14)\n    at /repo/vt/t/a.test.ts:13:3\n    at file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:734:40\n    at runWithSuite (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1849:8)\n    at Object.collect (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:734:10)\n    at Object.collect (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:738:54)\n    at collectTests (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1179:25)\n    at startTests (file:///repo/vt/node_modules/@vitest/runner/dist/chunk-hooks.js:1817:17)\n    at file:///repo/vt/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:117:26\n    at withEnv (file:///repo/vt/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:84:3)\n    at run (file:///repo/vt/node_modules/vitest/dist/chunks/runBaseTests.9Ij9_de-.js:109:2)\n    at runBaseTests (file:///repo/vt/node_modules/vitest/dist/chunks/base.DfmxU-tU.js:32:2)"
+          ],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "top level",
+          "status": "passed",
+          "title": "top level",
+          "duration": 0.08833699999999567,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793183955017,
+      "endTime": 1793183955079.0884,
+      "status": "failed",
+      "message": "",
+      "name": "/repo/vt/t/a.test.ts"
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["Outer"],
+          "fullName": "Outer passes",
+          "status": "skipped",
+          "title": "passes",
+          "failureMessages": [],
+          "meta": {}
+        },
+        {
+          "ancestorTitles": [],
+          "fullName": "top level",
+          "status": "passed",
+          "title": "top level",
+          "duration": 0.3212819999999965,
+          "failureMessages": [],
+          "meta": {}
+        }
+      ],
+      "startTime": 1793183955014,
+      "endTime": 1793183955014.3213,
+      "status": "failed",
+      "message": "",
+      "name": "/repo/vt/t/b.test.ts"
+    },
+    {
+      "assertionResults": [],
+      "startTime": 1793183954841,
+      "endTime": 1793183954841,
+      "status": "failed",
+      "message": "module load boom",
+      "name": "/repo/vt/t/c.test.ts"
+    }
+  ]
+}

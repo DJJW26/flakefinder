@@ -26,6 +26,10 @@ inputs:
   working-directory:
     description: 'Directory containing reports/config (for monorepos)'
     default: '.'
+  history-key:
+    description: 'Extra key separating history caches. Defaults to the matrix values, so every matrix leg keeps its own history; outside a matrix there is one history per job + working-directory. Set it explicitly to share or rename a stream.'
+    required: false
+    default: ${{ toJSON(matrix) }}
 
 outputs:
   flaky-count:
@@ -38,5 +42,5 @@ outputs:
     description: 'Path to the written JSON report'
 
 runs:
-  using: node20
+  using: node24
   main: dist/action/index.cjs

@@ -24,31 +24,53 @@
 
 import type { DashboardData } from '../types.js';
 import { redact } from '../util/redact.js';
+import { escapeControlChars, escapeControlCharsMultiline } from './text.js';
 
 /**
  * The dashboard is uploaded as a CI artifact — redact credential-shaped
  * strings from every free-text field (failure messages AND test names/suites,
  * which can embed leaked tokens) before embedding. The raw store remains the
  * unredacted source of truth on the user's machine.
+ *
+ * Names, suites, messages and shas also get their control and bidi
+ * characters made visible (`\u202e`…), as in the terminal and markdown: a
+ * test name with a right-to-left override could otherwise render as a
+ * different, harmless-looking name. Messages keep their line breaks. The
+ * testId stays raw (the copy buttons must yield the real id); the page
+ * escapes it for display.
  */
 function redactData(data: DashboardData): DashboardData {
   return {
     ...data,
     verdicts: data.verdicts.map((v) => {
-      const name = redact(v.name);
-      const suite = redact(v.suite);
-      const lastMessage = v.lastMessage ? redact(v.lastMessage) : v.lastMessage;
+      const name = escapeControlChars(redact(v.name));
+      const suite = escapeControlChars(redact(v.suite));
+      const lastMessage = v.lastMessage
+        ? escapeControlCharsMultiline(redact(v.lastMessage))
+        : v.lastMessage;
       if (name === v.name && suite === v.suite && lastMessage === v.lastMessage) return v;
       return { ...v, name, suite, lastMessage };
     }),
+    runs: data.runs.map((r) =>
+      r.commitSha === undefined ? r : { ...r, commitSha: escapeControlChars(r.commitSha) },
+    ),
   };
 }
 
-/** Serialize the payload and neutralize HTML parser break-outs inside the data script. */
+/**
+ * Serialize the payload and neutralize HTML parser break-outs inside the data
+ * script. Bidi controls and line/paragraph separators left in the data (raw
+ * testIds) are written as JSON `\uXXXX` escapes: same value after
+ * JSON.parse, but the HTML file itself never carries a raw override.
+ */
 function embedJson(data: DashboardData): string {
   return JSON.stringify(data)
     .replace(/<\/script/gi, '<\\/script')
-    .replace(/<!--/g, '<\\!--');
+    .replace(/<!--/g, '<\\!--')
+    .replace(
+      /[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g,
+      (c) => `\\u${c.charCodeAt(0).toString(16)}`,
+    );
 }
 
 export function renderDashboard(data: DashboardData): string {
@@ -56,6 +78,33 @@ export function renderDashboard(data: DashboardData): string {
   const json = embedJson(safeData);
   const hasVerdicts = safeData.verdicts.length > 0;
   const hasRuns = safeData.runs.length > 0;
+
+  // light palette: used for the explicit toggle AND for prefers-color-scheme: light
+  const lightTokens = String.raw`
+    color-scheme: light;
+    --bg: #f6f8fa;
+    --bg-elev: #ffffff;
+    --bg-inset: #f6f8fa;
+    --border: #d0d7de;
+    --border-soft: #eaeef2;
+    --text: #1f2328;
+    --text-dim: #59636e;
+    --text-faint: #818b98;
+    --brand: #cf4b36;
+    --accent: #0969da;
+    --pass: #1a7f37;
+    --fail: #cf222e;
+    --fail-deep: #a40e26;
+    --error: #82071e;
+    --skip: #57606a;
+    --warn: #9a6700;
+    --suspect: #bf8700;
+    --info: #1b7c83;
+    --fixed: #0f766e;
+    --violet: #8250df;
+    --pink: #bf3989;
+    --shadow: 0 1px 3px rgba(31,35,40,.1), 0 8px 24px rgba(31,35,40,.07);
+`;
 
   const css = String.raw`
   *, *::before, *::after { box-sizing: border-box; }
@@ -86,29 +135,11 @@ export function renderDashboard(data: DashboardData): string {
     --shadow: 0 1px 3px rgba(1,4,9,.45), 0 8px 24px rgba(1,4,9,.35);
   }
   [data-theme='light'] {
-    color-scheme: light;
-    --bg: #f6f8fa;
-    --bg-elev: #ffffff;
-    --bg-inset: #f6f8fa;
-    --border: #d0d7de;
-    --border-soft: #eaeef2;
-    --text: #1f2328;
-    --text-dim: #59636e;
-    --text-faint: #818b98;
-    --brand: #cf4b36;
-    --accent: #0969da;
-    --pass: #1a7f37;
-    --fail: #cf222e;
-    --fail-deep: #a40e26;
-    --error: #82071e;
-    --skip: #57606a;
-    --warn: #9a6700;
-    --suspect: #bf8700;
-    --info: #1b7c83;
-    --fixed: #0f766e;
-    --violet: #8250df;
-    --pink: #bf3989;
-    --shadow: 0 1px 3px rgba(31,35,40,.1), 0 8px 24px rgba(31,35,40,.07);
+${lightTokens}  }
+  /* no explicit choice: follow the OS (dark stays the default otherwise) */
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme='dark']) {
+${lightTokens}    }
   }
   html { -webkit-text-size-adjust: 100%; }
   body {
@@ -817,6 +848,14 @@ export function renderDashboard(data: DashboardData): string {
 
   // ---------- helpers ----------
   function $(id) { return document.getElementById(id); }
+  // control/bidi characters made visible, as in src/report/text.ts — for
+  // testIds, which stay raw in the data so the copy buttons yield the real id
+  function visible(s) {
+    return String(s).replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, function (c) {
+      var code = c.charCodeAt(0);
+      return code < 256 ? '\\x' + ('0' + code.toString(16)).slice(-2) : '\\u' + ('000' + code.toString(16)).slice(-4);
+    });
+  }
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
@@ -852,20 +891,35 @@ export function renderDashboard(data: DashboardData): string {
   function midTrunc(s, max) {
     s = String(s);
     if (s.length <= max) return s;
+    // by code point: slicing UTF-16 units would split surrogate pairs (emoji)
+    var cps = Array.from(s);
+    if (cps.length <= max) return s;
     var keep = max - 1;
     var head = Math.ceil(keep / 2);
     var tail = keep - head;
-    return s.slice(0, head) + '\u2026' + s.slice(s.length - tail);
+    return cps.slice(0, head).join('') + '\u2026' + cps.slice(cps.length - tail).join('');
   }
-  function shortSha(s) { return s ? String(s).slice(0, 7) : ''; }
+  function shortSha(s) { if (!s) return ''; s = String(s); var d = s.indexOf('-dirty'); return d >= 0 ? s.slice(0, 7) + ' (dirty)' : s.slice(0, 7); }
 
   // ---------- theme toggle ----------
   var themeBtn = $('ff-toggle');
-  var theme = 'dark';
+  // an explicit choice (stored) wins; otherwise follow prefers-color-scheme,
+  // dark when the OS has no preference
+  var lightQuery = null;
+  try { lightQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null; } catch (err) { lightQuery = null; }
+  var stored = null;
   try {
-    var stored = window.localStorage && window.localStorage.getItem('ff-theme');
-    if (stored === 'light' || stored === 'dark') theme = stored;
+    stored = window.localStorage && window.localStorage.getItem('ff-theme');
   } catch (err) { /* storage unavailable (private mode / file origin) */ }
+  var explicitTheme = stored === 'light' || stored === 'dark';
+  var theme = explicitTheme ? stored : (lightQuery && lightQuery.matches ? 'light' : 'dark');
+  if (lightQuery && lightQuery.addEventListener) {
+    lightQuery.addEventListener('change', function (e) {
+      if (explicitTheme) return;
+      theme = e.matches ? 'light' : 'dark';
+      applyTheme();
+    });
+  }
   function applyTheme() {
     document.documentElement.setAttribute('data-theme', theme);
     if (!themeBtn) return;
@@ -879,6 +933,7 @@ export function renderDashboard(data: DashboardData): string {
   if (themeBtn) {
     themeBtn.addEventListener('click', function () {
       theme = theme === 'dark' ? 'light' : 'dark';
+      explicitTheme = true;
       try { window.localStorage.setItem('ff-theme', theme); } catch (err) { /* ignore */ }
       applyTheme();
     });
@@ -1229,7 +1284,7 @@ export function renderDashboard(data: DashboardData): string {
     var nameEl = $('ff-dr-name');
     if (nameEl) { nameEl.textContent = v.name; nameEl.title = v.name; }
     var idEl = $('ff-dr-id');
-    if (idEl) idEl.textContent = v.testId;
+    if (idEl) idEl.textContent = visible(v.testId);
 
     var clsEl = $('ff-dr-cls');
     if (clsEl) { clsEl.textContent = meta.label; clsEl.className = 'badge c-' + meta.color; }
@@ -1274,7 +1329,7 @@ export function renderDashboard(data: DashboardData): string {
       }
     }
     var cmd = $('ff-dr-cmd');
-    if (cmd) cmd.textContent = 'flakefinder quarantine add ' + v.testId;
+    if (cmd) cmd.textContent = 'flakefinder quarantine add ' + visible(v.testId);
   }
 
   function highlightDrawerRow() {
@@ -1380,9 +1435,10 @@ export function renderDashboard(data: DashboardData): string {
 `;
 
   return String.raw`<!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="color-scheme" content="dark light">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="generator" content="flakefinder">
 <title>flakefinder dashboard</title>

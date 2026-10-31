@@ -1,0 +1,155 @@
+{
+  "created": 1793440800.123,
+  "duration": 0.734,
+  "exitcode": 1,
+  "root": "/repo/py",
+  "environment": {
+    "Python": "3.12.3",
+    "Platform": "Linux"
+  },
+  "summary": {
+    "passed": 1,
+    "failed": 1,
+    "error": 2,
+    "skipped": 1,
+    "xfailed": 1,
+    "rerun": 1,
+    "total": 6,
+    "collected": 6
+  },
+  "collectors": [
+    {
+      "nodeid": "",
+      "outcome": "passed",
+      "result": [
+        {
+          "nodeid": "tests",
+          "type": "Dir"
+        }
+      ]
+    },
+    {
+      "nodeid": "tests/test_broken.py",
+      "outcome": "failed",
+      "result": [],
+      "longrepr": "ImportError while importing test module '/repo/py/tests/test_broken.py'.\nE   ModuleNotFoundError: No module named 'nope'"
+    }
+  ],
+  "tests": [
+    {
+      "nodeid": "tests/test_shop.py::test_total",
+      "lineno": 3,
+      "outcome": "passed",
+      "keywords": ["test_total", "test_shop.py", "tests", "py"],
+      "setup": {
+        "duration": 0.0002,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0011,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0001,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_shop.py::TestCart::test_add[2-3]",
+      "lineno": 10,
+      "outcome": "failed",
+      "keywords": [],
+      "setup": {
+        "duration": 0.0003,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0124,
+        "outcome": "failed",
+        "crash": {
+          "path": "/repo/py/tests/test_shop.py",
+          "lineno": 14,
+          "message": "AssertionError: assert 5 == 6"
+        },
+        "longrepr": "def test_add(a, b):\n>       assert a + b == 6\nE       AssertionError: assert 5 == 6\n\ntests/test_shop.py:14: AssertionError"
+      },
+      "teardown": {
+        "duration": 0.0002,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_shop.py::test_db",
+      "lineno": 20,
+      "outcome": "error",
+      "keywords": [],
+      "setup": {
+        "duration": 0.5,
+        "outcome": "failed",
+        "crash": {
+          "path": "/repo/py/tests/test_shop.py",
+          "lineno": 14,
+          "message": "ConnectionError: db down"
+        },
+        "longrepr": "@pytest.fixture\ndef db():\n>       raise ConnectionError('db down')\nE       ConnectionError: db down"
+      },
+      "teardown": {
+        "duration": 0.0001,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_shop.py::test_skip",
+      "lineno": 25,
+      "outcome": "skipped",
+      "keywords": [],
+      "setup": {
+        "duration": 0.0001,
+        "outcome": "skipped",
+        "longrepr": "('/repo/py/tests/test_shop.py', 25, 'Skipped: no network')"
+      },
+      "teardown": {
+        "duration": 0.0001,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_shop.py::test_known",
+      "lineno": 30,
+      "outcome": "xfailed",
+      "keywords": [],
+      "setup": {
+        "duration": 0.0001,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0003,
+        "outcome": "skipped",
+        "longrepr": "..."
+      },
+      "teardown": {
+        "duration": 0.0001,
+        "outcome": "passed"
+      }
+    },
+    {
+      "nodeid": "tests/test_shop.py::test_flips",
+      "lineno": 35,
+      "outcome": "rerun",
+      "keywords": [],
+      "setup": {
+        "duration": 0.0001,
+        "outcome": "passed"
+      },
+      "call": {
+        "duration": 0.0009,
+        "outcome": "passed"
+      },
+      "teardown": {
+        "duration": 0.0001,
+        "outcome": "passed"
+      }
+    }
+  ],
+  "warnings": []
+}

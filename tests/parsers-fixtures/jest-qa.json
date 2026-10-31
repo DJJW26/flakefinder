@@ -1,0 +1,345 @@
+{
+  "numFailedTestSuites": 4,
+  "numFailedTests": 6,
+  "numPassedTestSuites": 0,
+  "numPassedTests": 5,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 1,
+  "numRuntimeErrorTestSuites": 1,
+  "numTodoTests": 1,
+  "numTotalTestSuites": 4,
+  "numTotalTests": 13,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": true,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 1,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 1,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 1,
+    "updated": 0
+  },
+  "startTime": 1793183920331,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "duration": 101,
+          "failing": false,
+          "failureDetails": [{}],
+          "failureMessages": [
+            "Error: thrown: \"Exceeded timeout of 100 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at _getError (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1985:12)\n    at Array.map (<anonymous>)\n    at makeSingleTestResult (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1915:38)\n    at makeTestResults (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1945:26)\n    at makeRunResult (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1876:18)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:797:35)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)\n\n[cause]: Error: thrown: \"Exceeded timeout of 100 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at Object.test (/repo/js/jt/b/timeout.test.js:3:1)\n    at ModuleExecutor.exec (/repo/js/node_modules/jest-runtime/build/index.js:3055:26)\n    at CjsLoader.loadModule (/repo/js/node_modules/jest-runtime/build/index.js:440:36)\n    at CjsLoader.requireModule (/repo/js/node_modules/jest-runtime/build/index.js:335:12)\n    at Runtime.requireModule (/repo/js/node_modules/jest-runtime/build/index.js:4981:27)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:96:13)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "fullName": "slow",
+          "invocations": 3,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [
+            "    thrown: \"Exceeded timeout of 100 ms for a test.\n    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n\n      at _getError (../node_modules/jest-circus/build/jestAdapterInit.js:1985:12)\n          at Array.map (<anonymous>)\n\n    Cause:\n        thrown: \"Exceeded timeout of 100 ms for a test.\n        Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n\n          1 | jest.retryTimes(2, {logErrorsBeforeRetry: true});\n          2 | let n=0;\n        > 3 | test('slow', async () => { await new Promise(r=>setTimeout(r,500)); }, 100);\n            | ^\n          4 | test('retried', () => { n++; expect(n).toBe(2); });\n          5 |\n\n          at Object.test (b/timeout.test.js:3:1)\n",
+            "    thrown: \"Exceeded timeout of 100 ms for a test.\n    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n\n      at _getError (../node_modules/jest-circus/build/jestAdapterInit.js:1985:12)\n          at Array.map (<anonymous>)\n\n    Cause:\n        thrown: \"Exceeded timeout of 100 ms for a test.\n        Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n\n          1 | jest.retryTimes(2, {logErrorsBeforeRetry: true});\n          2 | let n=0;\n        > 3 | test('slow', async () => { await new Promise(r=>setTimeout(r,500)); }, 100);\n            | ^\n          4 | test('retried', () => { n++; expect(n).toBe(2); });\n          5 |\n\n          at Object.test (b/timeout.test.js:3:1)\n"
+          ],
+          "retryReasons": [
+            "Error: thrown: \"Exceeded timeout of 100 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at _getError (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1985:12)\n    at Array.map (<anonymous>)\n    at makeSingleTestResult (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1916:50)\n    at makeTestResults (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1945:26)\n    at makeRunResult (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1876:18)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:797:35)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)\n\n[cause]: Error: thrown: \"Exceeded timeout of 100 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at Object.test (/repo/js/jt/b/timeout.test.js:3:1)\n    at ModuleExecutor.exec (/repo/js/node_modules/jest-runtime/build/index.js:3055:26)\n    at CjsLoader.loadModule (/repo/js/node_modules/jest-runtime/build/index.js:440:36)\n    at CjsLoader.requireModule (/repo/js/node_modules/jest-runtime/build/index.js:335:12)\n    at Runtime.requireModule (/repo/js/node_modules/jest-runtime/build/index.js:4981:27)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:96:13)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)",
+            "Error: thrown: \"Exceeded timeout of 100 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at _getError (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1985:12)\n    at Array.map (<anonymous>)\n    at makeSingleTestResult (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1916:50)\n    at makeTestResults (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1945:26)\n    at makeRunResult (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1876:18)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:797:35)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)\n\n[cause]: Error: thrown: \"Exceeded timeout of 100 ms for a test.\nAdd a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n    at Object.test (/repo/js/jt/b/timeout.test.js:3:1)\n    at ModuleExecutor.exec (/repo/js/node_modules/jest-runtime/build/index.js:3055:26)\n    at CjsLoader.loadModule (/repo/js/node_modules/jest-runtime/build/index.js:440:36)\n    at CjsLoader.requireModule (/repo/js/node_modules/jest-runtime/build/index.js:335:12)\n    at Runtime.requireModule (/repo/js/node_modules/jest-runtime/build/index.js:4981:27)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:96:13)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "status": "failed",
+          "title": "slow",
+          "startAt": 1793183920658
+        },
+        {
+          "ancestorTitles": [],
+          "duration": 1,
+          "failing": false,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "retried",
+          "invocations": 2,
+          "location": null,
+          "numPassingAsserts": 1,
+          "retryMessages": [
+            "    expect(received).toBe(expected) // Object.is equality\n\n    Expected: 2\n    Received: 1\n\n      2 | let n=0;\n      3 | test('slow', async () => { await new Promise(r=>setTimeout(r,500)); }, 100);\n    > 4 | test('retried', () => { n++; expect(n).toBe(2); });\n        |                                        ^\n      5 |\n\n      at Object.toBe (b/timeout.test.js:4:40)\n"
+          ],
+          "retryReasons": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 2\nReceived: 1\n    at Object.toBe (/repo/js/jt/b/timeout.test.js:4:40)\n    at Promise.finally.completed (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)\n    at _callCircusTest (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1167:40)\n    at _runTestInContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1103:3)\n    at runTestWithContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:996:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1008:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:789:3)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "status": "passed",
+          "title": "retried",
+          "startAt": 1793183920762
+        }
+      ],
+      "endTime": 1793183920769,
+      "message": "  ● slow\n\n    thrown: \"Exceeded timeout of 100 ms for a test.\n    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n\n      at _getError (../node_modules/jest-circus/build/jestAdapterInit.js:1985:12)\n          at Array.map (<anonymous>)\n\n    Cause:\n        thrown: \"Exceeded timeout of 100 ms for a test.\n        Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout.\"\n\n          1 | jest.retryTimes(2, {logErrorsBeforeRetry: true});\n          2 | let n=0;\n        > 3 | test('slow', async () => { await new Promise(r=>setTimeout(r,500)); }, 100);\n            | ^\n          4 | test('retried', () => { n++; expect(n).toBe(2); });\n          5 |\n\n          at Object.test (b/timeout.test.js:3:1)\n",
+      "name": "/repo/js/jt/b/timeout.test.js",
+      "startTime": 1793183920392,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["Outer"],
+          "duration": 1,
+          "failing": false,
+          "failureDetails": [{}],
+          "failureMessages": [
+            "Error: beforeAll boom\n    at Object.<anonymous> (/repo/js/jt/b/one.test.js:2:27)\n    at Promise.finally.completed (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)\n    at _callCircusHook (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1136:40)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:941:7)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:789:3)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "fullName": "Outer passes",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "failed",
+          "title": "passes",
+          "startAt": 1793183920796
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "duration": 0,
+          "failing": false,
+          "failureDetails": [{}],
+          "failureMessages": [
+            "Error: beforeAll boom\n    at Object.<anonymous> (/repo/js/jt/b/one.test.js:2:27)\n    at Promise.finally.completed (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)\n    at _callCircusHook (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1136:40)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:941:7)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:789:3)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "fullName": "Outer second",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "failed",
+          "title": "second",
+          "startAt": 1793183920798
+        },
+        {
+          "ancestorTitles": [],
+          "duration": 0,
+          "failing": false,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "top level",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "passed",
+          "title": "top level",
+          "startAt": 1793183920798
+        }
+      ],
+      "endTime": 1793183920803,
+      "message": "  ● Outer › passes\n\n    beforeAll boom\n\n      1 | describe('Outer', () => {\n    > 2 |   beforeAll(() => { throw new Error('beforeAll boom'); });\n        |                           ^\n      3 |   test('passes', () => {});\n      4 |   test('second', () => {});\n      5 | });\n\n      at Object.<anonymous> (b/one.test.js:2:27)\n\n  ● Outer › second\n\n    beforeAll boom\n\n      1 | describe('Outer', () => {\n    > 2 |   beforeAll(() => { throw new Error('beforeAll boom'); });\n        |                           ^\n      3 |   test('passes', () => {});\n      4 |   test('second', () => {});\n      5 | });\n\n      at Object.<anonymous> (b/one.test.js:2:27)\n",
+      "name": "/repo/js/jt/b/one.test.js",
+      "startTime": 1793183920775,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "duration": 0,
+          "failureMessages": [
+            "  ● Test suite failed to run\n\n    Jest encountered an unexpected token\n\n    Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax.\n\n    Out of the box Jest supports Babel, which will be used to transform your files into valid JS based on your Babel configuration.\n\n    By default \"node_modules\" folder is ignored by transformers.\n\n    Here's what you can do:\n     • If you are trying to use TypeScript, see https://jestjs.io/docs/getting-started#using-typescript\n     • To have some of your \"node_modules\" files transformed, you can specify a custom \"transformIgnorePatterns\" in your config.\n     • If you need a custom transformation, specify a \"transform\" option in your config.\n     • If you simply want to mock your non-JS modules (e.g. binary assets) you can stub them out with the \"moduleNameMapper\" config option.\n\n    You'll find more details and examples of these config options in the docs:\n    https://jestjs.io/docs/configuration\n    For information about custom transformations, see:\n    https://jestjs.io/docs/code-transformation\n\n    Details:\n\n    SyntaxError: /repo/js/jt/b/syntax.test.js: Unexpected token (1:40)\n\n    > 1 | describe('x', () => { test('y', () => { ) });\n        |                                         ^\n      2 |\n\n      at constructor (../node_modules/@babel/parser/src/parse-error.ts:96:45)\n      at Parser.toParseError [as raise] (../node_modules/@babel/parser/src/tokenizer/index.ts:1509:19)\n      at Parser.raise [as unexpected] (../node_modules/@babel/parser/src/tokenizer/index.ts:1549:16)\n      at Parser.unexpected [as parseExprAtom] (../node_modules/@babel/parser/src/parser/expression.ts:1415:22)\n      at Parser.parseExprAtom [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:772:23)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at Parser.parseMaybeAssign [as parseExpressionBase] (../node_modules/@babel/parser/src/parser/expression.ts:227:23)\n      at parseExpressionBase (../node_modules/@babel/parser/src/parser/expression.ts:218:39)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3259:16)\n      at Parser.allowInAnd [as parseExpression] (../node_modules/@babel/parser/src/parser/expression.ts:218:17)\n      at Parser.parseExpression [as parseStatementContent] (../node_modules/@babel/parser/src/parser/statement.ts:699:23)\n      at Parser.parseStatementContent [as parseStatementLike] (../node_modules/@babel/parser/src/parser/statement.ts:485:17)\n      at Parser.parseStatementLike [as parseStatementListItem] (../node_modules/@babel/parser/src/parser/statement.ts:434:17)\n      at Parser.parseStatementListItem [as parseBlockOrModuleBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1466:16)\n      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1439:10)\n      at Parser.parseBlockBody [as parseBlock] (../node_modules/@babel/parser/src/parser/statement.ts:1407:10)\n      at Parser.parseBlock [as parseFunctionBody] (../node_modules/@babel/parser/src/parser/expression.ts:2685:24)\n      at Parser.parseFunctionBody [as parseArrowExpression] (../node_modules/@babel/parser/src/parser/expression.ts:2623:10)\n      at Parser.parseArrowExpression [as parseParenAndDistinguishExpression] (../node_modules/@babel/parser/src/parser/expression.ts:1907:12)\n      at Parser.parseParenAndDistinguishExpression [as parseExprAtom] (../node_modules/@babel/parser/src/parser/expression.ts:1227:21)\n      at Parser.parseExprAtom [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:772:23)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at parseMaybeAssign (../node_modules/@babel/parser/src/parser/expression.ts:258:12)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3264:12)\n      at Parser.allowInAnd [as parseMaybeAssignAllowIn] (../node_modules/@babel/parser/src/parser/expression.ts:257:17)\n      at Parser.parseMaybeAssignAllowIn [as parseMaybeAssignAllowInOrVoidPattern] (../node_modules/@babel/parser/src/parser/expression.ts:3378:17)\n      at Parser.parseMaybeAssignAllowInOrVoidPattern [as parseExprListItem] (../node_modules/@babel/parser/src/parser/expression.ts:2857:18)\n      at Parser.parseExprListItem [as parseCallExpressionArguments] (../node_modules/@babel/parser/src/parser/expression.ts:1099:14)\n      at Parser.parseCallExpressionArguments [as parseCoverCallAndAsyncArrowHead] (../node_modules/@babel/parser/src/parser/expression.ts:979:29)\n      at Parser.parseCoverCallAndAsyncArrowHead [as parseSubscript] (../node_modules/@babel/parser/src/parser/expression.ts:852:19)\n      at Parser.parseSubscript [as parseSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:811:19)\n      at Parser.parseSubscripts [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:778:17)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at Parser.parseMaybeAssign [as parseExpressionBase] (../node_modules/@babel/parser/src/parser/expression.ts:227:23)\n      at parseExpressionBase (../node_modules/@babel/parser/src/parser/expression.ts:218:39)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3259:16)\n      at Parser.allowInAnd [as parseExpression] (../node_modules/@babel/parser/src/parser/expression.ts:218:17)\n      at Parser.parseExpression [as parseStatementContent] (../node_modules/@babel/parser/src/parser/statement.ts:699:23)\n      at Parser.parseStatementContent [as parseStatementLike] (../node_modules/@babel/parser/src/parser/statement.ts:485:17)\n      at Parser.parseStatementLike [as parseStatementListItem] (../node_modules/@babel/parser/src/parser/statement.ts:434:17)\n      at Parser.parseStatementListItem [as parseBlockOrModuleBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1466:16)\n      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1439:10)\n      at Parser.parseBlockBody [as parseBlock] (../node_modules/@babel/parser/src/parser/statement.ts:1407:10)\n      at Parser.parseBlock [as parseFunctionBody] (../node_modules/@babel/parser/src/parser/expression.ts:2685:24)\n      at Parser.parseFunctionBody [as parseArrowExpression] (../node_modules/@babel/parser/src/parser/expression.ts:2623:10)\n      at Parser.parseArrowExpression [as parseParenAndDistinguishExpression] (../node_modules/@babel/parser/src/parser/expression.ts:1907:12)\n      at Parser.parseParenAndDistinguishExpression [as parseExprAtom] (../node_modules/@babel/parser/src/parser/expression.ts:1227:21)\n      at Parser.parseExprAtom [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:772:23)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at parseMaybeAssign (../node_modules/@babel/parser/src/parser/expression.ts:258:12)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3264:12)\n      at Parser.allowInAnd [as parseMaybeAssignAllowIn] (../node_modules/@babel/parser/src/parser/expression.ts:257:17)\n      at Parser.parseMaybeAssignAllowIn [as parseMaybeAssignAllowInOrVoidPattern] (../node_modules/@babel/parser/src/parser/expression.ts:3378:17)\n      at Parser.parseMaybeAssignAllowInOrVoidPattern [as parseExprListItem] (../node_modules/@babel/parser/src/parser/expression.ts:2857:18)\n      at Parser.parseExprListItem [as parseCallExpressionArguments] (../node_modules/@babel/parser/src/parser/expression.ts:1099:14)\n      at Parser.parseCallExpressionArguments [as parseCoverCallAndAsyncArrowHead] (../node_modules/@babel/parser/src/parser/expression.ts:979:29)\n      at Parser.parseCoverCallAndAsyncArrowHead [as parseSubscript] (../node_modules/@babel/parser/src/parser/expression.ts:852:19)\n      at Parser.parseSubscript [as parseSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:811:19)\n      at Parser.parseSubscripts [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:778:17)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at Parser.parseMaybeAssign [as parseExpressionBase] (../node_modules/@babel/parser/src/parser/expression.ts:227:23)\n      at parseExpressionBase (../node_modules/@babel/parser/src/parser/expression.ts:218:39)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3259:16)\n      at Parser.allowInAnd [as parseExpression] (../node_modules/@babel/parser/src/parser/expression.ts:218:17)\n      at Parser.parseExpression [as parseStatementContent] (../node_modules/@babel/parser/src/parser/statement.ts:699:23)\n      at Parser.parseStatementContent [as parseStatementLike] (../node_modules/@babel/parser/src/parser/statement.ts:485:17)\n      at Parser.parseStatementLike [as parseModuleItem] (../node_modules/@babel/parser/src/parser/statement.ts:422:17)\n      at Parser.parseModuleItem [as parseBlockOrModuleBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1465:16)\n      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1439:10)\n      at Parser.parseBlockBody [as parseProgram] (../node_modules/@babel/parser/src/parser/statement.ts:232:10)\n      at Parser.parseProgram [as parseTopLevel] (../node_modules/@babel/parser/src/parser/statement.ts:206:25)\n      at Parser.parseTopLevel [as parse] (../node_modules/@babel/parser/src/parser/index.ts:83:25)\n      at parse (../node_modules/@babel/parser/src/index.ts:86:38)\n      at parser (../node_modules/@babel/core/src/parser/index.ts:29:19)\n          at parser.next (<anonymous>)\n"
+          ],
+          "numPassingAsserts": 0,
+          "status": "error"
+        }
+      ],
+      "coverage": {},
+      "endTime": 1793183920997,
+      "message": "  ● Test suite failed to run\n\n    Jest encountered an unexpected token\n\n    Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax.\n\n    Out of the box Jest supports Babel, which will be used to transform your files into valid JS based on your Babel configuration.\n\n    By default \"node_modules\" folder is ignored by transformers.\n\n    Here's what you can do:\n     • If you are trying to use TypeScript, see https://jestjs.io/docs/getting-started#using-typescript\n     • To have some of your \"node_modules\" files transformed, you can specify a custom \"transformIgnorePatterns\" in your config.\n     • If you need a custom transformation, specify a \"transform\" option in your config.\n     • If you simply want to mock your non-JS modules (e.g. binary assets) you can stub them out with the \"moduleNameMapper\" config option.\n\n    You'll find more details and examples of these config options in the docs:\n    https://jestjs.io/docs/configuration\n    For information about custom transformations, see:\n    https://jestjs.io/docs/code-transformation\n\n    Details:\n\n    SyntaxError: /repo/js/jt/b/syntax.test.js: Unexpected token (1:40)\n\n    > 1 | describe('x', () => { test('y', () => { ) });\n        |                                         ^\n      2 |\n\n      at constructor (../node_modules/@babel/parser/src/parse-error.ts:96:45)\n      at Parser.toParseError [as raise] (../node_modules/@babel/parser/src/tokenizer/index.ts:1509:19)\n      at Parser.raise [as unexpected] (../node_modules/@babel/parser/src/tokenizer/index.ts:1549:16)\n      at Parser.unexpected [as parseExprAtom] (../node_modules/@babel/parser/src/parser/expression.ts:1415:22)\n      at Parser.parseExprAtom [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:772:23)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at Parser.parseMaybeAssign [as parseExpressionBase] (../node_modules/@babel/parser/src/parser/expression.ts:227:23)\n      at parseExpressionBase (../node_modules/@babel/parser/src/parser/expression.ts:218:39)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3259:16)\n      at Parser.allowInAnd [as parseExpression] (../node_modules/@babel/parser/src/parser/expression.ts:218:17)\n      at Parser.parseExpression [as parseStatementContent] (../node_modules/@babel/parser/src/parser/statement.ts:699:23)\n      at Parser.parseStatementContent [as parseStatementLike] (../node_modules/@babel/parser/src/parser/statement.ts:485:17)\n      at Parser.parseStatementLike [as parseStatementListItem] (../node_modules/@babel/parser/src/parser/statement.ts:434:17)\n      at Parser.parseStatementListItem [as parseBlockOrModuleBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1466:16)\n      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1439:10)\n      at Parser.parseBlockBody [as parseBlock] (../node_modules/@babel/parser/src/parser/statement.ts:1407:10)\n      at Parser.parseBlock [as parseFunctionBody] (../node_modules/@babel/parser/src/parser/expression.ts:2685:24)\n      at Parser.parseFunctionBody [as parseArrowExpression] (../node_modules/@babel/parser/src/parser/expression.ts:2623:10)\n      at Parser.parseArrowExpression [as parseParenAndDistinguishExpression] (../node_modules/@babel/parser/src/parser/expression.ts:1907:12)\n      at Parser.parseParenAndDistinguishExpression [as parseExprAtom] (../node_modules/@babel/parser/src/parser/expression.ts:1227:21)\n      at Parser.parseExprAtom [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:772:23)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at parseMaybeAssign (../node_modules/@babel/parser/src/parser/expression.ts:258:12)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3264:12)\n      at Parser.allowInAnd [as parseMaybeAssignAllowIn] (../node_modules/@babel/parser/src/parser/expression.ts:257:17)\n      at Parser.parseMaybeAssignAllowIn [as parseMaybeAssignAllowInOrVoidPattern] (../node_modules/@babel/parser/src/parser/expression.ts:3378:17)\n      at Parser.parseMaybeAssignAllowInOrVoidPattern [as parseExprListItem] (../node_modules/@babel/parser/src/parser/expression.ts:2857:18)\n      at Parser.parseExprListItem [as parseCallExpressionArguments] (../node_modules/@babel/parser/src/parser/expression.ts:1099:14)\n      at Parser.parseCallExpressionArguments [as parseCoverCallAndAsyncArrowHead] (../node_modules/@babel/parser/src/parser/expression.ts:979:29)\n      at Parser.parseCoverCallAndAsyncArrowHead [as parseSubscript] (../node_modules/@babel/parser/src/parser/expression.ts:852:19)\n      at Parser.parseSubscript [as parseSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:811:19)\n      at Parser.parseSubscripts [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:778:17)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at Parser.parseMaybeAssign [as parseExpressionBase] (../node_modules/@babel/parser/src/parser/expression.ts:227:23)\n      at parseExpressionBase (../node_modules/@babel/parser/src/parser/expression.ts:218:39)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3259:16)\n      at Parser.allowInAnd [as parseExpression] (../node_modules/@babel/parser/src/parser/expression.ts:218:17)\n      at Parser.parseExpression [as parseStatementContent] (../node_modules/@babel/parser/src/parser/statement.ts:699:23)\n      at Parser.parseStatementContent [as parseStatementLike] (../node_modules/@babel/parser/src/parser/statement.ts:485:17)\n      at Parser.parseStatementLike [as parseStatementListItem] (../node_modules/@babel/parser/src/parser/statement.ts:434:17)\n      at Parser.parseStatementListItem [as parseBlockOrModuleBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1466:16)\n      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1439:10)\n      at Parser.parseBlockBody [as parseBlock] (../node_modules/@babel/parser/src/parser/statement.ts:1407:10)\n      at Parser.parseBlock [as parseFunctionBody] (../node_modules/@babel/parser/src/parser/expression.ts:2685:24)\n      at Parser.parseFunctionBody [as parseArrowExpression] (../node_modules/@babel/parser/src/parser/expression.ts:2623:10)\n      at Parser.parseArrowExpression [as parseParenAndDistinguishExpression] (../node_modules/@babel/parser/src/parser/expression.ts:1907:12)\n      at Parser.parseParenAndDistinguishExpression [as parseExprAtom] (../node_modules/@babel/parser/src/parser/expression.ts:1227:21)\n      at Parser.parseExprAtom [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:772:23)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at parseMaybeAssign (../node_modules/@babel/parser/src/parser/expression.ts:258:12)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3264:12)\n      at Parser.allowInAnd [as parseMaybeAssignAllowIn] (../node_modules/@babel/parser/src/parser/expression.ts:257:17)\n      at Parser.parseMaybeAssignAllowIn [as parseMaybeAssignAllowInOrVoidPattern] (../node_modules/@babel/parser/src/parser/expression.ts:3378:17)\n      at Parser.parseMaybeAssignAllowInOrVoidPattern [as parseExprListItem] (../node_modules/@babel/parser/src/parser/expression.ts:2857:18)\n      at Parser.parseExprListItem [as parseCallExpressionArguments] (../node_modules/@babel/parser/src/parser/expression.ts:1099:14)\n      at Parser.parseCallExpressionArguments [as parseCoverCallAndAsyncArrowHead] (../node_modules/@babel/parser/src/parser/expression.ts:979:29)\n      at Parser.parseCoverCallAndAsyncArrowHead [as parseSubscript] (../node_modules/@babel/parser/src/parser/expression.ts:852:19)\n      at Parser.parseSubscript [as parseSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:811:19)\n      at Parser.parseSubscripts [as parseExprSubscripts] (../node_modules/@babel/parser/src/parser/expression.ts:778:17)\n      at Parser.parseExprSubscripts [as parseUpdate] (../node_modules/@babel/parser/src/parser/expression.ts:751:21)\n      at Parser.parseUpdate [as parseMaybeUnary] (../node_modules/@babel/parser/src/parser/expression.ts:713:23)\n      at Parser.parseMaybeUnary [as parseMaybeUnaryOrPrivate] (../node_modules/@babel/parser/src/parser/expression.ts:427:14)\n      at Parser.parseMaybeUnaryOrPrivate [as parseExprOps] (../node_modules/@babel/parser/src/parser/expression.ts:439:23)\n      at Parser.parseExprOps [as parseMaybeConditional] (../node_modules/@babel/parser/src/parser/expression.ts:394:23)\n      at Parser.parseMaybeConditional [as parseMaybeAssign] (../node_modules/@babel/parser/src/parser/expression.ts:302:21)\n      at Parser.parseMaybeAssign [as parseExpressionBase] (../node_modules/@babel/parser/src/parser/expression.ts:227:23)\n      at parseExpressionBase (../node_modules/@babel/parser/src/parser/expression.ts:218:39)\n      at Parser.callback [as allowInAnd] (../node_modules/@babel/parser/src/parser/expression.ts:3259:16)\n      at Parser.allowInAnd [as parseExpression] (../node_modules/@babel/parser/src/parser/expression.ts:218:17)\n      at Parser.parseExpression [as parseStatementContent] (../node_modules/@babel/parser/src/parser/statement.ts:699:23)\n      at Parser.parseStatementContent [as parseStatementLike] (../node_modules/@babel/parser/src/parser/statement.ts:485:17)\n      at Parser.parseStatementLike [as parseModuleItem] (../node_modules/@babel/parser/src/parser/statement.ts:422:17)\n      at Parser.parseModuleItem [as parseBlockOrModuleBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1465:16)\n      at Parser.parseBlockOrModuleBlockBody [as parseBlockBody] (../node_modules/@babel/parser/src/parser/statement.ts:1439:10)\n      at Parser.parseBlockBody [as parseProgram] (../node_modules/@babel/parser/src/parser/statement.ts:232:10)\n      at Parser.parseProgram [as parseTopLevel] (../node_modules/@babel/parser/src/parser/statement.ts:206:25)\n      at Parser.parseTopLevel [as parse] (../node_modules/@babel/parser/src/parser/index.ts:83:25)\n      at parse (../node_modules/@babel/parser/src/index.ts:86:38)\n      at parser (../node_modules/@babel/core/src/parser/index.ts:29:19)\n          at parser.next (<anonymous>)\n",
+      "name": "/repo/js/jt/b/syntax.test.js",
+      "startTime": 1793183920997,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "duration": 2,
+          "failing": false,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "Outer Inner passes",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 1,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "passed",
+          "title": "passes",
+          "startAt": 1793183920970
+        },
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "duration": 2,
+          "failing": false,
+          "failureDetails": [
+            {
+              "matcherResult": {
+                "actual": { "a": 1 },
+                "expected": { "a": 2 },
+                "message": "expect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 1\n\n  Object {\n-   \"a\": 2,\n+   \"a\": 1,\n  }",
+                "name": "toEqual",
+                "pass": false
+              }
+            }
+          ],
+          "failureMessages": [
+            "Error: expect(received).toEqual(expected) // deep equality\n\n- Expected  - 1\n+ Received  + 1\n\n  Object {\n-   \"a\": 2,\n+   \"a\": 1,\n  }\n    at Object.toEqual (/repo/js/jt/a/one.test.js:4:41)\n    at Promise.finally.completed (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)\n    at _callCircusTest (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1167:40)\n    at _runTestInContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1103:3)\n    at runTestWithContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:996:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1008:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:789:3)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "fullName": "Outer Inner fails",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "failed",
+          "title": "fails",
+          "startAt": 1793183920973
+        },
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "duration": 0,
+          "failing": false,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "Outer Inner add 1 == 1",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 1,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "passed",
+          "title": "add 1 == 1",
+          "startAt": 1793183920975
+        },
+        {
+          "ancestorTitles": ["Outer", "Inner"],
+          "duration": 0,
+          "failing": false,
+          "failureDetails": [
+            {
+              "matcherResult": {
+                "actual": 2,
+                "expected": 3,
+                "message": "expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 2",
+                "name": "toBe",
+                "pass": false
+              }
+            }
+          ],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 3\nReceived: 2\n    at toBe (/repo/js/jt/a/one.test.js:5:67)\n    at Object.<anonymous> (/repo/js/node_modules/jest-each/build/index.js:80:140)\n    at Promise.finally.completed (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)\n    at _callCircusTest (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1167:40)\n    at _runTestInContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1103:3)\n    at runTestWithContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:996:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1008:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:789:3)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "fullName": "Outer Inner add 2 == 3",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "failed",
+          "title": "add 2 == 3",
+          "startAt": 1793183920976
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "duration": null,
+          "failing": false,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "Outer skipped one",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "pending",
+          "title": "skipped one",
+          "startAt": 1793183920976
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "duration": null,
+          "failing": false,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "Outer todo one",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "todo",
+          "title": "todo one",
+          "startAt": 1793183920976
+        },
+        {
+          "ancestorTitles": ["Outer"],
+          "duration": 2,
+          "failing": false,
+          "failureDetails": [
+            {
+              "matcherResult": {
+                "actual": "\"new value\"",
+                "expected": "\"old value\"",
+                "message": "expect(received).toMatchSnapshot()\n\nSnapshot name: `Outer snapshot 1`\n\nSnapshot: \"old value\"\nReceived: \"new value\"",
+                "name": "toMatchSnapshot",
+                "pass": false,
+                "snapshotPath": "/repo/js/jt/a/__snapshots__/one.test.js.snap"
+              }
+            }
+          ],
+          "failureMessages": [
+            "Error: expect(received).toMatchSnapshot()\n\nSnapshot name: `Outer snapshot 1`\n\nSnapshot: \"old value\"\nReceived: \"new value\"\n    at Object.toMatchSnapshot (/repo/js/jt/a/one.test.js:9:48)\n    at Promise.finally.completed (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)\n    at _callCircusTest (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1167:40)\n    at _runTestInContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1103:3)\n    at runTestWithContext (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:996:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1008:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at _runTestsForDescribeBlockOnce (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)\n    at _runTestsForDescribeBlock (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:824:5)\n    at run (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:789:3)\n    at runAndTransformResultsToJestFormat (/repo/js/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)\n    at jestAdapter (/repo/js/node_modules/jest-circus/build/runner.js:111:19)\n    at runTestInternal (/repo/js/node_modules/jest-runner/build/index.js:247:16)\n    at runTest (/repo/js/node_modules/jest-runner/build/index.js:315:7)"
+          ],
+          "fullName": "Outer snapshot",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "failed",
+          "title": "snapshot",
+          "startAt": 1793183920976
+        },
+        {
+          "ancestorTitles": [],
+          "duration": 0,
+          "failing": false,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "top level",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryMessages": [],
+          "retryReasons": [],
+          "status": "passed",
+          "title": "top level",
+          "startAt": 1793183920978
+        }
+      ],
+      "endTime": 1793183920982,
+      "message": "  ● Outer › Inner › fails\n\n    expect(received).toEqual(expected) // deep equality\n\n    - Expected  - 1\n    + Received  + 1\n\n      Object {\n    -   \"a\": 2,\n    +   \"a\": 1,\n      }\n\n      2 |   describe('Inner', () => {\n      3 |     test('passes', () => { console.log('log line'); expect(1).toBe(1); });\n    > 4 |     test('fails', () => { expect({a:1}).toEqual({a:2}); });\n        |                                         ^\n      5 |     test.each([[1,1],[2,3]])('add %i == %i', (a,b) => { expect(a).toBe(b); });\n      6 |   });\n      7 |   test.skip('skipped one', () => {});\n\n      at Object.toEqual (a/one.test.js:4:41)\n\n  ● Outer › Inner › add 2 == 3\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: 3\n    Received: 2\n\n      3 |     test('passes', () => { console.log('log line'); expect(1).toBe(1); });\n      4 |     test('fails', () => { expect({a:1}).toEqual({a:2}); });\n    > 5 |     test.each([[1,1],[2,3]])('add %i == %i', (a,b) => { expect(a).toBe(b); });\n        |                                                                   ^\n      6 |   });\n      7 |   test.skip('skipped one', () => {});\n      8 |   test.todo('todo one');\n\n      at toBe (a/one.test.js:5:67)\n\n  ● Outer › snapshot\n\n    expect(received).toMatchSnapshot()\n\n    Snapshot name: `Outer snapshot 1`\n\n    Snapshot: \"old value\"\n    Received: \"new value\"\n\n       7 |   test.skip('skipped one', () => {});\n       8 |   test.todo('todo one');\n    >  9 |   test('snapshot', () => { expect('new value').toMatchSnapshot(); });\n         |                                                ^\n      10 | });\n      11 | test('top level', () => {});\n      12 |\n\n      at Object.toMatchSnapshot (a/one.test.js:9:48)\n",
+      "name": "/repo/js/jt/a/one.test.js",
+      "startTime": 1793183920923,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

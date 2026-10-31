@@ -1,0 +1,178 @@
+{
+  "numFailedTestSuites": 3,
+  "numFailedTests": 1,
+  "numPassedTestSuites": 1,
+  "numPassedTests": 3,
+  "numPendingTestSuites": 0,
+  "numPendingTests": 2,
+  "numRuntimeErrorTestSuites": 2,
+  "numTodoTests": 1,
+  "numTotalTestSuites": 4,
+  "numTotalTests": 7,
+  "openHandles": [],
+  "snapshot": {
+    "added": 0,
+    "didUpdate": false,
+    "failure": false,
+    "filesAdded": 0,
+    "filesRemoved": 0,
+    "filesRemovedList": [],
+    "filesUnmatched": 0,
+    "filesUpdated": 0,
+    "matched": 0,
+    "total": 0,
+    "unchecked": 0,
+    "uncheckedKeysByFile": [],
+    "unmatched": 0,
+    "updated": 0
+  },
+  "startTime": 1793184073499,
+  "success": false,
+  "testResults": [
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": [],
+          "duration": 4,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "focused one",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "passed",
+          "title": "focused one"
+        },
+        {
+          "ancestorTitles": [],
+          "duration": null,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "not focused",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "pending",
+          "title": "not focused"
+        }
+      ],
+      "endTime": 1793184074038,
+      "message": "",
+      "name": "/repo/j/only.test.js",
+      "startTime": 1793184073584,
+      "status": "focused",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["statuses"],
+          "duration": 1,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "statuses ok",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "passed",
+          "title": "ok"
+        },
+        {
+          "ancestorTitles": ["statuses"],
+          "duration": null,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "statuses skipped one",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "pending",
+          "title": "skipped one"
+        },
+        {
+          "ancestorTitles": ["statuses"],
+          "duration": null,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "statuses write me",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "todo",
+          "title": "write me"
+        },
+        {
+          "ancestorTitles": ["statuses"],
+          "duration": 1,
+          "failureDetails": [
+            {
+              "matcherResult": {
+                "actual": 1,
+                "expected": 2,
+                "message": "expect(received).toBe(expected) // Object.is equality\n\nExpected: 2\nReceived: 1",
+                "name": "toBe",
+                "pass": false
+              }
+            }
+          ],
+          "failureMessages": [
+            "Error: expect(received).toBe(expected) // Object.is equality\n\nExpected: 2\nReceived: 1\n    at Object.toBe (/repo/j/statuses.test.js:5:35)\n    at Promise.then.completed (/repo/node_modules/jest-circus/build/utils.js:298:28)\n    at new Promise (<anonymous>)\n    at callAsyncCircusFn (/repo/node_modules/jest-circus/build/utils.js:231:10)\n    at _callCircusTest (/repo/node_modules/jest-circus/build/run.js:316:40)\n    at processTicksAndRejections (node:internal/process/task_queues:95:5)\n    at _runTest (/repo/node_modules/jest-circus/build/run.js:252:3)\n    at _runTestsForDescribeBlock (/repo/node_modules/jest-circus/build/run.js:126:9)\n    at _runTestsForDescribeBlock (/repo/node_modules/jest-circus/build/run.js:121:9)\n    at run (/repo/node_modules/jest-circus/build/run.js:71:3)\n    at runAndTransformResultsToJestFormat (/repo/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)\n    at jestAdapter (/repo/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)\n    at runTestInternal (/repo/node_modules/jest-runner/build/runTest.js:367:16)\n    at runTest (/repo/node_modules/jest-runner/build/runTest.js:444:34)\n    at Object.worker (/repo/node_modules/jest-runner/build/testWorker.js:106:12)"
+          ],
+          "fullName": "statuses fails",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 0,
+          "retryReasons": [],
+          "status": "failed",
+          "title": "fails"
+        }
+      ],
+      "endTime": 1793184074055,
+      "message": "  ● statuses › fails\n\n    expect(received).toBe(expected) // Object.is equality\n\n    Expected: 2\n    Received: 1\n\n      3 |   test.skip('skipped one', () => {});\n      4 |   test.todo('write me');\n    > 5 |   test('fails', () => { expect(1).toBe(2); });\n        |                                   ^\n      6 | });\n      7 |\n\n      at Object.toBe (statuses.test.js:5:35)\n",
+      "name": "/repo/j/statuses.test.js",
+      "startTime": 1793184073596,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [
+        {
+          "ancestorTitles": ["db"],
+          "duration": 5,
+          "failureDetails": [],
+          "failureMessages": [],
+          "fullName": "db reads",
+          "invocations": 1,
+          "location": null,
+          "numPassingAsserts": 1,
+          "retryReasons": [],
+          "status": "passed",
+          "title": "reads"
+        }
+      ],
+      "coverage": {},
+      "endTime": 1793184074106,
+      "message": "\n\n  ● Test suite failed to run\n\n    teardown exploded\n\n      1 | describe('db', () => {\n    > 2 |   afterAll(() => { throw new Error('teardown exploded'); });\n        |                          ^\n      3 |   test('reads', () => { expect(1).toBe(1); });\n      4 | });\n      5 |\n\n      at Object.<anonymous> (after.test.js:2:26)\n",
+      "name": "/repo/j/after.test.js",
+      "startTime": 1793184074106,
+      "status": "failed",
+      "summary": ""
+    },
+    {
+      "assertionResults": [],
+      "coverage": {},
+      "endTime": 1793184074106,
+      "message": "  ● Test suite failed to run\n\n    Your test suite must contain at least one test.\n\n      at onResult (../node_modules/@jest/core/build/TestScheduler.js:133:18)\n      at ../node_modules/@jest/core/build/TestScheduler.js:254:19\n      at ../node_modules/emittery/index.js:363:13\n          at Array.map (<anonymous>)\n      at Emittery.emit (../node_modules/emittery/index.js:361:23)\n",
+      "name": "/repo/j/empty.test.js",
+      "startTime": 1793184074106,
+      "status": "failed",
+      "summary": ""
+    }
+  ],
+  "wasInterrupted": false
+}

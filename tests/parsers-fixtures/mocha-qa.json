@@ -1,0 +1,266 @@
+{
+  "stats": {
+    "suites": 6,
+    "tests": 11,
+    "passes": 5,
+    "pending": 2,
+    "failures": 6,
+    "start": "2026-10-28T10:39:38.845Z",
+    "end": "2026-10-28T10:39:38.901Z",
+    "duration": 56
+  },
+  "tests": [
+    {
+      "title": "root level",
+      "fullTitle": "root level",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "pending one",
+      "fullTitle": "Outer pending one",
+      "file": "/repo/js/mt/a.spec.js",
+      "currentRetry": 0,
+      "err": {}
+    },
+    {
+      "title": "skipped one",
+      "fullTitle": "Outer skipped one",
+      "file": "/repo/js/mt/a.spec.js",
+      "currentRetry": 0,
+      "err": {}
+    },
+    {
+      "title": "retried",
+      "fullTitle": "Outer retried",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 1,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "slow",
+      "fullTitle": "Outer slow",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 51,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: Timeout of 50ms exceeded. For async tests and hooks, ensure \"done()\" is called; if returning a Promise, ensure it resolves. (/repo/js/mt/a.spec.js)\n    at listOnTimeout (node:internal/timers:581:17)\n    at process.processTimers (node:internal/timers:519:7)",
+        "message": "Timeout of 50ms exceeded. For async tests and hooks, ensure \"done()\" is called; if returning a Promise, ensure it resolves. (/repo/js/mt/a.spec.js)",
+        "code": "ERR_MOCHA_TIMEOUT",
+        "timeout": 50,
+        "file": "/repo/js/mt/a.spec.js"
+      }
+    },
+    {
+      "title": "same title",
+      "fullTitle": "Outer same title",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "passes",
+      "fullTitle": "Outer Inner passes",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "fails",
+      "fullTitle": "Outer Inner fails",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 1,
+      "currentRetry": 0,
+      "err": {
+        "stack": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   a: 1\n-   a: 2\n  }\n    at Context.<anonymous> (mt/a.spec.js:5:38)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   a: 1\n-   a: 2\n  }",
+        "generatedMessage": true,
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION",
+        "actual": "{\n  \"a\": 1\n}",
+        "expected": "{\n  \"a\": 2\n}",
+        "operator": "deepStrictEqual"
+      }
+    },
+    {
+      "title": "x1",
+      "fullTitle": "Each x1",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "same title",
+      "fullTitle": "Other same title",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: other fails\n    at Context.<anonymous> (mt/a.spec.js:25:40)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "other fails"
+      }
+    },
+    {
+      "title": "same title",
+      "fullTitle": "Outer same title",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: dup describe fails\n    at Context.<anonymous> (mt/a.spec.js:28:40)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "dup describe fails"
+      }
+    }
+  ],
+  "pending": [
+    {
+      "title": "pending one",
+      "fullTitle": "Outer pending one",
+      "file": "/repo/js/mt/a.spec.js",
+      "currentRetry": 0,
+      "err": {}
+    },
+    {
+      "title": "skipped one",
+      "fullTitle": "Outer skipped one",
+      "file": "/repo/js/mt/a.spec.js",
+      "currentRetry": 0,
+      "err": {}
+    }
+  ],
+  "failures": [
+    {
+      "title": "slow",
+      "fullTitle": "Outer slow",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 51,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: Timeout of 50ms exceeded. For async tests and hooks, ensure \"done()\" is called; if returning a Promise, ensure it resolves. (/repo/js/mt/a.spec.js)\n    at listOnTimeout (node:internal/timers:581:17)\n    at process.processTimers (node:internal/timers:519:7)",
+        "message": "Timeout of 50ms exceeded. For async tests and hooks, ensure \"done()\" is called; if returning a Promise, ensure it resolves. (/repo/js/mt/a.spec.js)",
+        "code": "ERR_MOCHA_TIMEOUT",
+        "timeout": 50,
+        "file": "/repo/js/mt/a.spec.js"
+      }
+    },
+    {
+      "title": "fails",
+      "fullTitle": "Outer Inner fails",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 1,
+      "currentRetry": 0,
+      "err": {
+        "stack": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   a: 1\n-   a: 2\n  }\n    at Context.<anonymous> (mt/a.spec.js:5:38)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   a: 1\n-   a: 2\n  }",
+        "generatedMessage": true,
+        "name": "AssertionError",
+        "code": "ERR_ASSERTION",
+        "actual": "{\n  \"a\": 1\n}",
+        "expected": "{\n  \"a\": 2\n}",
+        "operator": "deepStrictEqual"
+      }
+    },
+    {
+      "title": "\"before all\" hook for \"never runs\"",
+      "fullTitle": "Hooky \"before all\" hook for \"never runs\"",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: before boom\n    at Context.<anonymous> (mt/a.spec.js:15:30)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "before boom"
+      }
+    },
+    {
+      "title": "\"after each\" hook for \"x1\"",
+      "fullTitle": "Each \"after each\" hook for \"x1\"",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: afterEach boom\n    at Context.<anonymous> (mt/a.spec.js:20:70)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "afterEach boom"
+      }
+    },
+    {
+      "title": "same title",
+      "fullTitle": "Other same title",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: other fails\n    at Context.<anonymous> (mt/a.spec.js:25:40)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "other fails"
+      }
+    },
+    {
+      "title": "same title",
+      "fullTitle": "Outer same title",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "err": {
+        "stack": "Error: dup describe fails\n    at Context.<anonymous> (mt/a.spec.js:28:40)\n    at process.processImmediate (node:internal/timers:483:21)",
+        "message": "dup describe fails"
+      }
+    }
+  ],
+  "passes": [
+    {
+      "title": "root level",
+      "fullTitle": "root level",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "retried",
+      "fullTitle": "Outer retried",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 1,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "same title",
+      "fullTitle": "Outer same title",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "passes",
+      "fullTitle": "Outer Inner passes",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    },
+    {
+      "title": "x1",
+      "fullTitle": "Each x1",
+      "file": "/repo/js/mt/a.spec.js",
+      "duration": 0,
+      "currentRetry": 0,
+      "speed": "fast",
+      "err": {}
+    }
+  ]
+}

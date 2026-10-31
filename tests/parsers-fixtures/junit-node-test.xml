@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="utf-8"?>
+<testsuites>
+	<testsuite name="Outer" time="0.057444" disabled="0" errors="0" tests="7" failures="3" skipped="3" hostname="box-node-2cb57c48bf75eafe">
+		<testsuite name="Inner # hash" time="0.004721" disabled="0" errors="0" tests="2" failures="1" skipped="0" hostname="box-node-2cb57c48bf75eafe">
+			<testcase name="passes" time="0.000742" classname="test"/>
+			<testcase name="fails" time="0.002053" classname="test" failure="Expected values to be strictly deep-equal:+ actual - expected  {+   a: 1-   a: 2  }">
+				<failure type="testCodeFailure" message="Expected values to be strictly deep-equal:+ actual - expected  {+   a: 1-   a: 2  }">
+Error [ERR_TEST_FAILURE]: Expected values to be strictly deep-equal:
++ actual - expected
+
+  {
++   a: 1
+-   a: 2
+  }
+    at async Promise.all (index 0)
+    at async Promise.all (index 0) {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    {
+  +   a: 1
+  -   a: 2
+    }
+      at TestContext.&lt;anonymous> (file:///repo/nt/a.test.mjs:6:32)
+      at Test.runInAsyncScope (node:async_hooks:206:9)
+      at Test.run (node:internal/test_runner/test:796:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:526:18)
+      at Test.postRun (node:internal/test_runner/test:889:19)
+      at Test.run (node:internal/test_runner/test:835:12)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1135:7)
+      at async Promise.all (index 0)
+      at async Suite.run (node:internal/test_runner/test:1135:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { a: 1 },
+    expected: { a: 2 },
+    operator: 'deepStrictEqual'
+  }
+}
+				</failure>
+			</testcase>
+		</testsuite>
+		<testcase name="skipped" time="0.000079" classname="test">
+			<skipped type="skipped" message="reason here"/>
+		</testcase>
+		<testcase name="todo" time="0.000132" classname="test">
+			<skipped type="todo" message="true"/>
+		</testcase>
+		<testcase name="todo failing" time="0.000113" classname="test" failure="x">
+			<skipped type="todo" message="later"/>
+			<failure type="testCodeFailure" message="x">
+[Error [ERR_TEST_FAILURE]: x] {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: Error: x
+      at TestContext.&lt;anonymous> (file:///repo/nt/a.test.mjs:10:55)
+      at Test.runInAsyncScope (node:async_hooks:206:9)
+      at Test.run (node:internal/test_runner/test:796:25)
+      at Suite.processPendingSubtests (node:internal/test_runner/test:526:18)
+      at Test.postRun (node:internal/test_runner/test:889:19)
+      at Test.run (node:internal/test_runner/test:835:12)
+      at async Suite.processPendingSubtests (node:internal/test_runner/test:526:7)
+}
+			</failure>
+		</testcase>
+		<testcase name="slow" time="0.051117" classname="test" failure="test timed out after 50ms">
+			<failure type="testTimeoutFailure" message="test timed out after 50ms">
+[Error [ERR_TEST_FAILURE]: test timed out after 50ms] { code: 'ERR_TEST_FAILURE', failureType: 'testTimeoutFailure', cause: 'test timed out after 50ms' }
+			</failure>
+		</testcase>
+		<testcase name="multiline name" time="0.000282" classname="test"/>
+		<testcase name="ünïcode &amp; &lt;xml>" time="0.000145" classname="test"/>
+	</testsuite>
+	<testsuite name="Hooky" time="0.000303" disabled="0" errors="0" tests="1" failures="1" skipped="0" hostname="box-node-2cb57c48bf75eafe">
+		<testcase name="never" time="0.000000" classname="test" failure="test did not finish before its parent and was cancelled">
+			<failure type="cancelledByParent" message="test did not finish before its parent and was cancelled">
+[Error [ERR_TEST_FAILURE]: test did not finish before its parent and was cancelled] { code: 'ERR_TEST_FAILURE', failureType: 'cancelledByParent', cause: 'test did not finish before its parent and was cancelled' }
+			</failure>
+		</testcase>
+	</testsuite>
+	<testsuite name="top" time="0.000451" disabled="0" errors="0" tests="2" failures="1" skipped="0" hostname="box-node-2cb57c48bf75eafe">
+		<testcase name="sub1" time="0.000132" classname="test"/>
+		<testcase name="sub2" time="0.000086" classname="test" failure="sub fail">
+			<failure type="testCodeFailure" message="sub fail">
+Error [ERR_TEST_FAILURE]: sub fail
+    at TestContext.&lt;anonymous> (file:///repo/nt/a.test.mjs:21:11) {
+  code: 'ERR_TEST_FAILURE',
+  failureType: 'testCodeFailure',
+  cause: Error: sub fail
+      at TestContext.&lt;anonymous> (file:///repo/nt/a.test.mjs:21:38)
+      at Test.runInAsyncScope (node:async_hooks:206:9)
+      at Test.run (node:internal/test_runner/test:796:25)
+      at Test.start (node:internal/test_runner/test:702:17)
+      at TestContext.test (node:internal/test_runner/test:292:20)
+      at TestContext.&lt;anonymous> (file:///repo/nt/a.test.mjs:21:11)
+      at async Test.run (node:internal/test_runner/test:797:9)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:526:7)
+}
+			</failure>
+		</testcase>
+	</testsuite>
+	<testcase name="plain top" time="0.000071" classname="test"/>
+	<testcase name="plain top" time="0.000570" classname="test"/>
+	<!-- tests 14 -->
+	<!-- suites 3 -->
+	<!-- pass 6 -->
+	<!-- fail 3 -->
+	<!-- cancelled 2 -->
+	<!-- skipped 1 -->
+	<!-- todo 2 -->
+	<!-- duration_ms 361.845045 -->
+</testsuites>

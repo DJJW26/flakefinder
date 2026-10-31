@@ -366,8 +366,130 @@ describe('renderDashboard', () => {
   });
 
   it('embeds dark theme tokens and a light theme override', () => {
-    expect(html).toContain(`data-theme="dark"`);
+    expect(html).toContain(`[data-theme='dark']`);
     expect(html).toContain(`[data-theme='light']`);
     expect(html).toContain(`#0d1117`);
+  });
+});
+
+describe('dashboard truncation keeps surrogate pairs whole (QA ACT-9)', () => {
+  it('midTrunc (the dashboard JS) cuts by code point', () => {
+    const html = renderDashboard(fixtureData());
+    const src = html.match(/function midTrunc\(s, max\) \{[\s\S]*?\n {2}\}/)?.[0];
+    expect(src).toBeDefined();
+    const midTrunc = new Function(`${src}; return midTrunc;`)() as (s: string, n: number) => string;
+    const out = midTrunc('😀'.repeat(100), 9);
+    expect(Array.from(out)).toHaveLength(9);
+    expect(out).not.toMatch(
+      /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/,
+    );
+    expect(midTrunc('short', 9)).toBe('short');
+  });
+});
+
+describe('dashboard follows prefers-color-scheme (QA ACT-16)', () => {
+  const html = renderDashboard(fixtureData());
+
+  it('CSS: light tokens apply under prefers-color-scheme: light unless dark was chosen', () => {
+    const media = html.match(
+      /@media \(prefers-color-scheme: light\) \{\s*:root:not\(\[data-theme='dark'\]\) \{([\s\S]*?)\}\s*\}/,
+    );
+    expect(media).not.toBeNull();
+    expect(media?.[1]).toContain('color-scheme: light');
+    expect(media?.[1]).toContain('--bg: #f6f8fa');
+    // no hard-coded theme on <html>: the media query decides before any JS runs
+    expect(html).toMatch(/<html lang="en">/);
+    expect(html).toContain('<meta name="color-scheme" content="dark light">');
+  });
+
+  /** Run the theme-selection snippet of the page JS against a fake DOM. */
+  function pickTheme(prefersLight: boolean | null, stored: string | null): string | null {
+    const src = html.match(
+      / {2}\/\/ ---------- theme toggle ----------[\s\S]*?\n {2}applyTheme\(\);/,
+    )?.[0];
+    expect(src).toBeDefined();
+    let attr: string | null = null;
+    const document = {
+      documentElement: {
+        setAttribute: (_k: string, v: string) => {
+          attr = v;
+        },
+      },
+    };
+    const window = {
+      matchMedia:
+        prefersLight === null
+          ? undefined
+          : () => ({ matches: prefersLight, addEventListener: () => {} }),
+      localStorage: { getItem: () => stored, setItem: () => {} },
+    };
+    const $ = () => null;
+    new Function('window', 'document', '$', src as string)(window, document, $);
+    return attr;
+  }
+
+  it('JS: OS preference picks the theme, a stored choice wins, dark is the fallback', () => {
+    expect(pickTheme(true, null)).toBe('light');
+    expect(pickTheme(false, null)).toBe('dark');
+    expect(pickTheme(null, null)).toBe('dark');
+    expect(pickTheme(true, 'dark')).toBe('dark');
+    expect(pickTheme(false, 'light')).toBe('light');
+  });
+
+  it('stays self-contained: no external resources or network calls', () => {
+    expect(html).not.toContain('http://');
+    expect(html).not.toContain('https://');
+    expect(html).not.toMatch(/\bfetch\(|XMLHttpRequest|@import/);
+  });
+});
+
+describe('dashboard neutralises bidi/control characters (QA ACT-17)', () => {
+  const RLO = '\u202e';
+  const data: DashboardData = {
+    generatedAt: '2026-10-24T10:00:00.000Z',
+    flakefinderVersion: '1.0.0',
+    verdicts: [
+      verdict({
+        testId: `jest:spoof.spec.ts::safe ${RLO}gnp.exe`,
+        suite: `spoof${RLO}.spec.ts`,
+        name: `safe ${RLO}gnp.exe\u2066x\u2069`,
+        lastMessage: `line one\r\nline ${RLO}two\n\tindented\x1b[2J`,
+        classification: 'flaky-confirmed',
+      }),
+    ],
+    runs: [
+      {
+        runId: 'r1',
+        timestamp: '2026-10-24T10:00:00.000Z',
+        commitSha: `abc${RLO}`,
+        passCount: 1,
+        failCount: 0,
+      },
+    ],
+  };
+  const html = renderDashboard(data);
+
+  it('the HTML file carries no raw bidi override/isolate characters', () => {
+    expect(html).not.toMatch(/[\u202a-\u202e\u2066-\u2069]/);
+  });
+
+  it('names/suites/shas show visible escapes; messages keep their line breaks', () => {
+    const parsed = extractData(html) as DashboardData;
+    const v = parsed.verdicts[0] as TestVerdict;
+    expect(v.name).toBe('safe \\u202egnp.exe\\u2066x\\u2069');
+    expect(v.suite).toBe('spoof\\u202e.spec.ts');
+    expect(v.lastMessage).toBe('line one\nline \\u202etwo\n\tindented\\x1b[2J');
+    expect(parsed.runs[0]?.commitSha).toBe('abc\\u202e');
+  });
+
+  it('the testId stays exact for copy, and is escaped for display', () => {
+    const parsed = extractData(html) as DashboardData;
+    expect(parsed.verdicts[0]?.testId).toBe(`jest:spoof.spec.ts::safe ${RLO}gnp.exe`);
+    const src = html.match(/function visible\(s\) \{[\s\S]*?\n {2}\}/)?.[0];
+    expect(src).toBeDefined();
+    const visible = new Function(`${src}; return visible;`)() as (s: string) => string;
+    expect(visible(`a${RLO}b\x1b`)).toBe('a\\u202eb\\x1b');
+    expect(html).toContain('idEl.textContent = visible(v.testId)');
+    expect(html).toContain("'flakefinder quarantine add ' + visible(v.testId)");
   });
 });

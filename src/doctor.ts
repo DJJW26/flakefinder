@@ -6,7 +6,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { detectRunner, loadConfig, resolveConfig } from './config.js';
+import { detectRunner, loadConfig, readConfigFile, resolveConfig } from './config.js';
 import { QuarantineManager } from './quarantine/manager.js';
 import { HistoryStore } from './store/history-store.js';
 import type { QuarantineEntry, ResolvedConfig } from './types.js';
@@ -25,19 +25,32 @@ export interface DoctorResult {
 
 const DAY_MS = 86_400_000;
 
-export function runDoctor(cwd: string): DoctorResult {
+export interface DoctorOptions {
+  /** Explicit config file (the global --config), relative to `cwd`; skips discovery. */
+  configPath?: string;
+}
+
+export function runDoctor(cwd: string, opts: DoctorOptions = {}): DoctorResult {
   const lines: DoctorLine[] = [];
   let ok = true;
 
-  // 1. config
+  // 1. config — the SAME file every other command would use (--config wins)
   let config: ResolvedConfig;
+  const explicit = opts.configPath ? path.resolve(cwd, opts.configPath) : null;
   try {
-    const { config: cfg, path: configPath } = loadConfig(cwd);
-    config = resolveConfig(cfg);
+    let configPath: string | null;
+    if (explicit) {
+      config = resolveConfig(readConfigFile(explicit));
+      configPath = explicit;
+    } else {
+      const found = loadConfig(cwd);
+      config = resolveConfig(found.config);
+      configPath = found.path;
+    }
     lines.push({
       status: configPath ? 'ok' : 'info',
       message: configPath
-        ? `config: ${configPath}`
+        ? `config: ${configPath}${explicit ? ' (--config)' : ''}`
         : `config: none found (defaults in effect) — create one with flakefinder init`,
     });
   } catch (err) {
@@ -45,16 +58,18 @@ export function runDoctor(cwd: string): DoctorResult {
     lines.push({
       status: 'fail',
       message: `config: invalid — ${(err as Error).message}`,
-      hint: 'fix flakefinder.config.json (doctor lists each problem above/below)',
+      hint: `fix ${explicit ?? 'flakefinder.config.json'} (every problem is listed above)`,
     });
     return { lines, ok };
   }
 
   // 2. runner
-  const runner = detectRunner(cwd);
+  const detected = detectRunner(cwd);
+  // the runner `run`/`quarantine list` will actually use
+  const runner = config.runner === 'auto' ? detected : config.runner;
   lines.push({
     status: 'info',
-    message: `runner: detected "${runner}"${config.runner !== 'auto' ? ` (config pins "${config.runner}")` : ''}`,
+    message: `runner: detected "${detected}"${config.runner !== 'auto' ? ` (config pins "${config.runner}")` : ''}`,
   });
 
   // 3. reports
@@ -76,32 +91,52 @@ export function runDoctor(cwd: string): DoctorResult {
   }
 
   // 4. history store
-  const storeDir = path.resolve(cwd, config.storeDir);
-  if (existsSync(new HistoryStore(storeDir).path)) {
-    const store = new HistoryStore(storeDir);
-    const runs = store.runs();
-    const sizeKb = Math.round(statSync(store.path).size / 1024);
-    lines.push({
-      status: 'ok',
-      message: `history: ${runs.length} run(s), ${sizeKb} KB${store.formatVersion ? `, format v${store.formatVersion}` : ' (legacy, no header)'}`,
-    });
-    if (store.warnings.length > 0) {
-      lines.push({
-        status: 'warn',
-        message: `history: ${store.warnings.length}+ skipped/corrupt line(s)`,
-        hint: 'history is tolerant, but repeated corruption suggests parallel writers — give each CI shard its own storeDir',
-      });
-    }
-    if (runs.length > 0) {
-      const last = runs[runs.length - 1]!.timestamp;
-      const ageDays = (Date.now() - Date.parse(last)) / DAY_MS;
-      if (Number.isFinite(ageDays) && ageDays > 7) {
+  const store = new HistoryStore(path.resolve(cwd, config.storeDir));
+  if (existsSync(store.path)) {
+    try {
+      const runs = store.runs(); // never throws on read: unreadable → store.unreadable
+      if (store.unreadable !== null) {
+        // EISDIR / EACCES: every command would see an empty history (and
+        // writes would fail) — that is a broken setup, not "0 runs".
+        ok = false;
         lines.push({
-          status: 'warn',
-          message: `history: last run ${Math.round(ageDays)} days ago`,
-          hint: 'flakefinder only knows what it ingests — is CI actually calling it?',
+          status: 'fail',
+          message: `history: unreadable — ${store.unreadable}`,
+          hint: `check that ${store.path} is a readable regular file (delete or rename it if it is a directory)`,
         });
+      } else {
+        const sizeKb = Math.round(statSync(store.path).size / 1024);
+        lines.push({
+          status: 'ok',
+          message: `history: ${runs.length} run(s), ${sizeKb} KB${store.formatVersion ? `, format v${store.formatVersion}` : ' (legacy, no header)'}`,
+        });
+        if (store.warnings.length > 0) {
+          lines.push({
+            status: 'warn',
+            message: `history: ${store.warnings.length}+ skipped/corrupt line(s)`,
+            hint: 'history is tolerant, but repeated corruption suggests parallel writers — give each CI shard its own storeDir',
+          });
+        }
+        if (runs.length > 0) {
+          const last = runs[runs.length - 1]!.timestamp;
+          const ageDays = (Date.now() - Date.parse(last)) / DAY_MS;
+          if (Number.isFinite(ageDays) && ageDays > 7) {
+            lines.push({
+              status: 'warn',
+              message: `history: last run ${Math.round(ageDays)} days ago`,
+              hint: 'flakefinder only knows what it ingests — is CI actually calling it?',
+            });
+          }
+        }
       }
+    } catch (err) {
+      // defensive: e.g. the file vanished between read and stat
+      ok = false;
+      lines.push({
+        status: 'fail',
+        message: `history: unreadable — ${(err as Error).message}`,
+        hint: `check that ${store.path} is a readable regular file`,
+      });
     }
   } else {
     lines.push({
@@ -130,7 +165,7 @@ export function runDoctor(cwd: string): DoctorResult {
     lines.push({ status: 'warn', message: 'git: could not check' });
   }
 
-  // 6. quarantine
+  // 6. quarantine — the configured file, not a hard-coded name
   const qPath = path.resolve(cwd, config.quarantineFile);
   if (existsSync(qPath)) {
     let entries: QuarantineEntry[];
@@ -142,7 +177,7 @@ export function runDoctor(cwd: string): DoctorResult {
       lines.push({
         status: 'fail',
         message: `quarantine: unreadable — ${(err as Error).message}`,
-        hint: 'fix or delete flakefinder.quarantine.json (a `run` would also fail on it)',
+        hint: `fix or delete ${qPath} — until then \`run\` only warns and excludes nothing, and \`quarantine add/remove\` refuse to touch it`,
       });
       return { lines, ok };
     }
@@ -154,7 +189,7 @@ export function runDoctor(cwd: string): DoctorResult {
   } else {
     lines.push({
       status: 'info',
-      message: 'quarantine: none (flakefinder.quarantine.json absent)',
+      message: `quarantine: none (${qPath} absent)`,
     });
   }
 

@@ -113,4 +113,77 @@ describe('QA probes: engine edge cases', () => {
     expect(mk(29).classification).not.toBe('gone'); // first run is the 30th-most-recent → inside window
     expect(mk(30).classification).toBe('gone'); // pushed out (absent from the last 30 runs)
   });
+
+  it('gone counts RUNS, not records: one run with many report files/attempts is one run (R5 bug 8)', () => {
+    const target = makeTestId('s.ts', 't');
+    const runs: RunRecord[] = [run('pass', { runId: 'first' })];
+    // a single later run that ingested 40 report files and retried twice
+    for (let i = 0; i < 40; i++) {
+      const rec = run('pass', { name: `filler${i}`, suite: 'f.ts', runId: 'big' });
+      runs.push(rec, { ...rec, attempt: 2 }, { ...rec, attempt: 3 });
+    }
+    const t = classifyAll(runs, cfg).find((x) => x.testId === target)!;
+    expect(t.classification).not.toBe('gone'); // only ONE run has happened since
+    expect(t.tags).not.toContain('long-unseen');
+  });
+});
+
+// Merged from the former scratch-repro.test.ts (QA round 4 regression probes).
+function attemptRecord(
+  runId: string,
+  attempt: number,
+  sha: string,
+  status: 'pass' | 'fail',
+  timestamp: string,
+  name: string,
+): RunRecord {
+  return {
+    runId,
+    timestamp,
+    source: 'report',
+    parsedFrom: 'jest',
+    attempt,
+    commitSha: sha,
+    results: [{ testId: makeTestId('s.js', name), suite: 's.js', name, status, durationMs: 10 }],
+  };
+}
+
+describe('retry rescue with identical timestamps', () => {
+  it('distinct timestamps → rescue detected (control)', () => {
+    const runs = [
+      attemptRecord('R', 1, 'shaA', 'fail', '2026-10-26T10:00:00.000Z', 't'),
+      attemptRecord('R', 2, 'shaA', 'pass', '2026-10-26T10:00:01.000Z', 't'),
+    ];
+    const v = classifyAll(runs, cfg).find((x) => x.name === 't')!;
+    expect(v.retryRescues).toBe(1);
+  });
+
+  it('IDENTICAL timestamps → rescue still detected', () => {
+    const runs = [
+      attemptRecord('R', 1, 'shaA', 'fail', '2026-10-26T10:00:00.000Z', 't'),
+      attemptRecord('R', 2, 'shaA', 'pass', '2026-10-26T10:00:00.000Z', 't'),
+    ];
+    const v = classifyAll(runs, cfg).find((x) => x.name === 't')!;
+    expect(v.retryRescues).toBe(1);
+  });
+});
+
+describe('runId-grouped ordering (QA round 4 regression)', () => {
+  it('retry pairs survive identical timestamps interleaved with other runIds', () => {
+    const T = '2026-10-26T10:00:00.000Z';
+    const runs = [
+      attemptRecord('R', 1, 'shaA', 'fail', T, 't'),
+      attemptRecord('R2', 1, 'shaB', 'fail', T, 't'),
+      attemptRecord('R3', 1, 'shaC', 'pass', T, 't'),
+      attemptRecord('R4', 1, 'shaD', 'pass', T, 't'),
+      attemptRecord('R', 2, 'shaA', 'pass', T, 't'),
+    ];
+    const v = classifyAll(runs, cfg).find((x) => x.name === 't')!;
+    expect(v.retryRescues).toBe(1);
+    expect(v.sameShaFlips).toBe(1);
+    expect(v.classification).toBe('flaky-confirmed');
+    // 50 (flip) + 40 (rescue) + 16 (2 direction changes × 8, fresh) → capped 100
+    expect(v.directionChanges).toBe(2);
+    expect(v.flakeScore).toBe(100);
+  });
 });

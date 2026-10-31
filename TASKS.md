@@ -143,3 +143,27 @@ file.** Agents report completion in their final message; the integrator ticks bo
 - ✅ P11.3 D4: GitLab MR notes — env-driven (src/report/gitlab.ts), marker-scoped upsert, fetch-injected tests, failures never fail the job
 - ✅ P11.4 Docs: README formats table (+TAP/TRX rows), USAGE report-formats + GitLab section, CHANGELOG 1.1.0
 - ✅ P11.5 v1.1.0 released via automation — CI + release workflow green on first poll (f1f9f8a)
+
+## Phase 12 — QA round 4 fix backlog → v1.1.1
+
+CLI QA agent findings A1–A14, parsers QA agent findings B-F1–B-F7.
+
+- ✅ P12.1 Doctor resilience: corrupt quarantine file → FAIL instead of crash; git probe bounded by a 5 s timeout (39fcc76)
+- ✅ P12.2 Engine: runId-grouped chronological ordering — retry pairs no longer split by same-timestamp interleaving (e8db1b1)
+- ✅ P12.3 A1 retry attempts re-record all matched reports; USAGE re-record semantics (9857481, b8b0899)
+- ✅ P12.4 A2 prune re-reads fresh state under the lock; early return uses the fresh count (9d7e96a, 3c988f1, 4b345fd)
+- ✅ P12.5 A3 init --runner validated against the runner enum (21dd038)
+- ✅ P12.6 B-F7 TAP t.test() parents no longer double-emit (3fbe679)
+- ✅ P12.7 B-F1 mocha passes/failures-only shape (fa5e19b) · B-F2 TAP directives case-insensitive (89e32e5) · B-F6 duplicate XML roots warn + first root (e1c584e) · B-F5 TRX day-inclusive durations (67c9c3d) · B-F4 TAP backslash-# unescape (36a575a, 0203c15)
+- ✅ P12.8 A4 store read paths no longer create directories (baad00d)
+- ✅ P12.9 A5 history.jsonl as a directory / unreadable: HistoryStore.unreadable, actionable write error, doctor FAIL; fixes d50c991's broken test import (21f9f7f)
+- ✅ P12.10 A6 ingest dedupes explicitly-passed files; black-box CLI test harness src/cli/cli.test.ts (79f4adb)
+- ✅ P12.11 A7 strict integer parsing for -R/--timeout/--attempt/--threshold (parseStrictInt) (2e1738a)
+- ✅ P12.12 A8 -R out-of-range blames the flag, not the config; USAGE 0–10 range (7e8521c)
+- ✅ P12.13 A10 commander usage errors print once (10d5fc7)
+- ✅ P12.14 A11 unstartable test command exits 2, no retries, nothing recorded (8d1a9a5)
+- ✅ P12.15 A9 symlink/junction limitation documented (deliberate) (46029a0)
+- ✅ P12.16 A14 ingest --run-id documented in USAGE (25f5f0b)
+- ✅ P12.17 Biome clean (unused TAP binding) (77326e7)
+- ✅ P12.18 Pipeline: 316 tests / 29 files, tsc clean, biome clean, e2e 10/10, perf 51/55 ms; concurrency re-check 5/5 (two simultaneous ingests, all records survive)
+- ✅ P12.19 CHANGELOG 1.1.1 (646923d); version 1.1.1 + rebuilt dist (627ead7) — not tagged, not pushed

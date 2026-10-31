@@ -25,6 +25,13 @@ export interface TestCaseResult {
   message?: string;
   /** Stack trace excerpt, if the report carries one. */
   stack?: string;
+  /**
+   * In-report retry attempts, oldest first, when the reporter itself retried
+   * the test (jest/vitest/mocha retries, Surefire reruns, go -count,
+   * Playwright retries). The last entry equals `status`. Absent when the test
+   * ran once. Scored by the engine as same-code-state retry evidence.
+   */
+  attempts?: TestStatus[];
 }
 
 /** One full test-run record persisted in the history store. */
@@ -34,7 +41,7 @@ export interface RunRecord {
   /** ISO 8601. */
   timestamp: string;
   source: RunSource;
-  /** Parser name: 'junit' | 'jest' | 'mocha' | 'go' | 'suite' | 'unknown'. */
+  /** Parser name: 'junit' | 'jest' | 'mocha' | 'go' | 'tap' | 'trx' | 'playwright' | 'pytest-json' | 'suite' | 'unknown'. */
   parsedFrom: string;
   /** 1-based retry attempt; >1 means a retry of the same code state. */
   attempt: number;
@@ -169,4 +176,4 @@ export interface DashboardData {
   runs: DashboardRun[];
 }
 
-export const FLAKEFINDER_VERSION = '1.1.0';
+export const FLAKEFINDER_VERSION = '1.2.0';

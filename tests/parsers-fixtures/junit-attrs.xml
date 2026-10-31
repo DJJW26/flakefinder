@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<testsuites><testsuite name="s">
+<testcase classname="c" name="__proto__"/>
+<testcase classname="c" name="constructor"><failure>x</failure></testcase>
+<testcase classname="c" name="cdata"><failure><![CDATA[cdata <msg> & stuff]]></failure></testcase>
+<testcase classname="c" name="both"><failure message="m1">t1</failure><failure message="m2">t2</failure></testcase>
+<testcase classname="c" name="emptyfail"><failure/></testcase>
+<testcase classname="c" name="skipped-and-failure"><skipped/><failure message="f"/></testcase>
+<testcase classname="c" name="err-attr-only"><error type="java.lang.NPE"/></testcase>
+<testcase classname="" name="noclass"/>
+<testcase classname="c" name="neg" time="-1"/>
+<testcase classname="c" name="sci" time="1e-3"/>
+<testcase classname="c" name="sysout"><system-out>out</system-out><system-err>err</system-err></testcase>
+</testsuite></testsuites>

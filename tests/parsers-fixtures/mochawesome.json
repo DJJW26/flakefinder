@@ -1,0 +1,505 @@
+{
+  "stats": {
+    "suites": 6,
+    "tests": 11,
+    "passes": 5,
+    "pending": 2,
+    "failures": 4,
+    "start": "2026-10-28T10:43:10.668Z",
+    "end": "2026-10-28T10:43:10.725Z",
+    "duration": 57,
+    "testsRegistered": 14,
+    "passPercent": 41.66666666666667,
+    "pendingPercent": 14.285714285714285,
+    "other": 2,
+    "hasOther": true,
+    "skipped": 3,
+    "hasSkipped": true
+  },
+  "results": [
+    {
+      "uuid": "ac80555b-1f5b-4357-90cd-e7b7b8211db1",
+      "title": "",
+      "fullFile": "",
+      "file": "",
+      "beforeHooks": [],
+      "afterHooks": [],
+      "tests": [
+        {
+          "title": "root level",
+          "fullTitle": "root level",
+          "timedOut": false,
+          "duration": 0,
+          "state": "passed",
+          "speed": "fast",
+          "pass": true,
+          "fail": false,
+          "pending": false,
+          "context": null,
+          "code": "",
+          "err": {},
+          "uuid": "30002984-0c72-442f-a6fb-2aeb187f8150",
+          "parentUUID": "ac80555b-1f5b-4357-90cd-e7b7b8211db1",
+          "isHook": false,
+          "skipped": false
+        }
+      ],
+      "suites": [
+        {
+          "uuid": "984b048b-6e95-4601-bf28-eb59937a16e0",
+          "title": "Outer",
+          "fullFile": "/repo/js/mt/a.spec.js",
+          "file": "/mt/a.spec.js",
+          "beforeHooks": [],
+          "afterHooks": [],
+          "tests": [
+            {
+              "title": "pending one",
+              "fullTitle": "Outer pending one",
+              "timedOut": false,
+              "duration": 0,
+              "state": "pending",
+              "speed": null,
+              "pass": false,
+              "fail": false,
+              "pending": true,
+              "context": null,
+              "code": "",
+              "err": {},
+              "uuid": "5411f09a-4ac1-4653-bed8-4afd6bf08c99",
+              "parentUUID": "984b048b-6e95-4601-bf28-eb59937a16e0",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "skipped one",
+              "fullTitle": "Outer skipped one",
+              "timedOut": false,
+              "duration": 0,
+              "state": "pending",
+              "speed": null,
+              "pass": false,
+              "fail": false,
+              "pending": true,
+              "context": null,
+              "code": "",
+              "err": {},
+              "uuid": "e3b24fb5-cd9b-4e73-9d55-d679ab907755",
+              "parentUUID": "984b048b-6e95-4601-bf28-eb59937a16e0",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "retried",
+              "fullTitle": "Outer retried",
+              "timedOut": false,
+              "duration": 0,
+              "state": "passed",
+              "speed": "fast",
+              "pass": true,
+              "fail": false,
+              "pending": false,
+              "context": null,
+              "code": "this.retries(2); n++; assert.strictEqual(n, 2);",
+              "err": {},
+              "uuid": "11ce5b43-0271-40cd-9777-6208697708f5",
+              "parentUUID": "984b048b-6e95-4601-bf28-eb59937a16e0",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "slow",
+              "fullTitle": "Outer slow",
+              "timedOut": true,
+              "duration": 51,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "this.timeout(50); setTimeout(done, 300);",
+              "err": {
+                "message": "Error: Timeout of 50ms exceeded. For async tests and hooks, ensure \"done()\" is called; if returning a Promise, ensure it resolves. (/repo/js/mt/a.spec.js)",
+                "estack": "Error: Timeout of 50ms exceeded. For async tests and hooks, ensure \"done()\" is called; if returning a Promise, ensure it resolves. (/repo/js/mt/a.spec.js)\n    at listOnTimeout (node:internal/timers:581:17)\n    at process.processTimers (node:internal/timers:519:7)",
+                "diff": null
+              },
+              "uuid": "ff84b01f-934b-4165-a858-fd4e90a65ced",
+              "parentUUID": "984b048b-6e95-4601-bf28-eb59937a16e0",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "same title",
+              "fullTitle": "Outer same title",
+              "timedOut": false,
+              "duration": 0,
+              "state": "passed",
+              "speed": "fast",
+              "pass": true,
+              "fail": false,
+              "pending": false,
+              "context": null,
+              "code": "",
+              "err": {},
+              "uuid": "97decfd4-4eb5-4e8c-be0e-0dd814da60bd",
+              "parentUUID": "984b048b-6e95-4601-bf28-eb59937a16e0",
+              "isHook": false,
+              "skipped": false
+            }
+          ],
+          "suites": [
+            {
+              "uuid": "16a410b1-49a4-4fd3-8e05-5741bd62e749",
+              "title": "Inner",
+              "fullFile": "/repo/js/mt/a.spec.js",
+              "file": "/mt/a.spec.js",
+              "beforeHooks": [],
+              "afterHooks": [],
+              "tests": [
+                {
+                  "title": "passes",
+                  "fullTitle": "Outer Inner passes",
+                  "timedOut": false,
+                  "duration": 0,
+                  "state": "passed",
+                  "speed": "fast",
+                  "pass": true,
+                  "fail": false,
+                  "pending": false,
+                  "context": null,
+                  "code": "",
+                  "err": {},
+                  "uuid": "6a81c274-46fe-4ee7-8b19-72c2c918dda3",
+                  "parentUUID": "16a410b1-49a4-4fd3-8e05-5741bd62e749",
+                  "isHook": false,
+                  "skipped": false
+                },
+                {
+                  "title": "fails",
+                  "fullTitle": "Outer Inner fails",
+                  "timedOut": false,
+                  "duration": 1,
+                  "state": "failed",
+                  "speed": null,
+                  "pass": false,
+                  "fail": true,
+                  "pending": false,
+                  "context": null,
+                  "code": "assert.deepStrictEqual({a:1},{a:2});",
+                  "err": {
+                    "message": "AssertionError: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   a: 1\n-   a: 2\n  }",
+                    "estack": "AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:\n+ actual - expected\n\n  {\n+   a: 1\n-   a: 2\n  }\n    at Context.<anonymous> (mt/a.spec.js:5:38)\n    at process.processImmediate (node:internal/timers:483:21)",
+                    "diff": " {\n-   \"a\": 1\n+   \"a\": 2\n }\n"
+                  },
+                  "uuid": "6f5ae8f0-9291-4e38-a0a0-e0dcb2df46e1",
+                  "parentUUID": "16a410b1-49a4-4fd3-8e05-5741bd62e749",
+                  "isHook": false,
+                  "skipped": false
+                }
+              ],
+              "suites": [],
+              "passes": ["6a81c274-46fe-4ee7-8b19-72c2c918dda3"],
+              "failures": ["6f5ae8f0-9291-4e38-a0a0-e0dcb2df46e1"],
+              "pending": [],
+              "skipped": [],
+              "duration": 1,
+              "root": false,
+              "rootEmpty": false,
+              "_timeout": 2000
+            }
+          ],
+          "passes": [
+            "11ce5b43-0271-40cd-9777-6208697708f5",
+            "97decfd4-4eb5-4e8c-be0e-0dd814da60bd"
+          ],
+          "failures": ["ff84b01f-934b-4165-a858-fd4e90a65ced"],
+          "pending": [
+            "5411f09a-4ac1-4653-bed8-4afd6bf08c99",
+            "e3b24fb5-cd9b-4e73-9d55-d679ab907755"
+          ],
+          "skipped": [],
+          "duration": 51,
+          "root": false,
+          "rootEmpty": false,
+          "_timeout": 2000
+        },
+        {
+          "uuid": "d07ca18c-dc43-431e-81ee-6c068ce4e1f7",
+          "title": "Hooky",
+          "fullFile": "/repo/js/mt/a.spec.js",
+          "file": "/mt/a.spec.js",
+          "beforeHooks": [
+            {
+              "title": "\"before all\" hook for \"never runs\"",
+              "fullTitle": "Hooky \"before all\" hook for \"never runs\"",
+              "timedOut": false,
+              "duration": 0,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "throw new Error('before boom');",
+              "err": {
+                "message": "Error: before boom",
+                "estack": "Error: before boom\n    at Context.<anonymous> (mt/a.spec.js:15:30)\n    at process.processImmediate (node:internal/timers:483:21)",
+                "diff": null
+              },
+              "uuid": "cd0ef30a-67d6-4591-8893-1440178e2827",
+              "parentUUID": "d07ca18c-dc43-431e-81ee-6c068ce4e1f7",
+              "isHook": true,
+              "skipped": false
+            }
+          ],
+          "afterHooks": [],
+          "tests": [
+            {
+              "title": "never runs",
+              "fullTitle": "Hooky never runs",
+              "timedOut": false,
+              "duration": 0,
+              "state": null,
+              "speed": null,
+              "pass": false,
+              "fail": false,
+              "pending": false,
+              "context": null,
+              "code": "",
+              "err": {},
+              "uuid": "1e15082e-69de-4cb6-8e0b-4c9802583c5c",
+              "parentUUID": "d07ca18c-dc43-431e-81ee-6c068ce4e1f7",
+              "isHook": false,
+              "skipped": true
+            },
+            {
+              "title": "never runs 2",
+              "fullTitle": "Hooky never runs 2",
+              "timedOut": false,
+              "duration": 0,
+              "state": null,
+              "speed": null,
+              "pass": false,
+              "fail": false,
+              "pending": false,
+              "context": null,
+              "code": "",
+              "err": {},
+              "uuid": "ae5b1e36-ae22-4969-88ef-801319b0f046",
+              "parentUUID": "d07ca18c-dc43-431e-81ee-6c068ce4e1f7",
+              "isHook": false,
+              "skipped": true
+            }
+          ],
+          "suites": [],
+          "passes": [],
+          "failures": [],
+          "pending": [],
+          "skipped": [
+            "1e15082e-69de-4cb6-8e0b-4c9802583c5c",
+            "ae5b1e36-ae22-4969-88ef-801319b0f046"
+          ],
+          "duration": 0,
+          "root": false,
+          "rootEmpty": false,
+          "_timeout": 2000
+        },
+        {
+          "uuid": "fd32bb24-f993-4eed-b6c2-395970df8fed",
+          "title": "Each",
+          "fullFile": "/repo/js/mt/a.spec.js",
+          "file": "/mt/a.spec.js",
+          "beforeHooks": [],
+          "afterHooks": [
+            {
+              "title": "\"after each\" hook for \"x1\"",
+              "fullTitle": "Each \"after each\" hook for \"x1\"",
+              "timedOut": false,
+              "duration": 0,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "if (this.currentTest.title === 'x1') throw new Error('afterEach boom');",
+              "err": {
+                "message": "Error: afterEach boom",
+                "estack": "Error: afterEach boom\n    at Context.<anonymous> (mt/a.spec.js:20:70)\n    at process.processImmediate (node:internal/timers:483:21)",
+                "diff": null
+              },
+              "uuid": "80ef0f39-6c87-4646-8226-824ffdc6dd0a",
+              "parentUUID": "fd32bb24-f993-4eed-b6c2-395970df8fed",
+              "isHook": true,
+              "skipped": false
+            }
+          ],
+          "tests": [
+            {
+              "title": "x1",
+              "fullTitle": "Each x1",
+              "timedOut": false,
+              "duration": 0,
+              "state": "passed",
+              "speed": "fast",
+              "pass": true,
+              "fail": false,
+              "pending": false,
+              "context": null,
+              "code": "",
+              "err": {},
+              "uuid": "993519d3-f7ec-4226-ad6f-46447a1ba512",
+              "parentUUID": "fd32bb24-f993-4eed-b6c2-395970df8fed",
+              "isHook": false,
+              "skipped": false
+            },
+            {
+              "title": "x2",
+              "fullTitle": "Each x2",
+              "timedOut": false,
+              "duration": 0,
+              "state": null,
+              "speed": null,
+              "pass": false,
+              "fail": false,
+              "pending": false,
+              "context": null,
+              "code": "",
+              "err": {},
+              "uuid": "6f759ea2-95bf-47b3-b144-648702bfbbc9",
+              "parentUUID": "fd32bb24-f993-4eed-b6c2-395970df8fed",
+              "isHook": false,
+              "skipped": true
+            }
+          ],
+          "suites": [],
+          "passes": ["993519d3-f7ec-4226-ad6f-46447a1ba512"],
+          "failures": [],
+          "pending": [],
+          "skipped": ["6f759ea2-95bf-47b3-b144-648702bfbbc9"],
+          "duration": 0,
+          "root": false,
+          "rootEmpty": false,
+          "_timeout": 2000
+        },
+        {
+          "uuid": "68ef8e3a-0b9a-4429-ba48-87a17128b237",
+          "title": "Other",
+          "fullFile": "/repo/js/mt/a.spec.js",
+          "file": "/mt/a.spec.js",
+          "beforeHooks": [],
+          "afterHooks": [],
+          "tests": [
+            {
+              "title": "same title",
+              "fullTitle": "Other same title",
+              "timedOut": false,
+              "duration": 0,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "throw new Error('other fails');",
+              "err": {
+                "message": "Error: other fails",
+                "estack": "Error: other fails\n    at Context.<anonymous> (mt/a.spec.js:25:40)\n    at process.processImmediate (node:internal/timers:483:21)",
+                "diff": null
+              },
+              "uuid": "d28a0dde-88b8-49d0-b0c3-70f68f7ff0f9",
+              "parentUUID": "68ef8e3a-0b9a-4429-ba48-87a17128b237",
+              "isHook": false,
+              "skipped": false
+            }
+          ],
+          "suites": [],
+          "passes": [],
+          "failures": ["d28a0dde-88b8-49d0-b0c3-70f68f7ff0f9"],
+          "pending": [],
+          "skipped": [],
+          "duration": 0,
+          "root": false,
+          "rootEmpty": false,
+          "_timeout": 2000
+        },
+        {
+          "uuid": "e88eb125-29ce-4f3c-bf11-2c9cfb0f54be",
+          "title": "Outer",
+          "fullFile": "/repo/js/mt/a.spec.js",
+          "file": "/mt/a.spec.js",
+          "beforeHooks": [],
+          "afterHooks": [],
+          "tests": [
+            {
+              "title": "same title",
+              "fullTitle": "Outer same title",
+              "timedOut": false,
+              "duration": 0,
+              "state": "failed",
+              "speed": null,
+              "pass": false,
+              "fail": true,
+              "pending": false,
+              "context": null,
+              "code": "throw new Error('dup describe fails');",
+              "err": {
+                "message": "Error: dup describe fails",
+                "estack": "Error: dup describe fails\n    at Context.<anonymous> (mt/a.spec.js:28:40)\n    at process.processImmediate (node:internal/timers:483:21)",
+                "diff": null
+              },
+              "uuid": "4458492d-8a7e-4310-9de9-d5ff0b6a80d3",
+              "parentUUID": "e88eb125-29ce-4f3c-bf11-2c9cfb0f54be",
+              "isHook": false,
+              "skipped": false
+            }
+          ],
+          "suites": [],
+          "passes": [],
+          "failures": ["4458492d-8a7e-4310-9de9-d5ff0b6a80d3"],
+          "pending": [],
+          "skipped": [],
+          "duration": 0,
+          "root": false,
+          "rootEmpty": false,
+          "_timeout": 2000
+        }
+      ],
+      "passes": ["30002984-0c72-442f-a6fb-2aeb187f8150"],
+      "failures": [],
+      "pending": [],
+      "skipped": [],
+      "duration": 0,
+      "root": true,
+      "rootEmpty": false,
+      "_timeout": 2000
+    }
+  ],
+  "meta": {
+    "mocha": {
+      "version": "10.8.2"
+    },
+    "mochawesome": {
+      "options": {
+        "quiet": false,
+        "reportFilename": "mochawesome",
+        "saveHtml": false,
+        "saveJson": true,
+        "consoleReporter": "spec",
+        "useInlineDiffs": false,
+        "code": true
+      },
+      "version": "8.1.1"
+    },
+    "marge": {
+      "options": {
+        "reportDir": "/repo/fx/mawe",
+        "reportFilename": "mochawesome",
+        "html": "false",
+        "json": "true"
+      },
+      "version": "6.3.2"
+    }
+  }
+}

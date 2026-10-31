@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="15" failures="7" errors="1" time="0.102756">
+	<testsuite tests="0" failures="0" time="0.000000" name="example.com/qa/buildfail" timestamp="2026-10-28T10:44:36Z">
+		<properties>
+			<property name="go.version" value="go1.23.4 linux/amd64"></property>
+		</properties>
+		<testcase classname="" name="TestMain" time="0.000000">
+			<failure message="Failed" type="">FAIL&#x9;example.com/qa/buildfail [build failed]&#xA;</failure>
+		</testcase>
+	</testsuite>
+	<testsuite tests="12" failures="4" time="0.011000" name="example.com/qa/ok" timestamp="2026-10-28T10:44:36Z">
+		<properties>
+			<property name="go.version" value="go1.23.4 linux/amd64"></property>
+		</properties>
+		<testcase classname="example.com/qa/ok" name="TestSub/ü" time="0.010000">
+			<failure message="Failed" type="">=== RUN   TestSub/ü&#xA;=== PAUSE TestSub/ü&#xA;=== CONT  TestSub/ü&#xA;    ok_test.go:6: unicode fail&#xA;--- FAIL: TestSub/ü (0.01s)&#xA;</failure>
+		</testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestSub&#xA;--- FAIL: TestSub (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="example.com/qa/ok" name="TestLogThenFail" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestLogThenFail&#xA;    ok_test.go:10: noise&#xA;    ok_test.go:10: bad 1&#xA;--- FAIL: TestLogThenFail (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="example.com/qa/ok" name="ExampleBad" time="0.000000">
+			<failure message="Failed" type="">=== RUN   ExampleBad&#xA;--- FAIL: ExampleBad (0.00s)&#xA;got:&#xA;x&#xA;want:&#xA;y&#xA;</failure>
+		</testcase>
+		<testcase classname="example.com/qa/ok" name="TestSkip" time="0.000000">
+			<skipped message="=== RUN   TestSkip&#xA;    ok_test.go:9: not today&#xA;--- SKIP: TestSkip (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub/dup#01" time="0.010000"></testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub/a=b,c" time="0.010000"></testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub/(parens)" time="0.010000"></testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub/a/b" time="0.010000"></testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub/dup" time="0.010000"></testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub/with_space" time="0.010000"></testcase>
+		<testcase classname="example.com/qa/ok" name="TestSub/x#y" time="0.010000"></testcase>
+	</testsuite>
+	<testsuite tests="3" failures="2" time="0.003000" name="example.com/qa/panicpkg" timestamp="2026-10-28T10:44:36Z">
+		<properties>
+			<property name="go.version" value="go1.23.4 linux/amd64"></property>
+		</properties>
+		<testcase classname="example.com/qa/panicpkg" name="TestPanics/inner" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestPanics/inner&#xA;--- FAIL: TestPanics/inner (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="example.com/qa/panicpkg" name="TestPanics" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestPanics&#xA;--- FAIL: TestPanics (0.00s)&#xA;panic: assignment to entry in nil map [recovered]&#xA;&#x9;panic: assignment to entry in nil map&#xA;&#xA;goroutine 20 [running]:&#xA;testing.tRunner.func1.2({0x535740, 0x58cd80})&#xA;&#x9;/usr/local/go/src/testing/testing.go:1632 +0x230&#xA;testing.tRunner.func1()&#xA;&#x9;/usr/local/go/src/testing/testing.go:1635 +0x35e&#xA;panic({0x535740?, 0x58cd80?})&#xA;&#x9;/usr/local/go/src/runtime/panic.go:785 +0x132&#xA;example.com/qa/panicpkg.TestPanics.func1(0xc0000b09c0?)&#xA;&#x9;/repo/go/panicpkg/p_test.go:4 +0x28&#xA;testing.tRunner(0xc0000b09c0, 0x564198)&#xA;&#x9;/usr/local/go/src/testing/testing.go:1690 +0xf4&#xA;created by testing.(*T).Run in goroutine 19&#xA;&#x9;/usr/local/go/src/testing/testing.go:1743 +0x390&#xA;</failure>
+		</testcase>
+		<testcase classname="example.com/qa/panicpkg" name="TestBefore" time="0.000000"></testcase>
+	</testsuite>
+</testsuites>

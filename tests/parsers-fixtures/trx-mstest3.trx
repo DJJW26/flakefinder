@@ -1,0 +1,109 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="5b4c313d-f6fb-4b1f-9d44-0b5ac09e060a" name="@box-node-2cb57c48bf75eafe 2026-10-28 10:51:02" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-28T10:51:02.4346395+00:00" queuing="2026-10-28T10:51:02.4346395+00:00" start="2026-10-28T10:51:01.8557365+00:00" finish="2026-10-28T10:51:02.4412745+00:00" />
+  <TestSettings name="default" id="6f692088-3657-4c18-8ac9-a8bf624e4ebd">
+    <Deployment runDeploymentRoot="_box-node-2cb57c48bf75eafe_2026-10-28_10_51_02" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="5c554525-b645-4a6c-afd4-dc034652e60d" testId="e26934d2-9512-1b65-abab-09e8991db2cb" testName="Checkout" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0013734" startTime="2026-10-28T10:51:02.2462220+00:00" endTime="2026-10-28T10:51:02.2551931+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="5c554525-b645-4a6c-afd4-dc034652e60d" />
+    <UnitTestResult executionId="9388658d-e4ca-42ff-b9e0-f588fede5878" testId="e153a7c8-082c-1c42-de14-f417c0c90765" testName="Checkout" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0002111" startTime="2026-10-28T10:51:02.3228043+00:00" endTime="2026-10-28T10:51:02.3239734+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9388658d-e4ca-42ff-b9e0-f588fede5878">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.AreEqual failed. Expected:&lt;4&gt;. Actual:&lt;3&gt;. invoice total wrong</Message>
+          <StackTrace>   at FlakeDemo.InvoiceTests.Checkout() in /src/FlakeDemo/Tests.cs:line 31
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="9b294cd4-5ae0-45f4-8a4a-b74a6588ca75" testId="4b1e8699-b2e1-0341-d6fa-632050fe22d0" testName="SlowLookup" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0505115" startTime="2026-10-28T10:51:02.2575607+00:00" endTime="2026-10-28T10:51:02.3084320+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="9b294cd4-5ae0-45f4-8a4a-b74a6588ca75">
+      <Output>
+        <ErrorInfo>
+          <Message>Test 'SlowLookup' exceeded execution timeout period.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="15305a05-b765-4507-a545-6336e4ca2efd" testId="dee5e4ef-b13a-d6c2-5b71-ae02e9b15400" testName="Ignored" computerName="box-node-2cb57c48bf75eafe" startTime="2026-10-28T10:51:02.3085611+00:00" endTime="2026-10-28T10:51:02.3088629+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="15305a05-b765-4507-a545-6336e4ca2efd">
+      <Output>
+        <ErrorInfo>
+          <Message>not ready</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="7fbeebfc-56c1-4ac0-8d3e-838fcaa182f9" testId="74e66c03-8e97-7122-d6d3-709bac2765b2" testName="MaybeLater" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0085914" startTime="2026-10-28T10:51:02.3088845+00:00" endTime="2026-10-28T10:51:02.3176089+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="7fbeebfc-56c1-4ac0-8d3e-838fcaa182f9">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Inconclusive failed. needs a db</Message>
+          <StackTrace>   at FlakeDemo.CartTests.MaybeLater() in /src/FlakeDemo/Tests.cs:line 19
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="d22e8b44-b088-4d94-803c-47d023d414b2" testId="1dcc3d71-baa4-6915-8171-63cd39c170ec" testName="Adds (2,3)" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0007018" startTime="2026-10-28T10:51:02.3218251+00:00" endTime="2026-10-28T10:51:02.3227780+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="d22e8b44-b088-4d94-803c-47d023d414b2">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.AreEqual failed. Expected:&lt;2&gt;. Actual:&lt;3&gt;. row mismatch</Message>
+          <StackTrace>   at FlakeDemo.CartTests.Adds(Int32 a, Int32 b) in /src/FlakeDemo/Tests.cs:line 24
+   at InvokeStub_CartTests.Adds(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithFewArgs(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="c8a89f9c-7bab-4703-864e-c1188a7c8edc" testId="7da78d52-56e5-1a5c-2e10-1782d5c18ed0" testName="Adds (1,1)" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0001171" startTime="2026-10-28T10:51:02.3177828+00:00" endTime="2026-10-28T10:51:02.3217915+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c8a89f9c-7bab-4703-864e-c1188a7c8edc" />
+  </Results>
+  <TestDefinitions>
+    <UnitTest name="SlowLookup" storage="/src/FlakeDemo/bin/debug/net8.0/flakedemo.dll" id="4b1e8699-b2e1-0341-d6fa-632050fe22d0">
+      <Execution id="9b294cd4-5ae0-45f4-8a4a-b74a6588ca75" />
+      <TestMethod codeBase="/src/FlakeDemo/bin/Debug/net8.0/FlakeDemo.dll" adapterTypeName="executor://mstestadapter/v2" className="FlakeDemo.CartTests" name="SlowLookup" />
+    </UnitTest>
+    <UnitTest name="Checkout" storage="/src/FlakeDemo/bin/debug/net8.0/flakedemo.dll" id="e26934d2-9512-1b65-abab-09e8991db2cb">
+      <Execution id="5c554525-b645-4a6c-afd4-dc034652e60d" />
+      <TestMethod codeBase="/src/FlakeDemo/bin/Debug/net8.0/FlakeDemo.dll" adapterTypeName="executor://mstestadapter/v2" className="FlakeDemo.CartTests" name="Checkout" />
+    </UnitTest>
+    <UnitTest name="Checkout" storage="/src/FlakeDemo/bin/debug/net8.0/flakedemo.dll" id="e153a7c8-082c-1c42-de14-f417c0c90765">
+      <Execution id="9388658d-e4ca-42ff-b9e0-f588fede5878" />
+      <TestMethod codeBase="/src/FlakeDemo/bin/Debug/net8.0/FlakeDemo.dll" adapterTypeName="executor://mstestadapter/v2" className="FlakeDemo.InvoiceTests" name="Checkout" />
+    </UnitTest>
+    <UnitTest name="Ignored" storage="/src/FlakeDemo/bin/debug/net8.0/flakedemo.dll" id="dee5e4ef-b13a-d6c2-5b71-ae02e9b15400">
+      <Execution id="15305a05-b765-4507-a545-6336e4ca2efd" />
+      <TestMethod codeBase="/src/FlakeDemo/bin/Debug/net8.0/FlakeDemo.dll" adapterTypeName="executor://mstestadapter/v2" className="FlakeDemo.CartTests" name="Ignored" />
+    </UnitTest>
+    <UnitTest name="MaybeLater" storage="/src/FlakeDemo/bin/debug/net8.0/flakedemo.dll" id="74e66c03-8e97-7122-d6d3-709bac2765b2">
+      <Execution id="7fbeebfc-56c1-4ac0-8d3e-838fcaa182f9" />
+      <TestMethod codeBase="/src/FlakeDemo/bin/Debug/net8.0/FlakeDemo.dll" adapterTypeName="executor://mstestadapter/v2" className="FlakeDemo.CartTests" name="MaybeLater" />
+    </UnitTest>
+    <UnitTest name="Adds (1,1)" storage="/src/FlakeDemo/bin/debug/net8.0/flakedemo.dll" id="7da78d52-56e5-1a5c-2e10-1782d5c18ed0">
+      <Execution id="c8a89f9c-7bab-4703-864e-c1188a7c8edc" />
+      <TestMethod codeBase="/src/FlakeDemo/bin/Debug/net8.0/FlakeDemo.dll" adapterTypeName="executor://mstestadapter/v2" className="FlakeDemo.CartTests" name="Adds" />
+    </UnitTest>
+    <UnitTest name="Adds (2,3)" storage="/src/FlakeDemo/bin/debug/net8.0/flakedemo.dll" id="1dcc3d71-baa4-6915-8171-63cd39c170ec">
+      <Execution id="d22e8b44-b088-4d94-803c-47d023d414b2" />
+      <TestMethod codeBase="/src/FlakeDemo/bin/Debug/net8.0/FlakeDemo.dll" adapterTypeName="executor://mstestadapter/v2" className="FlakeDemo.CartTests" name="Adds" />
+    </UnitTest>
+  </TestDefinitions>
+  <TestEntries>
+    <TestEntry testId="e26934d2-9512-1b65-abab-09e8991db2cb" executionId="5c554525-b645-4a6c-afd4-dc034652e60d" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="e153a7c8-082c-1c42-de14-f417c0c90765" executionId="9388658d-e4ca-42ff-b9e0-f588fede5878" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="4b1e8699-b2e1-0341-d6fa-632050fe22d0" executionId="9b294cd4-5ae0-45f4-8a4a-b74a6588ca75" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="dee5e4ef-b13a-d6c2-5b71-ae02e9b15400" executionId="15305a05-b765-4507-a545-6336e4ca2efd" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="74e66c03-8e97-7122-d6d3-709bac2765b2" executionId="7fbeebfc-56c1-4ac0-8d3e-838fcaa182f9" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="1dcc3d71-baa4-6915-8171-63cd39c170ec" executionId="d22e8b44-b088-4d94-803c-47d023d414b2" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestEntry testId="7da78d52-56e5-1a5c-2e10-1782d5c18ed0" executionId="c8a89f9c-7bab-4703-864e-c1188a7c8edc" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+  </TestEntries>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="7" executed="5" passed="2" failed="3" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>Test 'Ignored' was skipped in the test run.
+Test 'MaybeLater' was skipped in the test run.
+</StdOut>
+    </Output>
+  </ResultSummary>
+</TestRun>

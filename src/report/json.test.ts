@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ResolvedConfig, TestVerdict } from '../types.js';
-import { renderJson } from './json.js';
+import { JSON_SCHEMA_VERSION, renderJson } from './json.js';
 
 const cfg = {
   reports: [],
@@ -56,5 +56,21 @@ describe('renderJson redaction (review round)', () => {
     expect(parsed.verdicts[0]!.lastMessage).toContain('AKIA[REDACTED]');
     expect(out).not.toContain('ghp_0123456789');
     expect(out).not.toContain('AKIAIOSFODNN7EXAMPLE');
+  });
+});
+
+describe('schemaVersion (QA ACT-18)', () => {
+  it('is the first key and leaves the existing fields untouched', () => {
+    const parsed = JSON.parse(renderJson([verdict()], cfg)) as Record<string, unknown>;
+    expect(JSON_SCHEMA_VERSION).toBe(1);
+    expect(Object.keys(parsed)).toEqual([
+      'schemaVersion',
+      'generatedAt',
+      'flakefinderVersion',
+      'config',
+      'verdicts',
+    ]);
+    expect(parsed.schemaVersion).toBe(1);
+    expect((parsed.verdicts as unknown[]).length).toBe(1);
   });
 });

@@ -16,6 +16,20 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/**
+ * Regex alternation matching test titles as the FINAL segment(s) of a full
+ * name as jest -t / vitest -t / mocha --grep see it: describe chain + title,
+ * SPACE-joined. Report names are normalized first:
+ * - vitest's JUnit names join the describe chain with " > " ("suite V >
+ *   broken") while -t sees "suite V broken": each " > " accepts either form;
+ * - parsers trim titles, but the runner matches the raw title — a title
+ *   ending in a space must still match, so callers append `\s*$`.
+ */
+export function titleAlternation(names: string[]): string {
+  const alts = names.map((n) => escapeRegExp(n.trim()).replace(/ > /g, '(?: > | )'));
+  return [...new Set(alts)].join('|');
+}
+
 /** Extract the failing tests from one attempt's records, deduped by name. */
 export function failedNamesOf(records: Array<{ results: TestCaseResult[] }>): string[] {
   const names = new Set<string>();
@@ -49,12 +63,12 @@ export function failedOnlyArgs(
       // suffix collision ("login ok" vs "ui renders login ok") cannot pull a
       // quarantined test back into the re-run (two -t flags would override
       // each other, so include+exclude share one pattern).
-      const include = failedNames.map(escapeRegExp).join('|');
-      const exclude = [...new Set(quarantinedNames.map(escapeRegExp))];
+      const include = titleAlternation(failedNames);
+      const exclude = titleAlternation(quarantinedNames);
       const pattern =
-        exclude.length > 0
-          ? `^(?=(?:.* )?(?:${include})$)(?!(?:.* )?(?:${exclude.join('|')})$)`
-          : `^(?:.* )?(?:${include})$`;
+        exclude !== ''
+          ? `^(?=(?:.* )?(?:${include})\\s*$)(?!(?:.* )?(?:${exclude})\\s*$)`
+          : `^(?:.* )?(?:${include})\\s*$`;
       return runner === 'jest' ? ['-t', pattern] : ['--grep', pattern];
     }
     case 'go': {

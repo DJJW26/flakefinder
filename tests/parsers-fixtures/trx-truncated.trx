@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="b39eab57-165e-437d-822f-af49d64717bc" name="@box-node-2cb57c48bf75eafe 2026-10-28 10:41:34" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2026-10-28T10:41:34.8782211+00:00" queuing="2026-10-28T10:41:34.8782212+00:00" start="2026-10-28T10:41:34.4575555+00:00" finish="2026-10-28T10:41:34.8827575+00:00" />
+  <TestSettings name="default" id="1221cab5-9a1e-479b-b240-9c6ef0c2a256">
+    <Deployment runDeploymentRoot="_box-node-2cb57c48bf75eafe_2026-10-28_10_41_34" />
+  </TestSettings>
+  <Results>
+    <UnitTestResult executionId="721aa13b-29fc-416a-ad75-0789c6fb4cea" testId="e2a1165d-acdb-4e3e-d695-f2a0bc870faf" testName="Throws" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0006013" startTime="2026-10-28T10:41:34.7281052+00:00" endTime="2026-10-28T10:41:34.7287623+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="721aa13b-29fc-416a-ad75-0789c6fb4cea">
+      <Output>
+        <ErrorInfo>
+          <Message>Test method Qa.MS.Calc.Throws threw exception: &#xD;
+System.InvalidOperationException: boom</Message>
+          <StackTrace>    at Qa.MS.Calc.Throws() in /repo/dn/mstest/T.cs:line 6
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="eb83deca-1bd6-4dac-aa9d-c09c2a4652b4" testId="8808cbbd-29ca-61ec-fd41-57644293a666" testName="Pass" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0009894" startTime="2026-10-28T10:41:34.7111888+00:00" endTime="2026-10-28T10:41:34.7186164+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="eb83deca-1bd6-4dac-aa9d-c09c2a4652b4" />
+    <UnitTestResult executionId="ff84951d-1335-439b-a548-67c6e8758f77" testId="0ac8b93b-02b0-5392-4622-cd0eea7679cb" testName="Rows (2)" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0003391" startTime="2026-10-28T10:41:34.7319300+00:00" endTime="2026-10-28T10:41:34.7323490+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="ff84951d-1335-439b-a548-67c6e8758f77">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.AreEqual failed. Expected:&lt;1&gt;. Actual:&lt;2&gt;. </Message>
+          <StackTrace>   at Qa.MS.Calc.Rows(Int32 x) in /repo/dn/mstest/T.cs:line 9
+   at InvokeStub_Calc.Rows(Object, Span`1)
+   at System.Reflection.MethodBaseInvoker.InvokeWithOneArg(Object obj, BindingFlags invokeAttr, Binder binder, Object[] parameters, CultureInfo culture)
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="1d6d9b07-d1e8-4272-ba07-f87b4f8dfff4" testId="8bd17942-a875-47ff-7ed1-7332ae019ee1" testName="Inconclusive" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0001744" startTime="2026-10-28T10:41:34.7291012+00:00" endTime="2026-10-28T10:41:34.7293097+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="1d6d9b07-d1e8-4272-ba07-f87b4f8dfff4">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.Inconclusive failed. dunno</Message>
+          <StackTrace>   at Qa.MS.Calc.Inconclusive() in /repo/dn/mstest/T.cs:line 8
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)
+   at System.Reflection.MethodBaseInvoker.InvokeWithNoArgs(Object obj, BindingFlags invokeAttr)
+</StackTrace>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="8a68ae47-3074-49b7-8023-b6150b2aeb9c" testId="93e26a6b-14d5-70b4-487d-787edcda1cc6" testName="Skipped" computerName="box-node-2cb57c48bf75eafe" startTime="2026-10-28T10:41:34.7289142+00:00" endTime="2026-10-28T10:41:34.7290809+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="NotExecuted" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="8a68ae47-3074-49b7-8023-b6150b2aeb9c">
+      <Output>
+        <ErrorInfo>
+          <Message>skip it</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="c70310f4-114e-4419-8986-3eef0b6e0dd9" testId="d083841c-32ac-68df-3d89-1e8b1cb9b29d" testName="Rows (1)" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0000586" startTime="2026-10-28T10:41:34.7293251+00:00" endTime="2026-10-28T10:41:34.7319086+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="c70310f4-114e-4419-8986-3eef0b6e0dd9" />
+    <UnitTestResult executionId="f5c24bc3-145e-4f44-9d65-f5ed2c1795da" testId="3034deb1-c0c1-ae6b-ad05-71fe5dbc4168" testName="Slow" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0506546" startTime="2026-10-28T10:41:34.7323692+00:00" endTime="2026-10-28T10:41:34.7832013+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="f5c24bc3-145e-4f44-9d65-f5ed2c1795da">
+      <Output>
+        <ErrorInfo>
+          <Message>Test 'Slow' exceeded execution timeout period.</Message>
+        </ErrorInfo>
+      </Output>
+    </UnitTestResult>
+    <UnitTestResult executionId="42104c65-0fbf-489f-a5f2-697e97ef355c" testId="b9c2dbf3-a9c2-d729-6808-bb25310d6789" testName="Pass" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0000503" startTime="2026-10-28T10:41:34.7832517+00:00" endTime="2026-10-28T10:41:34.7840883+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Passed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="42104c65-0fbf-489f-a5f2-697e97ef355c" />
+    <UnitTestResult executionId="0644fea3-08c1-40df-a58c-9276d18ea566" testId="75acc3be-ba46-ecc6-f116-32300ea91ffa" testName="Fail" computerName="box-node-2cb57c48bf75eafe" duration="00:00:00.0069593" startTime="2026-10-28T10:41:34.7208376+00:00" endTime="2026-10-28T10:41:34.7280239+00:00" testType="13cdc9d9-ddb5-4fa4-a97d-d965ccfc6d4b" outcome="Failed" testListId="8c84fa94-04c1-424b-9868-57a2d4851a1d" relativeResultsDirectory="0644fea3-08c1-40df-a58c-9276d18ea566">
+      <Output>
+        <ErrorInfo>
+          <Message>Assert.AreEqual failed. Expected:&lt;1&gt;. Actual:&lt;2&gt;. msg &lt;&amp;&gt;</Message>
+          <StackTrace>   at Qa.MS.Calc.Fail() in /repo/dn/mstest/T.cs:line 5
+   at System.RuntimeMethodHandle.InvokeMethod(Object targe

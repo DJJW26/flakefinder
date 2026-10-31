@@ -1,0 +1,5 @@
+# example.com/ffdemo/broken [example.com/ffdemo/broken.test]
+broken/broken_test.go:5:31: undefined: undefinedThing
+{"Time":"2026-10-28T10:42:05.604735846Z","Action":"start","Package":"example.com/ffdemo/broken"}
+{"Time":"2026-10-28T10:42:05.605003698Z","Action":"output","Package":"example.com/ffdemo/broken","Output":"FAIL\texample.com/ffdemo/broken [build failed]\n"}
+{"Time":"2026-10-28T10:42:05.605019848Z","Action":"fail","Package":"example.com/ffdemo/broken","Elapsed":0}

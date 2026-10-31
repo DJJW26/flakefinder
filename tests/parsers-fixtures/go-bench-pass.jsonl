@@ -1,0 +1,27 @@
+{"Time":"2026-10-28T10:40:58.152992596Z","Action":"start","Package":"example.com/qa/bench"}
+{"Time":"2026-10-28T10:40:58.153833443Z","Action":"run","Package":"example.com/qa/bench","Test":"TestA"}
+{"Time":"2026-10-28T10:40:58.153862006Z","Action":"output","Package":"example.com/qa/bench","Test":"TestA","Output":"=== RUN   TestA\n"}
+{"Time":"2026-10-28T10:40:58.153888456Z","Action":"output","Package":"example.com/qa/bench","Test":"TestA","Output":"--- PASS: TestA (0.00s)\n"}
+{"Time":"2026-10-28T10:40:58.153894407Z","Action":"pass","Package":"example.com/qa/bench","Test":"TestA","Elapsed":0}
+{"Time":"2026-10-28T10:40:58.153899096Z","Action":"run","Package":"example.com/qa/bench","Test":"ExampleHello"}
+{"Time":"2026-10-28T10:40:58.15390145Z","Action":"output","Package":"example.com/qa/bench","Test":"ExampleHello","Output":"=== RUN   ExampleHello\n"}
+{"Time":"2026-10-28T10:40:58.153906369Z","Action":"output","Package":"example.com/qa/bench","Test":"ExampleHello","Output":"--- PASS: ExampleHello (0.00s)\n"}
+{"Time":"2026-10-28T10:40:58.153911068Z","Action":"pass","Package":"example.com/qa/bench","Test":"ExampleHello","Elapsed":0}
+{"Time":"2026-10-28T10:40:58.15413086Z","Action":"output","Package":"example.com/qa/bench","Output":"goos: linux\n"}
+{"Time":"2026-10-28T10:40:58.15414145Z","Action":"output","Package":"example.com/qa/bench","Output":"goarch: amd64\n"}
+{"Time":"2026-10-28T10:40:58.154143814Z","Action":"output","Package":"example.com/qa/bench","Output":"pkg: example.com/qa/bench\n"}
+{"Time":"2026-10-28T10:40:58.154146399Z","Action":"output","Package":"example.com/qa/bench","Output":"cpu: AMD Ryzen 7 9700X 8-Core Processor             \n"}
+{"Time":"2026-10-28T10:40:58.154149916Z","Action":"run","Package":"example.com/qa/bench","Test":"BenchmarkX"}
+{"Time":"2026-10-28T10:40:58.154151921Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkX","Output":"=== RUN   BenchmarkX\n"}
+{"Time":"2026-10-28T10:40:58.154155016Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkX","Output":"BenchmarkX\n"}
+{"Time":"2026-10-28T10:40:58.154499892Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkX","Output":"BenchmarkX-4     \t      10\t        21.00 ns/op\n"}
+{"Time":"2026-10-28T10:40:58.154516043Z","Action":"run","Package":"example.com/qa/bench","Test":"BenchmarkSub"}
+{"Time":"2026-10-28T10:40:58.154519018Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkSub","Output":"=== RUN   BenchmarkSub\n"}
+{"Time":"2026-10-28T10:40:58.154521834Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkSub","Output":"BenchmarkSub\n"}
+{"Time":"2026-10-28T10:40:58.154670763Z","Action":"run","Package":"example.com/qa/bench","Test":"BenchmarkSub/size=10"}
+{"Time":"2026-10-28T10:40:58.154676243Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkSub/size=10","Output":"=== RUN   BenchmarkSub/size=10\n"}
+{"Time":"2026-10-28T10:40:58.154678568Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkSub/size=10","Output":"BenchmarkSub/size=10\n"}
+{"Time":"2026-10-28T10:40:58.154899412Z","Action":"output","Package":"example.com/qa/bench","Test":"BenchmarkSub/size=10","Output":"BenchmarkSub/size=10-4         \t      10\t        21.10 ns/op\n"}
+{"Time":"2026-10-28T10:40:58.154934568Z","Action":"output","Package":"example.com/qa/bench","Output":"PASS\n"}
+{"Time":"2026-10-28T10:40:58.155113233Z","Action":"output","Package":"example.com/qa/bench","Output":"ok  \texample.com/qa/bench\t0.002s\n"}
+{"Time":"2026-10-28T10:40:58.15512786Z","Action":"pass","Package":"example.com/qa/bench","Elapsed":0.002}

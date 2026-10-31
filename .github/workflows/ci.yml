@@ -12,12 +12,17 @@ concurrency:
 permissions:
   contents: read
 
+# third-party actions are pinned to full commit SHAs (tags are mutable);
+# checkout does not persist the token into .git/config
+
 jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
@@ -30,6 +35,8 @@ jobs:
       - run: npm run build
       - name: performance smoke (150k observations)
         run: node scripts/perf-smoke.mjs
+      - name: third-party notices are up to date
+        run: node scripts/third-party-notices.mjs --check
       - name: dist is committed and up to date
         run: |
           git diff --exit-code dist/ || (echo '::error::dist/ is stale — run "npm run build" and commit' && exit 1)
@@ -39,11 +46,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # vitest (dev toolchain) needs Node >= 20.19; Node 18 is covered by the runtime job below
-        node: [20, 22]
+        # vitest (dev toolchain) needs Node >= 20.19; Node 18 is covered by the runtime job below.
+        # 24 is the Action runtime (action.yml `using: node24`).
+        node: [20, 22, 24]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -57,8 +67,10 @@ jobs:
     # artifact directly, without the dev toolchain.
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 18
           cache: npm
@@ -78,13 +90,15 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 20
           cache: npm
       - name: Cache jest fixture deps
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: fixtures/jest-project/node_modules
           key: jest-fixture-${{ hashFiles('fixtures/jest-project/package.json') }}

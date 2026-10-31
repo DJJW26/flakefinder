@@ -22,10 +22,10 @@ describe('failedNamesOf', () => {
 describe('failedOnlyArgs', () => {
   it('jest: single -t positive pattern, names regex-escaped', () => {
     const args = failedOnlyArgs('jest', ['does (x)', 'plain']);
-    expect(args).toEqual(['-t', '^(?:.* )?(?:does \\(x\\)|plain)$']);
+    expect(args).toEqual(['-t', '^(?:.* )?(?:does \\(x\\)|plain)\\s*$']);
   });
   it('mocha: --grep with the same construction', () => {
-    expect(failedOnlyArgs('mocha', ['one'])).toEqual(['--grep', '^(?:.* )?(?:one)$']);
+    expect(failedOnlyArgs('mocha', ['one'])).toEqual(['--grep', '^(?:.* )?(?:one)\\s*$']);
   });
   it('go: anchored -run on top-level parents of subtests', () => {
     expect(failedOnlyArgs('go', ['TestX/sub', 'TestY'])).toEqual(['-run', '^(TestX|TestY)$']);
@@ -61,5 +61,24 @@ describe('boundary-anchored selectors (QA round 3)', () => {
     const re = new RegExp(args[1]!);
     expect(re.test('suite login ok')).toBe(true);
     expect(re.test('ui renders login ok')).toBe(false); // quarantined, suffix collision
+  });
+});
+
+describe('report-name normalization (QA RUN-1/RUN-2)', () => {
+  it('vitest JUnit names ("suite V > broken") select the space-joined full name', () => {
+    const re = new RegExp(failedOnlyArgs('jest', ['suite V > broken'])![1]!);
+    expect(re.test('suite V broken')).toBe(true); // what vitest -t matches against
+    expect(re.test('suite V > broken')).toBe(true); // a literal " > " title still works
+    expect(re.test('suite V unbroken')).toBe(false);
+  });
+  it('a title with trailing whitespace (trimmed by the parser) is still selected', () => {
+    const re = new RegExp(failedOnlyArgs('jest', ['suite A trailing space'])![1]!);
+    expect(re.test('suite A trailing space ')).toBe(true);
+    expect(re.test('suite A trailing space x')).toBe(false);
+  });
+  it('quarantine exclusion inside a targeted pattern gets the same normalization', () => {
+    const re = new RegExp(failedOnlyArgs('jest', ['b'], ['suite V > q'])![1]!);
+    expect(re.test('suite V b')).toBe(true);
+    expect(re.test('suite V q')).toBe(false);
   });
 });

@@ -18,7 +18,7 @@ randomly pass and fail on the same code. It works in two modes:
    mathematically impossible for a deterministic test to produce (see below).
 
 It ships as one npm package that is simultaneously a CLI (`npx flakefinder`),
-a library, and a GitHub Action (this repo's root `action.yml` + `dist/action/index.js`).
+a library, and a GitHub Action (this repo's root `action.yml` + `dist/action/index.cjs`).
 
 ## The core mechanism, precisely
 
@@ -128,9 +128,12 @@ evidence (ran and passed stably ≥10 runs) or `gone` + older than 90 days.
 
 ### GitHub Action
 
-`dist/action/index.js` (committed, bundled with esbuild): restores
-`.flakefinder/` via `actions/cache` (`flakefinder-history-<sha>` key,
-prefix restore-keys give branch inheritance and a default-branch warm start),
+`dist/action/index.cjs` (committed, bundled with esbuild via tsup, runs on
+`node24`): restores `.flakefinder/` via `actions/cache` (one stream per job,
+working directory and `history-key`, which defaults to the matrix values;
+saved as `flakefinder-history-<stream>-<sha>-<run id>-<attempt>`, restored
+by the `flakefinder-history-<stream>-` prefix for branch inheritance, with
+any `flakefinder-history-` entry as a warm start),
 ingests report globs, diffs against the previous verdict snapshot
 (`verdicts-snapshot.json`) to compute **new vs known** flakes, writes the
 summary + outputs, upserts ONE PR comment via a hidden marker, uploads the
@@ -173,10 +176,14 @@ excluded tests can't accrue evidence), and two doc comments where `*/` inside
 glob examples (`"**/…"`) closed the comment early.
 
 **Dependency budget** (a feature, not an accident): runtime = `commander` +
-`fast-xml-parser`, both bundled by tsup into a single-file CLI (~60 KB).
+`fast-xml-parser`, installed by npm next to the single-file CLI
+(`dist/cli.js`; tsup keeps package.json `dependencies` external).
 Everything else — glob matching, JSONC parsing, ANSI, statistics — is
 stdlib-grade code in `src/util`/`src/engine`. The Action bundles
-`@actions/*` separately into `dist/action/index.js`.
+everything (`@actions/*`, `fast-xml-parser`, …) into
+`dist/action/index.cjs`, because an action checkout has no
+`node_modules`; the bundled packages' licenses are in
+`THIRD_PARTY_NOTICES.md`.
 
 **Testing.** 171 unit tests across 17 files: table-driven engine tests (one per
 classification rule, score caps, recency tiers), parser fixtures shaped like

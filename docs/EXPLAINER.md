@@ -788,7 +788,8 @@ lock alone didn't close (see prune, below).
 
 ### Prune — and the fresh-read lesson
 
-The store is capped at `maxRuns` records (default 300). Pruning rewrites the
+The store is capped at the last `maxRuns` runs — distinct runIds, so a run's retry
+attempts are kept or dropped together (default 300). Pruning rewrites the
 file atomically (write `.tmp`, rename over the original). The subtle bug QA
 found: prune originally rewrote from the **in-memory** records, which were
 loaded at process start — under concurrency, records another process had
@@ -1152,15 +1153,24 @@ The Action is the same pipeline, wired into GitHub's machinery:
 1. **Context from environment** (no octokit in our code — three REST calls
    with plain `fetch` cost less than the megabytes of SDK): repo, sha,
    branch, run id, PR number parsed from `GITHUB_EVENT_PATH`.
-2. **History cache:** `.flakefinder/` is restored from `actions/cache` —
-   key `flakefinder-history-<sha>`, restore-key prefix
-   `flakefinder-history-` so branches inherit history from their base and
-   the default branch warm-starts everything. Saved back after ingest.
-   No external service holds your data.
+2. **History cache:** `.flakefinder/` is persisted with `actions/cache`,
+   one *stream* per job + `working-directory` + `history-key` (the latter
+   defaults to `${{ toJSON(matrix) }}`, so matrix legs stay apart). The
+   stream id is a short hash of those three. Saves go to
+   `flakefinder-history-<stream>-<sha>-<run id>-<run attempt>`: cache
+   entries are immutable, so every run *attempt* needs its own key or a
+   re-run's history would be dropped. Restores go by the prefix
+   `flakefinder-history-<stream>-` (newest on this branch, then the base or
+   default branch), falling back to any `flakefinder-history-` entry as a
+   warm start for a brand-new stream. No external service holds your data.
 3. **Ingest + classify** (same engine).
 4. **New-vs-known diff:** the previous run's verdicts were snapshotted to
    `verdicts-snapshot.json` in the cache; `computeNewFlakes(current,
    previous)` separates flakes the repo has *never seen* from known ones.
+   Each run records the baseline it used (with its run id) in
+   `action-baseline.json`, so a re-run of the same workflow run compares
+   against the same baseline instead of its own first attempt's snapshot
+   (otherwise "Re-run failed jobs" would pass the gate).
    `computeFixedFlakes` does the inverse for the report. Fresh snapshot
    written for next time.
 5. **Outputs** (`flaky-count`, `new-flaky-count`, `failing-count`,
@@ -1173,14 +1183,21 @@ The Action is the same pipeline, wired into GitHub's machinery:
    block anyone.
 
 Inputs (`reports`, `github-token`, `comment`, `upload-dashboard`,
-`fail-on-new-flakes`, `history-max-runs`, `working-directory`) are
-documented in docs/github-action.md and match `action.yml` 1:1.
+`fail-on-new-flakes`, `history-max-runs`, `working-directory`,
+`history-key`) are documented in docs/github-action.md and match
+`action.yml` 1:1. The flow lives in `runAction()` (`src/action/main.ts`)
+with the environment, `@actions/core`, cache, artifact upload, glob and
+`fetch` injected, so it is tested end to end without a runner;
+`src/action/index.ts` only wires the real services in.
 
-**The runtime detail that bit once:** the Action executes
-`dist/action/index.cjs` — **committed to the repo** (GitHub runs the file
-from source, not from npm). It must be CommonJS (the `@actions/*`
-packages are CJS; an ESM bundle dies with "Dynamic require" at runtime)
-and rebuilt+committed after every source change — the repo's CI has a
+**The runtime details that bit:** the Action executes
+`dist/action/index.cjs` on `node24` — **committed to the repo** (GitHub
+runs the file from source, not from npm). It must be CommonJS (the
+`@actions/*` packages are CJS; an ESM bundle dies with "Dynamic require"
+at runtime), it must bundle *every* dependency (a checked-out action has
+no `node_modules`; tsup externalizes package.json `dependencies` by
+default, which once left `require("fast-xml-parser")` in the bundle), and
+it must be rebuilt+committed after every source change — the repo's CI has a
 dist-freshness gate that fails if a fresh rebuild differs from what's
 committed.
 

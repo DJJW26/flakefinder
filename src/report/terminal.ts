@@ -1,4 +1,6 @@
 import type { Classification, TestVerdict } from '../types.js';
+import { redact } from '../util/redact.js';
+import { escapeControlChars } from './text.js';
 
 interface ClassMeta {
   label: string;
@@ -35,10 +37,13 @@ function fmtMs(ms: number | null): string {
   return `${Math.round(ms)}ms`;
 }
 
-function truncateMiddle(s: string, max: number): string {
-  if (s.length <= max) return s;
+/** Middle-truncate by code point, so a surrogate pair (emoji…) is never split. */
+export function truncateMiddle(s: string, max: number): string {
+  if (s.length <= max) return s; // UTF-16 length ≥ code points
+  const cps = Array.from(s);
+  if (cps.length <= max) return s;
   const half = Math.floor((max - 1) / 2);
-  return `${s.slice(0, half)}…${s.slice(s.length - half)}`;
+  return `${cps.slice(0, half).join('')}…${cps.slice(cps.length - half).join('')}`;
 }
 
 /**
@@ -73,6 +78,9 @@ export function renderTerminal(
     list.push(v);
     byClass.set(v.classification, list);
   }
+  // untrusted strings: secrets redacted (CI logs leave the machine), control
+  // characters rendered visibly (no raw ESC/CR/LF)
+  const safe = (s: string): string => escapeControlChars(redact(s));
   for (const [, list] of byClass) {
     list.sort((a, b) => b.flakeScore - a.flakeScore || a.name.localeCompare(b.name));
   }
@@ -90,13 +98,15 @@ export function renderTerminal(
   }
 
   lines.push(
-    bold(`flakefinder — ${verdicts.length} tracked test(s), ${problemCount} need attention`),
+    // "tracked" is the whole history — it must not change with --threshold;
+    // only the "need attention" rows are filtered (and the hidden ones counted)
+    bold(`flakefinder — ${allVerdicts.length} tracked test(s), ${problemCount} need attention`),
     '',
   );
   if (hiddenBelowThreshold > 0) {
     lines.push(
       dim(
-        `${hiddenBelowThreshold} flaky-suspected test(s) hidden below score ${opts.threshold} — raise --threshold visibility with --all or a lower --threshold`,
+        `${hiddenBelowThreshold} flaky-suspected test(s) hidden below score ${opts.threshold} — show them with --all or a lower --threshold`,
       ),
       '',
     );
@@ -113,9 +123,9 @@ export function renderTerminal(
       const runs = String(v.runsObserved).padStart(3);
       const pass = `${Math.round(v.passRate * 100)}%`.padStart(4);
       const med = fmtMs(v.medianDurationMs).padStart(6);
-      const tags = v.tags.length > 0 ? dim(` [${v.tags.join(', ')}]`) : '';
+      const tags = v.tags.length > 0 ? dim(` [${safe(v.tags.join(', '))}]`) : '';
       lines.push(
-        `  ${color(meta.colorCode, score)}  conf ${conf}  runs ${runs}  pass ${pass}  med ${med}  ${v.suite} ${dim('::')} ${bold(truncateMiddle(v.name, 48))}${tags}`,
+        `  ${color(meta.colorCode, score)}  conf ${conf}  runs ${runs}  pass ${pass}  med ${med}  ${safe(v.suite)} ${dim('::')} ${bold(truncateMiddle(safe(v.name), 48))}${tags}`,
       );
     }
     lines.push('');
@@ -130,9 +140,9 @@ export function renderTerminal(
       const shown = cls === 'passing' ? list.slice(0, 20) : list;
       for (const v of shown) {
         const med = fmtMs(v.medianDurationMs).padStart(6);
-        const tags = v.tags.length > 0 ? dim(` [${v.tags.join(', ')}]`) : '';
+        const tags = v.tags.length > 0 ? dim(` [${safe(v.tags.join(', '))}]`) : '';
         lines.push(
-          `  ${dim(String(v.flakeScore).padStart(3))}  runs ${String(v.runsObserved).padStart(3)}  med ${med}  ${v.suite} ${dim('::')} ${truncateMiddle(v.name, 48)}${tags}`,
+          `  ${dim(String(v.flakeScore).padStart(3))}  runs ${String(v.runsObserved).padStart(3)}  med ${med}  ${safe(v.suite)} ${dim('::')} ${truncateMiddle(safe(v.name), 48)}${tags}`,
         );
       }
       if (cls === 'passing' && list.length > 20) lines.push(dim(`  …and ${list.length - 20} more`));
@@ -158,7 +168,7 @@ export function renderTerminal(
     lines.push('next steps:');
     if (worst) {
       lines.push(`  ${dim('•')} quarantine the worst offender:`);
-      lines.push(`      ${color('36', `flakefinder quarantine add ${worst.testId}`)}`);
+      lines.push(`      ${color('36', `flakefinder quarantine add ${safe(worst.testId)}`)}`);
     }
     lines.push(`  ${dim('•')} full interactive report: ${color('36', 'flakefinder html')}`);
   }

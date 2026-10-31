@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="https://maven.apache.org/surefire/maven-surefire-plugin/xsd/surefire-test-report-3.0.xsd" version="3.0" name="com.example.CartTest" time="0.412" tests="4" errors="0" skipped="0" failures="1">
+  <properties>
+    <property name="surefire.rerunFailingTestsCount" value="2"/>
+    <property name="java.version" value="17.0.9"/>
+  </properties>
+  <testcase name="addsItem" classname="com.example.CartTest" time="0.011"/>
+  <testcase name="appliesDiscount" classname="com.example.CartTest" time="0.023">
+    <flakyFailure message="expected: &lt;90&gt; but was: &lt;100&gt;" type="org.opentest4j.AssertionFailedError">
+      <stackTrace><![CDATA[org.opentest4j.AssertionFailedError: expected: <90> but was: <100>
+	at org.junit.jupiter.api.AssertionFailureBuilder.build(AssertionFailureBuilder.java:151)
+	at com.example.CartTest.appliesDiscount(CartTest.java:42)
+]]></stackTrace>
+      <system-out><![CDATA[pricing cache cold
+]]></system-out>
+    </flakyFailure>
+  </testcase>
+  <testcase name="syncsInventory" classname="com.example.CartTest" time="0.104">
+    <flakyError message="Connection refused" type="java.net.ConnectException">
+      <stackTrace><![CDATA[java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at com.example.CartTest.syncsInventory(CartTest.java:57)
+]]></stackTrace>
+    </flakyError>
+    <flakyError message="Read timed out" type="java.net.SocketTimeoutException">
+      <stackTrace><![CDATA[java.net.SocketTimeoutException: Read timed out
+	at com.example.CartTest.syncsInventory(CartTest.java:58)
+]]></stackTrace>
+    </flakyError>
+  </testcase>
+  <testcase name="checksOut" classname="com.example.CartTest" time="0.009">
+    <failure message="total mismatch" type="java.lang.AssertionError"><![CDATA[java.lang.AssertionError: total mismatch
+	at com.example.CartTest.checksOut(CartTest.java:71)
+]]></failure>
+    <rerunFailure message="total mismatch" type="java.lang.AssertionError">
+      <stackTrace><![CDATA[java.lang.AssertionError: total mismatch
+	at com.example.CartTest.checksOut(CartTest.java:71)
+]]></stackTrace>
+    </rerunFailure>
+    <rerunFailure message="total mismatch" type="java.lang.AssertionError">
+      <stackTrace><![CDATA[java.lang.AssertionError: total mismatch
+	at com.example.CartTest.checksOut(CartTest.java:71)
+]]></stackTrace>
+    </rerunFailure>
+  </testcase>
+</testsuite>

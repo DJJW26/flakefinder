@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
-import { readFileSync } from 'node:fs';
 import { classifyAll } from '../engine/classify.js';
-import { detectParser } from '../parsers/index.js';
+import { detectParser, unrecognizedReason } from '../parsers/index.js';
 import { HistoryStore } from '../store/history-store.js';
 import type { ResolvedConfig, RunRecord, TestVerdict } from '../types.js';
+import { readTextFile } from '../util/read-text.js';
 
 export interface IngestContext {
   commitSha?: string;
@@ -37,17 +37,26 @@ export function ingestReports(
   for (const file of files) {
     let content: string;
     try {
-      content = readFileSync(file, 'utf8');
+      content = readTextFile(file);
     } catch (err) {
       warnings.push(`cannot read ${file}: ${(err as Error).message}`);
       continue;
     }
     const parser = detectParser(content);
     if (!parser) {
-      warnings.push(`unrecognized report format — skipped ${file}`);
+      warnings.push(`${unrecognizedReason(content)} — skipped ${file}`);
       continue;
     }
-    const parsed = parser.parse(content, file);
+    let parsed: ReturnType<typeof parser.parse>;
+    try {
+      parsed = parser.parse(content, file);
+    } catch (err) {
+      // one malformed report must not abort the whole action
+      warnings.push(
+        `${parser.name}: failed to parse ${file} — skipped (${(err as Error).message})`,
+      );
+      continue;
+    }
     warnings.push(...parsed.warnings);
     const record: RunRecord = {
       runId,

@@ -3,6 +3,7 @@ import type {
   Observation,
   ResolvedConfig,
   RunRecord,
+  TestCaseResult,
   TestHistory,
   TestStatus,
   TestTag,
@@ -54,10 +55,41 @@ function sortRuns(runs: RunRecord[]): RunRecord[] {
   return ordered;
 }
 
-/** Build one chronological TestHistory per testId. Suite/name taken from the latest record. */
-export function buildHistories(runs: RunRecord[]): TestHistory[] {
-  const byId = new Map<string, TestHistory>();
-  for (const run of sortRuns(runs)) {
+/**
+ * One execution of a test: a live attempt, or one entry of a result's
+ * in-report `attempts` (the reporter retried the test itself). `sub` orders
+ * in-report attempts within one (runId, attempt); it is 0 for results without
+ * `attempts`, so those behave exactly like a single observation.
+ */
+interface Execution extends Observation {
+  sub: number;
+}
+
+interface ExecutionHistory {
+  testId: string;
+  suite: string;
+  name: string;
+  observations: Execution[];
+}
+
+const STATUSES: ReadonlySet<string> = new Set(['pass', 'fail', 'skip', 'error']);
+
+/**
+ * The executions a result stands for, oldest first. In-report retries
+ * (`attempts`, PLAN §5) expand into one execution each; the final one is
+ * always the result's `status` (appended if a parser left it out). Results
+ * without (meaningful) attempts are a single execution.
+ */
+function executionStatuses(r: TestCaseResult): TestStatus[] {
+  if (!Array.isArray(r.attempts)) return [r.status];
+  const statuses = r.attempts.filter((s): s is TestStatus => STATUSES.has(s as string));
+  if (statuses[statuses.length - 1] !== r.status) statuses.push(r.status);
+  return statuses.length < 2 ? [r.status] : statuses;
+}
+
+function collectHistories(sortedRuns: RunRecord[]): ExecutionHistory[] {
+  const byId = new Map<string, ExecutionHistory>();
+  for (const run of sortedRuns) {
     for (const r of run.results) {
       let h = byId.get(r.testId);
       if (!h) {
@@ -66,14 +98,19 @@ export function buildHistories(runs: RunRecord[]): TestHistory[] {
       }
       h.suite = r.suite;
       h.name = r.name;
-      h.observations.push({
-        runId: run.runId,
-        timestamp: run.timestamp,
-        status: r.status,
-        attempt: run.attempt,
-        commitSha: run.commitSha,
-        message: r.message,
-        durationMs: r.durationMs ?? undefined,
+      const statuses = executionStatuses(r);
+      statuses.forEach((status, sub) => {
+        h.observations.push({
+          runId: run.runId,
+          timestamp: run.timestamp,
+          status,
+          attempt: run.attempt,
+          sub,
+          commitSha: run.commitSha,
+          message: r.message,
+          // the reported duration belongs to the final execution only
+          durationMs: sub === statuses.length - 1 ? (r.durationMs ?? undefined) : undefined,
+        });
       });
     }
   }
@@ -81,18 +118,43 @@ export function buildHistories(runs: RunRecord[]): TestHistory[] {
 }
 
 /**
- * Collapse non-skip observations to one per (runId, attempt) — the LAST one for
- * that pair wins, since later report lines supersede earlier ones.
+ * Build one chronological TestHistory per testId. Suite/name taken from the
+ * latest record. A result's in-report `attempts` become one observation each
+ * (same runId and attempt, oldest first).
  */
-function collapsePerAttempt(nonSkip: Observation[]): Observation[] {
-  const perAttempt = new Map<string, Observation>();
+export function buildHistories(runs: RunRecord[]): TestHistory[] {
+  return collectHistories(sortRuns(runs)).map((h) => ({
+    ...h,
+    observations: h.observations.map(({ sub: _sub, ...o }) => o),
+  }));
+}
+
+/**
+ * Collapse non-skip executions to one per (runId, attempt, in-report attempt)
+ * — the LAST one for that key wins, since later report lines supersede
+ * earlier ones.
+ */
+function collapsePerAttempt(nonSkip: Execution[]): Execution[] {
+  const perAttempt = new Map<string, Execution>();
   for (const o of nonSkip) {
-    perAttempt.set(`${o.runId}\u0000${o.attempt}`, o);
+    perAttempt.set(`${o.runId}\u0000${o.attempt}\u0000${o.sub}`, o);
   }
   return [...perAttempt.values()];
 }
 
-function countSameShaFlips(collapsed: Observation[]): number {
+/**
+ * One observation per RUN (invocation / runId): its final execution. Retry
+ * attempts of one invocation are evidence for rescues and same-SHA flips, but
+ * they are not independent runs — `runsObserved`, `minRuns`, the `failing`
+ * window and the data bonus count runs (PLAN §5).
+ */
+function collapsePerRun(collapsed: Execution[]): Execution[] {
+  const perRun = new Map<string, Execution>();
+  for (const o of collapsed) perRun.set(o.runId, o); // groups are contiguous, attempts ascending
+  return [...perRun.values()];
+}
+
+function countSameShaFlips(collapsed: Execution[]): number {
   const perSha = new Map<string, { hasPass: boolean; hasFail: boolean }>();
   for (const o of collapsed) {
     if (!o.commitSha) continue;
@@ -108,17 +170,20 @@ function countSameShaFlips(collapsed: Observation[]): number {
   return flips;
 }
 
-function countRetryRescues(collapsed: Observation[]): number {
+/**
+ * Fail → pass between two CONSECUTIVE executions of one invocation: live
+ * attempt k → k+1, or in-report attempt i → i+1 within one result. Both are
+ * re-runs of the same code state.
+ */
+function countRetryRescues(collapsed: Execution[]): number {
   let rescues = 0;
   for (let i = 1; i < collapsed.length; i++) {
     const prev = collapsed[i - 1]!;
     const cur = collapsed[i]!;
-    if (
-      prev.runId === cur.runId &&
-      cur.attempt === prev.attempt + 1 &&
-      isFail(prev.status) &&
-      !isFail(cur.status)
-    ) {
+    const consecutive =
+      (cur.attempt === prev.attempt && cur.sub === prev.sub + 1) ||
+      (cur.attempt === prev.attempt + 1 && cur.sub === 0);
+    if (prev.runId === cur.runId && consecutive && isFail(prev.status) && !isFail(cur.status)) {
       rescues++;
     }
   }
@@ -126,36 +191,54 @@ function countRetryRescues(collapsed: Observation[]): number {
 }
 
 /**
- * Direction changes across DISTINCT code states. A state is a commit bucket;
- * observations without a commitSha (runs outside a git repo) bucket by runId
- * instead, so statistical flip-flop detection still works in SHA-less
- * histories. A bucket's family is its chronologically last observation's.
+ * Direction changes across code states, in chronological order. A state is a
+ * commitSha; observations without one (runs outside a git repo) use their
+ * runId instead, so SHA-less histories still get flip-flop detection while a
+ * run's own retry attempts stay one state. Consecutive observations of the
+ * same state form one VISIT whose family is its latest observation's;
+ * returning to an earlier commit (a revert, A→B→A) is a new visit. Changes
+ * are counted between consecutive visits. `lastChangeAt` is when the newest
+ * change's family was first seen in its visit (the recency anchor).
  */
-function countDirectionChanges(collapsed: Observation[]): number {
-  const bucketFamily = new Map<string, boolean>();
+function directionChanges(collapsed: Execution[]): {
+  changes: number;
+  lastChangeAt: string | undefined;
+} {
+  const visits: Array<{ state: string; fail: boolean; since: string }> = [];
   for (const o of collapsed) {
-    bucketFamily.set(o.commitSha ?? o.runId, isFail(o.status));
+    const state = o.commitSha !== undefined ? `sha:${o.commitSha}` : `run:${o.runId}`;
+    const fail = isFail(o.status);
+    const last = visits[visits.length - 1];
+    if (!last || last.state !== state) visits.push({ state, fail, since: o.timestamp });
+    else if (last.fail !== fail) {
+      last.fail = fail;
+      last.since = o.timestamp;
+    }
   }
-  const families = [...bucketFamily.values()];
   let changes = 0;
-  for (let i = 1; i < families.length; i++) {
-    if (families[i] !== families[i - 1]) changes++;
+  let lastChangeAt: string | undefined;
+  for (let i = 1; i < visits.length; i++) {
+    if (visits[i]!.fail !== visits[i - 1]!.fail) {
+      changes++;
+      lastChangeAt = visits[i]!.since;
+    }
   }
-  return changes;
+  return { changes, lastChangeAt };
 }
 
-function trailingConsecutiveFails(nonSkip: Observation[]): number {
+function trailingConsecutiveFails(perRun: Observation[]): number {
   let n = 0;
-  for (let i = nonSkip.length - 1; i >= 0; i--) {
-    if (isFail(nonSkip[i]!.status)) n++;
+  for (let i = perRun.length - 1; i >= 0; i--) {
+    if (isFail(perRun[i]!.status)) n++;
     else break;
   }
   return n;
 }
 
-function recencyMultiplier(lastFail: Observation | undefined): number {
-  if (!lastFail) return 0.3;
-  const ts = Date.parse(lastFail.timestamp);
+/** Keyed on the most recent direction change (flip), not the last failure. */
+function recencyMultiplier(lastChangeAt: string | undefined): number {
+  if (lastChangeAt === undefined) return 0.3;
+  const ts = Date.parse(lastChangeAt);
   if (Number.isNaN(ts)) return 1.0; // unparseable timestamp: don't punish the score
   const ageDays = (Date.now() - ts) / 86_400_000;
   if (ageDays <= 14) return 1.0;
@@ -168,62 +251,66 @@ function flakeScore(opts: {
   retryRescues: number;
   directionChanges: number;
   runsObserved: number;
-  lastFail: Observation | undefined;
+  lastChangeAt: string | undefined;
 }): number {
   let score = Math.min(50, opts.sameShaFlips * 50);
   score += Math.min(40, opts.retryRescues * 40);
-  score += Math.min(24, opts.directionChanges * 8 * recencyMultiplier(opts.lastFail));
+  score += Math.min(24, opts.directionChanges * 8 * recencyMultiplier(opts.lastChangeAt));
   if (opts.runsObserved >= 10) score += 10;
   return Math.min(100, Math.round(score));
 }
 
 function classify(opts: {
   seenRecently: boolean;
-  nonSkip: Observation[];
-  collapsed: Observation[];
+  perRun: Observation[];
+  bothFamilies: boolean;
   sameShaFlips: number;
   retryRescues: number;
   directionChanges: number;
   cfg: ResolvedConfig;
 }): Classification {
-  const { nonSkip, collapsed, cfg } = opts;
+  const { perRun, cfg } = opts;
   if (!opts.seenRecently) return 'gone';
-  if (nonSkip.length === 0) return 'skipped';
-  const observed = collapsed; // one observation per (runId, attempt)
-  const bothFamilies =
-    collapsed.some((o) => isFail(o.status)) && collapsed.some((o) => !isFail(o.status));
+  if (perRun.length === 0) return 'skipped';
   if (opts.sameShaFlips > 0) return 'flaky-confirmed';
   if (opts.retryRescues > 0) return 'flaky-retry';
-  if (opts.directionChanges >= 2 && observed.length >= cfg.minRuns && bothFamilies)
+  if (opts.directionChanges >= 2 && perRun.length >= cfg.minRuns && opts.bothFamilies)
     return 'flaky-suspected';
-  // "last 5 (up to) observations all fail-family" with enough data
-  const lastWindow = observed.slice(-RECENT_WINDOW);
-  if (lastWindow.every((o) => isFail(o.status)) && observed.length >= cfg.minRuns) return 'failing';
-  const last = observed[observed.length - 1]!;
+  // the last (up to) 5 RUNS all ended fail-family, with enough runs observed
+  const lastWindow = perRun.slice(-RECENT_WINDOW);
+  if (lastWindow.every((o) => isFail(o.status)) && perRun.length >= cfg.minRuns) return 'failing';
+  const last = perRun[perRun.length - 1]!;
   if (isFail(last.status)) return 'new-failure';
   return 'passing';
 }
 
 function confidenceFor(
   classification: Classification,
-  observed: Observation[],
+  perRun: Observation[],
+  executions: Observation[],
   cfg: ResolvedConfig,
 ): number {
-  const totalFails = observed.filter((o) => isFail(o.status)).length;
   switch (classification) {
     case 'flaky-confirmed':
     case 'flaky-retry':
       return 100;
     case 'flaky-suspected':
-      return Math.min(70, Math.round((35 * observed.length) / Math.max(1, cfg.minRuns)));
+      return Math.min(70, Math.round((35 * perRun.length) / Math.max(1, cfg.minRuns)));
     case 'failing':
-      return Math.min(95, 25 + 5 * trailingConsecutiveFails(observed));
+      return Math.min(95, 25 + 5 * trailingConsecutiveFails(perRun));
     case 'new-failure':
-      return Math.min(50, 10 + 5 * totalFails);
+      // every failed execution, retries included, is evidence of the failure
+      return Math.min(50, 10 + 5 * executions.filter((o) => isFail(o.status)).length);
     default:
       return 100;
   }
 }
+
+/**
+ * Relative `slow` needs a p95 of at least this many ms: suites of sub-ms
+ * tests have a 0 ms median, which would make every 1 ms test "slow".
+ */
+export const SLOW_RELATIVE_FLOOR_MS = 100;
 
 /**
  * Classify every test seen in `runs`. Implements PLAN §5 exactly — the
@@ -234,50 +321,57 @@ export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict
   if (runs.length === 0) return [];
 
   const sorted = sortRuns(runs);
-  const recentRunIds = new Set(sorted.slice(-GONE_AFTER_RUNS).map((r) => r.runId));
-  const histories = buildHistories(sorted);
+  // "last 30 RUNS", not records: one run can carry many records (one per
+  // report file, one per retry attempt). sortRuns keeps each runId's records
+  // contiguous, so collapsing adjacent duplicates yields runs in order.
+  const runOrder: string[] = [];
+  for (const r of sorted) if (runOrder[runOrder.length - 1] !== r.runId) runOrder.push(r.runId);
+  const recentRunIds = new Set(runOrder.slice(-GONE_AFTER_RUNS));
+  const histories = collectHistories(sorted);
 
   const verdicts: TestVerdict[] = histories.map((h) => {
     const nonSkip = h.observations.filter((o) => o.status !== 'skip');
+    // executions: one per (runId, attempt, in-report attempt) — retry evidence
     const collapsed = collapsePerAttempt(nonSkip);
+    // runs: one per invocation (its final execution) — run counts and windows
+    const perRun = collapsePerRun(collapsed);
     const lastObs = h.observations[h.observations.length - 1]!;
-    const observed = collapsed; // one observation per (runId, attempt)
 
     const sameShaFlips = countSameShaFlips(collapsed);
     const retryRescues = countRetryRescues(collapsed);
-    const directionChanges = countDirectionChanges(collapsed);
+    const dc = directionChanges(collapsed);
     const seenRecently = h.observations.some((o) => recentRunIds.has(o.runId));
     const bothFamilies =
       collapsed.some((o) => isFail(o.status)) && collapsed.some((o) => !isFail(o.status));
 
     const classification = classify({
       seenRecently,
-      nonSkip,
-      collapsed,
+      perRun,
+      bothFamilies,
       sameShaFlips,
       retryRescues,
-      directionChanges,
+      directionChanges: dc.changes,
       cfg,
     });
 
-    const lastFail = [...observed].reverse().find((o) => isFail(o.status));
+    const lastFail = [...collapsed].reverse().find((o) => isFail(o.status));
     const score = bothFamilies
       ? flakeScore({
           sameShaFlips,
           retryRescues,
-          directionChanges,
-          runsObserved: observed.length,
-          lastFail,
+          directionChanges: dc.changes,
+          runsObserved: perRun.length,
+          lastChangeAt: dc.lastChangeAt,
         })
       : 0;
 
-    const { medianMs, p95Ms } = durationStats(observed);
-    const passes = observed.filter((o) => !isFail(o.status)).length;
+    const { medianMs, p95Ms } = durationStats(collapsed);
+    const passes = collapsed.filter((o) => !isFail(o.status)).length;
 
     const tags: TestTag[] = [];
     if (!seenRecently) tags.push('long-unseen');
-    const firstHalf = observed.slice(0, Math.floor(observed.length / 2));
-    const lastWindow = observed.slice(-RECENT_WINDOW);
+    const firstHalf = perRun.slice(0, Math.floor(perRun.length / 2));
+    const lastWindow = perRun.slice(-RECENT_WINDOW);
     if (
       firstHalf.some((o) => isFail(o.status)) &&
       lastWindow.length > 0 &&
@@ -293,9 +387,10 @@ export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict
       classification,
       tags,
       flakeScore: score,
-      confidence: confidenceFor(classification, observed, cfg),
-      passRate: observed.length === 0 ? 0 : passes / observed.length,
-      runsObserved: observed.length,
+      confidence: confidenceFor(classification, perRun, collapsed, cfg),
+      // over executions (retry attempts included), so a rescued run reads 50%
+      passRate: collapsed.length === 0 ? 0 : passes / collapsed.length,
+      runsObserved: perRun.length,
       lastStatus: lastObs.status,
       lastSeen: lastObs.timestamp,
       lastMessage: lastFail?.message,
@@ -303,7 +398,7 @@ export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict
       p95DurationMs: p95Ms,
       sameShaFlips,
       retryRescues,
-      directionChanges,
+      directionChanges: dc.changes,
     } satisfies TestVerdict;
   });
 
@@ -330,6 +425,7 @@ export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict
     const slowRelative =
       v.p95DurationMs != null &&
       suiteMedianMs != null &&
+      v.p95DurationMs >= SLOW_RELATIVE_FLOOR_MS &&
       v.p95DurationMs > cfg.slowMultiplier * suiteMedianMs;
     if (slowAbsolute || slowRelative) v.tags.push('slow');
   }

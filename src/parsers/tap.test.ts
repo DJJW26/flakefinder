@@ -11,7 +11,9 @@ describe('tapParser', () => {
   it('sniffs TAP version headers, rejects other formats', () => {
     expect(tapParser.sniff('TAP version 13\n')).toBe(true);
     expect(tapParser.sniff('TAP version 14\r\n')).toBe(true);
-    expect(tapParser.sniff('ok 1 - no header')).toBe(false);
+    // headerless TAP12 is accepted since QA PAR-12 (see 'headerless TAP' below)
+    expect(tapParser.sniff('ok 1 - no header')).toBe(true);
+    expect(tapParser.sniff('ok - no number, no header')).toBe(false);
     expect(tapParser.sniff('<xml/>')).toBe(false);
     expect(tapParser.sniff('')).toBe(false);
   });
@@ -52,19 +54,16 @@ describe('tapParser', () => {
     expect(root).toMatchObject({ status: 'pass', suite: 'node:test' });
   });
 
-  it('keeps the LAST 2000 chars of oversized test output', () => {
-    const lines = [
-      JSON.stringify({ Action: 'run', Package: 'big', Test: 'TestBig' }),
-      JSON.stringify({
-        Action: 'output',
-        Package: 'big',
-        Test: 'TestBig',
-        Output: 'x'.repeat(3000),
-      }),
-      JSON.stringify({ Action: 'fail', Package: 'big', Test: 'TestBig', Elapsed: 0.4 }),
-    ];
-    const { results } = tapParser.parse(lines.join('\n'), 'inline');
-    expect(results).toEqual([]); // go-format lines are not TAP — sniff rejects the file
+  it('truncates oversized error messages to 2000 chars', () => {
+    const content = [
+      'TAP version 13',
+      'not ok 1 - huge',
+      '  ---',
+      `  error: '${'x'.repeat(3000)}'`,
+      '  ...',
+    ].join('\n');
+    const { results } = tapParser.parse(content, 'inline');
+    expect(results[0]!.message).toBe('x'.repeat(2000));
   });
 
   it('truncated stream: emits a warning for unclosed subtests', () => {
@@ -138,5 +137,200 @@ describe('TAP name unescaping (QA B-F4)', () => {
       name: 'inner #one',
       status: 'pass',
     });
+  });
+});
+
+// tap-node20-multiline.tap: REAL `node --test --test-reporter=tap` output from
+// node 20.20 for tests/tap-sample/multiline.test.mjs (paths rewritten to /repo).
+describe('TAP YAML block scalars (r5 #5)', () => {
+  it("keeps node's multi-line assertion errors (error: |-) instead of the literal '|-'", () => {
+    const { results, warnings } = tapParser.parse(
+      load('tap-node20-multiline.tap'),
+      'tap-node20-multiline.tap',
+    );
+    expect(warnings).toEqual([]);
+    const byName = new Map(results.map((r) => [r.name, r]));
+
+    const objects = byName.get('strict equal objects')!;
+    expect(objects.status).toBe('fail');
+    expect(objects.message).not.toBe('|-');
+    expect(objects.message).toBe(
+      [
+        'Expected "actual" to be reference-equal to "expected":',
+        '+ actual - expected',
+        '',
+        '  {',
+        '    a: 1,',
+        '    b: [',
+        '      1,',
+        '+     2',
+        '-     3',
+        '    ]',
+        '  }',
+      ].join('\n'),
+    );
+    expect(objects.stack).toMatch(/^TestContext\.<anonymous> \(file:\/\/\/repo\//);
+
+    const strings = byName.get('strict equal strings')!;
+    expect(strings.message).toContain('Expected values to be strictly equal:');
+    expect(strings.message).toContain("- 'line one\\nline 2\\nline three'");
+    // block content stops at the next key — `code:`/`expected:` are not swallowed
+    expect(strings.message).not.toContain('ERR_ASSERTION');
+  });
+
+  it('handles |, |-, > and >- scalars (folded style joins lines)', () => {
+    const block = (indicator: string, n: number) => [
+      `not ok ${n} - t${n}`,
+      '  ---',
+      `  error: ${indicator}`,
+      '    first line',
+      '    second line',
+      '',
+      '    after blank',
+      "  code: 'ERR_X'",
+      '  ...',
+    ];
+    const content = [
+      'TAP version 13',
+      ...block('|', 1),
+      ...block('|-', 2),
+      ...block('>', 3),
+      ...block('>-', 4),
+      ...block('|+', 5),
+    ].join('\n');
+    const { results } = tapParser.parse(content, 'inline');
+    expect(results.map((r) => r.message)).toEqual([
+      'first line\nsecond line\n\nafter blank',
+      'first line\nsecond line\n\nafter blank',
+      'first line second line\nafter blank',
+      'first line second line\nafter blank',
+      'first line\nsecond line\n\nafter blank',
+    ]);
+  });
+});
+
+describe('TAP robustness (r5 #6)', () => {
+  it('accepts assertions without a number and/or a dash (TAP13/14)', () => {
+    const content = [
+      'TAP version 14',
+      'ok 1 numbered no dash',
+      'ok - dashed no number',
+      'not ok failing bare',
+      'ok',
+      'not ok',
+      'ok 6',
+      'ok 7 - classic # SKIP not today',
+      'okay this is not an assertion',
+    ].join('\n');
+    const { results } = tapParser.parse(content, 'inline');
+    expect(results.map((r) => `${r.name}:${r.status}`)).toEqual([
+      'numbered no dash:pass',
+      'dashed no number:pass',
+      'failing bare:fail',
+      '(test 4):pass',
+      '(test 5):fail',
+      '(test 6):pass',
+      'classic:skip',
+    ]);
+  });
+
+  it('reads duration_ms and unescapes \\\\ as well as \\#', () => {
+    const { results } = tapParser.parse(
+      load('tap-node20-multiline.tap'),
+      'tap-node20-multiline.tap',
+    );
+    const slow = results.find((r) => r.name === 'slow pass')!;
+    expect(slow.durationMs).toBeGreaterThanOrEqual(20);
+    expect(Number.isInteger(slow.durationMs)).toBe(true);
+    const BS = String.fromCharCode(92);
+    expect(results.map((r) => r.name)).toContain(`passes # with hash and back${BS}slash`);
+    // node's TAP stream was the 5 tests of multiline.test.mjs — nothing else
+    expect(results).toHaveLength(5);
+  });
+
+  it('never re-scans YAML diagnostic lines as assertions', () => {
+    const content = [
+      'TAP version 13',
+      'not ok 1 - outer',
+      '  ---',
+      '  error: |-',
+      '    ok 2 - looks like an assertion',
+      '    not ok 3 - so does this',
+      '  ...',
+      'ok 2 - real second',
+    ].join('\n');
+    const { results } = tapParser.parse(content, 'inline');
+    expect(results.map((r) => r.name)).toEqual(['outer', 'real second']);
+    expect(results[0]!.message).toBe('ok 2 - looks like an assertion\nnot ok 3 - so does this');
+  });
+
+  it('does not double-emit parents of indentation-nested subtests without # Subtest headers', () => {
+    const content = [
+      'TAP version 14',
+      '    ok 1 - child a',
+      '    not ok 2 - child b',
+      '    1..2',
+      'not ok 1 - parent',
+      '        ok 1 - deep',
+      '        1..1',
+      '    ok 1 - middle',
+      '    1..1',
+      'ok 2 - outer',
+      'ok 3 - flat',
+      '1..3',
+    ].join('\n');
+    const { results, warnings } = tapParser.parse(content, 'inline');
+    expect(warnings).toEqual([]);
+    expect(results.map((r) => `${r.suite} :: ${r.name}:${r.status}`)).toEqual([
+      'parent :: child a:pass',
+      'parent :: child b:fail',
+      'outer > middle :: deep:pass',
+      'node:test :: flat:pass',
+    ]);
+  });
+
+  // tap-node20-parents.tap: REAL node 20.20 TAP for tests/tap-sample/parents.test.mjs
+  it('keeps a parent/suite failure that no child carries; B-F7 suppression otherwise', () => {
+    const { results, warnings } = tapParser.parse(
+      load('tap-node20-parents.tap'),
+      'tap-node20-parents.tap',
+    );
+    expect(warnings).toEqual([]);
+    expect(results.map((r) => `${r.suite} :: ${r.name}:${r.status}`)).toEqual([
+      `node:test :: it's quoted "double":fail`,
+      'parent throws after passing child :: child ok:pass',
+      // its own failure (thrown after the child passed) is reported nowhere else
+      'node:test :: parent throws after passing child:fail',
+      // before() failed: the cancelled child carries the failure → suite suppressed
+      'suite with failing before :: child a:fail',
+    ]);
+    expect(results[0]!.message).toBe(`it's broken: "x"`);
+    expect(results[2]!.message).toBe('parent own failure');
+  });
+});
+
+// tap-perl-no-header.tap: REAL Perl Test::More output (QA fixture) — TAP12
+// style, no `TAP version` line (prove/bats/Test::More default).
+describe('headerless TAP (QA PAR-12)', () => {
+  it('detects and parses TAP that starts with a plan or a numbered assertion', () => {
+    const content = load('tap-perl-no-header.tap');
+    expect(tapParser.sniff(content)).toBe(true);
+    const { results } = tapParser.parse(content, 'a.t');
+    expect(results.map((r) => `${r.name}:${r.status}`)).toEqual([
+      'first passes:pass',
+      'second fails:fail',
+      '(test 3):skip',
+    ]);
+    expect(tapParser.sniff('ok 1 - only\nok 2 - two\n')).toBe(true);
+  });
+
+  it('stays strict: anything not TAP-shaped is rejected', () => {
+    // plain `go test` output, a log that happens to start with "ok", prose
+    expect(tapParser.sniff('ok  \texample.com/pkg\t0.002s\n')).toBe(false);
+    expect(tapParser.sniff('=== RUN   TestA\n--- PASS: TestA (0.00s)\nPASS\n')).toBe(false);
+    expect(tapParser.sniff('ok 1 - fine\nStarting server on :8080\n')).toBe(false);
+    expect(tapParser.sniff('1..2 apples\n')).toBe(false);
+    expect(tapParser.sniff('okay then\n')).toBe(false);
+    expect(tapParser.sniff('{"Action":"pass"}\n')).toBe(false);
   });
 });

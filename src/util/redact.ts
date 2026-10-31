@@ -14,8 +14,10 @@
  *   not partially consumed.
  * - Over-redaction is accepted for credential-shaped strings, but common
  *   prose is protected: no bare `token` keyword (JSON errors legitimately
- *   contain "token <long number>"), and assignment-form values must reach
- *   12+ chars (so `password: required field` survives).
+ *   contain "token <long number>"), and loose assignment forms (`key: value`,
+ *   spaces allowed) must reach 12+ chars (so `password: required field`
+ *   survives). Only the tight `token=…`/`secret=…`/`password=…` form is
+ *   redacted at any length.
  */
 
 interface Pattern {
@@ -25,13 +27,54 @@ interface Pattern {
 }
 
 const PATTERNS: readonly Pattern[] = [
-  { name: 'github-pat-classic', re: /ghp_[A-Za-z0-9]{30,}/g, replacement: 'ghp_[REDACTED]' },
+  // PEM private keys (RSA/EC/OPENSSH/PKCS#8/encrypted…) — the whole block, or
+  // to the end of the text when a truncated message lost the END line.
+  // Certificates and public keys are not secrets and are left alone.
+  {
+    name: 'pem-private-key',
+    re: /-----BEGIN ((?:[A-Z0-9]+ )*PRIVATE KEY)-----[\s\S]*?(?:-----END \1-----|$)/g,
+    replacement: '[REDACTED-PRIVATE-KEY]',
+  },
+  // Credentials embedded in URLs: scheme://user:password@host — the password
+  // goes, the user and host stay for debugging.
+  {
+    name: 'url-credentials',
+    re: /\b([a-z][a-z0-9+.-]*:\/\/[^\s:@/]+:)[^\s@/]+@/gi,
+    replacement: '$1[REDACTED]@',
+  },
+  // GitHub tokens: ghp_ (classic PAT), gho_ (OAuth), ghu_ (user-to-server),
+  // ghs_ (server-to-server / GITHUB_TOKEN), ghr_ (refresh)
+  { name: 'github-token', re: /(gh[pousr])_[A-Za-z0-9]{30,}/g, replacement: '$1_[REDACTED]' },
   {
     name: 'github-pat-fine',
     re: /github_pat_[A-Za-z0-9_]{20,}/g,
     replacement: 'github_pat_[REDACTED]',
   },
-  { name: 'aws-access-key', re: /AKIA[0-9A-Z]{16}/g, replacement: 'AKIA[REDACTED]' },
+  // AKIA = long-lived access key id, ASIA = temporary (STS) key id. Exactly
+  // 16 trailing chars: a longer all-caps run is a word, not a key id.
+  {
+    name: 'aws-access-key',
+    re: /(AKIA|ASIA)[0-9A-Z]{16}(?![0-9A-Z])/g,
+    replacement: '$1[REDACTED]',
+  },
+  {
+    name: 'google-api-key',
+    re: /AIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g,
+    replacement: 'AIza[REDACTED]',
+  },
+  {
+    name: 'stripe-key',
+    // live keys only: sk_test_/rk_test_ are sandbox keys, and `…_test_…` is
+    // far too common in test names to match safely
+    re: /\b([sr]k)_live_[0-9A-Za-z]{10,}/g,
+    replacement: '$1_live_[REDACTED]',
+  },
+  // Azure storage / service bus connection strings
+  {
+    name: 'azure-account-key',
+    re: /\b(AccountKey|SharedAccessKey)=[^;\s"']+/gi,
+    replacement: '$1=[REDACTED]',
+  },
   { name: 'openai-key', re: /sk-[A-Za-z0-9_-]{20,}/g, replacement: 'sk-[REDACTED]' },
   { name: 'slack-token', re: /xox[baprs]-[A-Za-z0-9-]{10,}/g, replacement: 'xox[REDACTED]' },
   { name: 'gitlab-pat', re: /glpat-[A-Za-z0-9_-]{20,}/g, replacement: 'glpat-[REDACTED]' },
@@ -60,6 +103,15 @@ const PATTERNS: readonly Pattern[] = [
   {
     name: 'secret-assignment',
     re: /((?:api[_-]?key|secret[_-]?key|access[_-]?key|auth[_-]?token|password|passwd|client[_-]?secret)["']?\s*[:=]\s*["']?)([^\s"']{12,})/gi,
+    replacement: '$1[REDACTED]',
+  },
+  // Strict `=` assignments of token/secret/password (env dumps, query
+  // strings, CLI flags) are redacted at ANY length — `password=hunter2` is a
+  // real leak. Only the tight `key=value` form qualifies (no spaces, no
+  // `==`), so prose and code like `token === undefined` survive.
+  {
+    name: 'short-assignment',
+    re: /((?:token|secret|password|passwd)["']?=["']?)(?!\[REDACTED\])[^\s"'=&;,()<>[\]][^\s"'&;,()<>]*/gi,
     replacement: '$1[REDACTED]',
   },
 ];
