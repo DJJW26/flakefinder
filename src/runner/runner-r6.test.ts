@@ -107,7 +107,9 @@ describe('shell-mode "command not found" (QA RUN-12)', () => {
     expect(commandResolvable('$TOOL', cwd)).toBe(true); // expanded by the shell: can't judge
     expect(commandResolvable('nosuch-xyz', cwd, { PATH: '' })).toBe(false);
     expect(missingCommandWord(['cd', '.', '&&', 'nosuch-xyz', '>', 'o'], cwd)).toBe('nosuch-xyz');
-    expect(missingCommandWord(['FOO=1', 'node', 'x.js', '|', 'cat'], cwd)).toBeUndefined();
+    // `cat` is a POSIX binary; cmd.exe's builtin equivalent is `type`
+    const pipeWord = process.platform === 'win32' ? 'type' : 'cat';
+    expect(missingCommandWord(['FOO=1', 'node', 'x.js', '|', pipeWord], cwd)).toBeUndefined();
   });
 });
 

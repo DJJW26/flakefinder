@@ -125,7 +125,6 @@ function jestSection() {
   step('jest: run -R 2 exits 1 and separates flake from real failure', () => {
     const r = cli(['run', '-R', '2', '--', 'npx', 'jest', '--ci', '--runInBand'], {
       cwd,
-      shell: true,
       timeout: 300_000,
     });
     assert.equal(r.status, 1, `expected exit 1 (deterministic failure persists), got ${r.status}`);
@@ -212,7 +211,6 @@ function pytestSection() {
   step('pytest: run -R 2 exits 1 and separates flake from real failure', () => {
     const r = cli(['run', '-R', '2', '--', 'python', '-m', 'pytest'], {
       cwd,
-      shell: true,
       timeout: 300_000,
     });
     assert.equal(r.status, 1, `expected exit 1, got ${r.status}`);

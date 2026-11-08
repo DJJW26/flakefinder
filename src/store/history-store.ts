@@ -7,7 +7,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  renameSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -15,6 +14,7 @@ import {
 } from 'node:fs';
 import path from 'node:path';
 import type { RunRecord } from '../types.js';
+import { renameOverSync } from '../util/atomic-rename.js';
 
 /** Location of the verdict snapshot used to diff "new flakes" between CI runs. */
 export function snapshotPath(storeDir: string): string {
@@ -70,7 +70,7 @@ function lockAgeMs(lockPath: string, content: string | null): number | null {
 export function breakStaleLock(lockPath: string, observed: string): boolean {
   const aside = `${lockPath}.stale-${uniqueSuffix()}`;
   try {
-    renameSync(lockPath, aside);
+    renameOverSync(lockPath, aside, { attempts: 5 });
   } catch {
     return false; // already broken or released by someone else
   }
@@ -460,7 +460,7 @@ export class HistoryStore {
       } finally {
         closeSync(fd);
       }
-      renameSync(tmp, this.path);
+      renameOverSync(tmp, this.path);
       this.adopt(fresh);
       this.records = keep;
       this.formatVersion = version;

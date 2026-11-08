@@ -6,13 +6,20 @@ import {
   readFileSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { QuarantineEntry, TestVerdict } from '../types.js';
-import { exclusionArgs, pytestNodeId, QuarantineManager } from './manager.js';
+import {
+  breakStaleLock,
+  exclusionArgs,
+  lockState,
+  pytestNodeId,
+  QuarantineManager,
+} from './manager.js';
 
 let dirs: string[] = [];
 function tmpFile(): string {
@@ -327,6 +334,72 @@ describe('concurrent writers (QA CLI-2)', () => {
     qm.save();
     expect(new QuarantineManager(file).list()).toHaveLength(1);
     expect(readdirSync(path.dirname(file))).toEqual(['flakefinder.quarantine.json']);
+  });
+
+  it('recovers a stale breaker token from a dead process', async () => {
+    const file = tmpFile();
+    const { spawnSync } = await import('node:child_process');
+    const dead = spawnSync(process.execPath, ['-e', '0']).pid!;
+    const token = JSON.stringify({ pid: dead, epoch: 1 });
+    writeFileSync(`${file}.lock`, token, 'utf8');
+    writeFileSync(`${file}.lock.break`, token, 'utf8');
+    const qm = new QuarantineManager(file);
+    qm.add(entry('a'));
+    qm.save();
+    expect(new QuarantineManager(file).list()).toHaveLength(1);
+    expect(readdirSync(path.dirname(file))).toEqual(['flakefinder.quarantine.json']);
+  });
+
+  it('a pid-less lock is only stale after 30s; a live pid never ages out', async () => {
+    const file = tmpFile();
+    const lock = `${file}.lock`;
+    writeFileSync(lock, '', 'utf8');
+    expect(lockState(lock).state).toBe('live');
+    expect(breakStaleLock(lock, '')).toBe(false);
+    expect(existsSync(lock)).toBe(true);
+    const old = new Date(Date.now() - 31_000);
+    utimesSync(lock, old, old);
+    expect(lockState(lock)).toEqual({ state: 'stale', content: '' });
+
+    const { spawn } = await import('node:child_process');
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60000)'], {
+      stdio: 'ignore',
+    });
+    try {
+      await new Promise((resolve) => child.once('spawn', resolve));
+      const token = JSON.stringify({ pid: child.pid!, epoch: 1 });
+      writeFileSync(lock, token, 'utf8');
+      utimesSync(lock, old, old);
+      expect(lockState(lock).state).toBe('live');
+      expect(breakStaleLock(lock, token)).toBe(false);
+      expect(readFileSync(lock, 'utf8')).toBe(token);
+    } finally {
+      child.kill();
+    }
+  });
+
+  it('does not break a lock that was replaced after the stale read', () => {
+    const file = tmpFile();
+    const lock = `${file}.lock`;
+    const token = JSON.stringify({ pid: process.pid, epoch: Date.now() });
+    writeFileSync(lock, token, 'utf8');
+    expect(breakStaleLock(lock, JSON.stringify({ pid: 999999, epoch: 1 }))).toBe(false);
+    expect(readFileSync(lock, 'utf8')).toBe(token);
+    expect(readdirSync(path.dirname(file))).toEqual(['flakefinder.quarantine.json.lock']);
+  });
+
+  it('an out-of-range pid cannot wedge the lock forever', () => {
+    const file = tmpFile();
+    writeFileSync(`${file}.lock`, JSON.stringify({ pid: 3_000_000_000, epoch: 1 }), 'utf8');
+    expect(lockState(`${file}.lock`).state).toBe('stale');
+  });
+
+  it('a directory at the lock path fails fast with a clear error', () => {
+    const file = tmpFile();
+    mkdirSync(`${file}.lock`, { recursive: true });
+    const qm = new QuarantineManager(file);
+    qm.add(entry('a'));
+    expect(() => qm.save()).toThrow(/cannot be read as a lock file/);
   });
 
   it('8 parallel processes adding distinct ids lose nothing', async () => {

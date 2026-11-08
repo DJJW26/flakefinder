@@ -284,17 +284,7 @@ import { existsSync as existsSync4, statSync as statSync4 } from "fs";
 import path5 from "path";
 
 // src/quarantine/manager.ts
-import {
-  closeSync,
-  existsSync as existsSync2,
-  openSync,
-  readFileSync as readFileSync2,
-  renameSync,
-  rmSync,
-  statSync as statSync2,
-  writeFileSync,
-  writeSync
-} from "fs";
+import { existsSync as existsSync2, linkSync, readFileSync as readFileSync2, rmSync, statSync as statSync2, writeFileSync } from "fs";
 import path2 from "path";
 
 // src/runner/adapters.ts
@@ -336,6 +326,32 @@ function failedOnlyArgs(runner, failedNames, quarantinedNames = []) {
   }
 }
 
+// src/util/atomic-rename.ts
+import { renameSync } from "fs";
+var RETRYABLE = /* @__PURE__ */ new Set(["EPERM", "EACCES", "EBUSY"]);
+var RETRY_ATTEMPTS = 30;
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function renameOverSync(from, to, opts = {}) {
+  const platform = opts.platform ?? process.platform;
+  if (platform !== "win32") {
+    renameSync(from, to);
+    return;
+  }
+  const attempts = opts.attempts ?? RETRY_ATTEMPTS;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      renameSync(from, to);
+      return;
+    } catch (err) {
+      const code = err.code ?? "";
+      if (attempt + 1 >= attempts || !RETRYABLE.has(code)) throw err;
+      sleepSync(Math.min(5 * (attempt + 1), 100));
+    }
+  }
+}
+
 // src/quarantine/manager.ts
 var EMPTY = { version: 1, entries: [] };
 function applyOp(entries, op) {
@@ -346,57 +362,176 @@ function applyOp(entries, op) {
 }
 var LOCK_TIMEOUT_MS = 1e4;
 var LOCK_STALE_MS = 3e4;
-function sleepSync(ms) {
+function sleepSync2(ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
-function lockIsStale(lockPath) {
-  let pid;
+function lockPid(content) {
+  try {
+    const parsed = JSON.parse(content);
+    if (typeof parsed === "object" && parsed !== null && typeof parsed.pid === "number") {
+      return parsed.pid;
+    }
+  } catch {
+  }
+  return Number.parseInt(content, 10);
+}
+function removeQuietly(target) {
+  try {
+    rmSync(target, { force: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+function removePartialLock(lockPath, token) {
+  try {
+    const content = readFileSync2(lockPath, "utf8");
+    if (content !== "" && !token.startsWith(content)) return;
+  } catch {
+    return;
+  }
+  removeQuietly(lockPath);
+}
+function tryCreateLock(lockPath) {
+  const token = JSON.stringify({
+    pid: process.pid,
+    epoch: Date.now(),
+    nonce: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
+  });
+  const tmp = `${lockPath}.${process.pid}.${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}.tmp`;
+  try {
+    writeFileSync(tmp, token, "utf8");
+    try {
+      linkSync(tmp, lockPath);
+      return token;
+    } catch (err) {
+      const code = err.code;
+      if (code === "EEXIST") return null;
+      try {
+        writeFileSync(lockPath, token, { flag: "wx" });
+      } catch (fallbackErr) {
+        if (fallbackErr.code === "EEXIST") return null;
+        removePartialLock(lockPath, token);
+        throw fallbackErr;
+      }
+      try {
+        if (readFileSync2(lockPath, "utf8") !== token) return null;
+      } catch {
+        return null;
+      }
+      return token;
+    }
+  } finally {
+    removeQuietly(tmp);
+  }
+}
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const code = err.code;
+    return code !== "ESRCH" && code !== "EINVAL" && code !== "ERANGE" && code !== "ERR_INVALID_ARG_TYPE" && code !== "ERR_OUT_OF_RANGE";
+  }
+}
+function contentIsStale(content, ageMs) {
+  const pid = lockPid(content);
+  if (Number.isInteger(pid) && pid > 0) {
+    return pid === process.pid || !processAlive(pid);
+  }
+  return ageMs > LOCK_STALE_MS;
+}
+function lockState(lockPath) {
+  let content;
   let mtimeMs;
   try {
-    pid = Number.parseInt(readFileSync2(lockPath, "utf8"), 10);
+    content = readFileSync2(lockPath, "utf8");
     mtimeMs = statSync2(lockPath).mtimeMs;
-  } catch {
-    return true;
+  } catch (err) {
+    const code = err.code;
+    if (code === "ENOENT") return { state: "missing" };
+    if (code === "EPERM" || code === "EBUSY" || code === "EACCES") return { state: "live" };
+    throw new Error(
+      `quarantine lock ${lockPath} exists but cannot be read as a lock file (${code ?? "error"}) \u2014 check that the quarantine directory is writable and that the lock path is not a directory`
+    );
   }
-  if (Number.isInteger(pid) && pid > 0 && pid !== process.pid) {
+  return contentIsStale(content, Date.now() - mtimeMs) ? { state: "stale", content } : { state: "live" };
+}
+function tryTakeBreaker(breakPath) {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const token = tryCreateLock(breakPath);
+    if (token !== null) return token;
     try {
-      process.kill(pid, 0);
-    } catch (err) {
-      if (err.code === "ESRCH") return true;
+      const content = readFileSync2(breakPath, "utf8");
+      const age = Date.now() - statSync2(breakPath).mtimeMs;
+      if (contentIsStale(content, age)) {
+        if (!removeQuietly(breakPath)) return null;
+        continue;
+      }
+    } catch {
+    }
+    return null;
+  }
+  return null;
+}
+function breakStaleLock(lockPath, observed) {
+  const breakPath = `${lockPath}.break`;
+  const breakerToken = tryTakeBreaker(breakPath);
+  if (breakerToken === null) return false;
+  try {
+    let content;
+    let mtimeMs;
+    try {
+      content = readFileSync2(lockPath, "utf8");
+      mtimeMs = statSync2(lockPath).mtimeMs;
+    } catch {
+      return false;
+    }
+    if (content !== observed || !contentIsStale(content, Date.now() - mtimeMs)) return false;
+    return removeQuietly(lockPath);
+  } finally {
+    try {
+      if (readFileSync2(breakPath, "utf8") === breakerToken) removeQuietly(breakPath);
+    } catch {
     }
   }
-  return Date.now() - mtimeMs > LOCK_STALE_MS;
 }
 function withFileLock(target, fn) {
   const lockPath = `${target}.lock`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  let token;
   for (; ; ) {
-    try {
-      const fd = openSync(lockPath, "wx");
-      try {
-        writeSync(fd, String(process.pid));
-      } finally {
-        closeSync(fd);
-      }
+    const acquired = tryCreateLock(lockPath);
+    if (acquired !== null) {
+      token = acquired;
       break;
-    } catch (err) {
-      if (err.code !== "EEXIST") throw err;
-      if (lockIsStale(lockPath)) {
-        rmSync(lockPath, { force: true });
-        continue;
-      }
-      if (Date.now() > deadline) {
-        throw new Error(
-          `quarantine file is locked by another flakefinder process (${lockPath}) \u2014 delete the lock if no other flakefinder is running`
-        );
-      }
-      sleepSync(10 + Math.floor(Math.random() * 20));
     }
+    if (Date.now() > deadline) {
+      throw new Error(
+        `quarantine file is locked by another flakefinder process (${lockPath}) \u2014 delete the lock if no other flakefinder is running`
+      );
+    }
+    const state = lockState(lockPath);
+    if (state.state === "missing") continue;
+    if (state.state === "stale") {
+      if (!breakStaleLock(lockPath, state.content)) {
+        sleepSync2(5 + Math.floor(Math.random() * 15));
+      }
+      continue;
+    }
+    sleepSync2(10 + Math.floor(Math.random() * 20));
   }
   try {
     return fn();
   } finally {
-    rmSync(lockPath, { force: true });
+    try {
+      const current = readFileSync2(lockPath, "utf8");
+      const ours = current === token;
+      if (ours) {
+        rmSync(lockPath, { force: true });
+      }
+    } catch {
+    }
   }
 }
 var QuarantineManager = class {
@@ -487,7 +622,7 @@ var QuarantineManager = class {
       try {
         writeFileSync(tmp, `${JSON.stringify(fresh, null, 2)}
 `, "utf8");
-        renameSync(tmp, this.filePath);
+        renameOverSync(tmp, this.filePath);
       } catch (err) {
         rmSync(tmp, { force: true });
         throw err;
@@ -602,17 +737,16 @@ function deselectedNodeIds(args) {
 import { randomBytes } from "crypto";
 import {
   appendFileSync,
-  closeSync as closeSync2,
+  closeSync,
   existsSync as existsSync3,
-  linkSync,
+  linkSync as linkSync2,
   mkdirSync,
-  openSync as openSync2,
+  openSync,
   readFileSync as readFileSync3,
-  renameSync as renameSync2,
   rmSync as rmSync2,
   statSync as statSync3,
   writeFileSync as writeFileSync2,
-  writeSync as writeSync2
+  writeSync
 } from "fs";
 import path3 from "path";
 function snapshotPath(storeDir) {
@@ -641,10 +775,10 @@ function lockAgeMs(lockPath, content) {
     return null;
   }
 }
-function breakStaleLock(lockPath, observed) {
+function breakStaleLock2(lockPath, observed) {
   const aside = `${lockPath}.stale-${uniqueSuffix()}`;
   try {
-    renameSync2(lockPath, aside);
+    renameOverSync(lockPath, aside, { attempts: 5 });
   } catch {
     return false;
   }
@@ -659,7 +793,7 @@ function breakStaleLock(lockPath, observed) {
     return true;
   }
   try {
-    linkSync(aside, lockPath);
+    linkSync2(aside, lockPath);
   } catch {
   }
   rmSync2(aside, { force: true });
@@ -818,7 +952,7 @@ var HistoryStore = class _HistoryStore {
       }
       const ageMs = lockAgeMs(this.lockPath, content);
       if (ageMs === null) continue;
-      if (ageMs > LOCK_STALE_MS2 && breakStaleLock(this.lockPath, content)) continue;
+      if (ageMs > LOCK_STALE_MS2 && breakStaleLock2(this.lockPath, content)) continue;
       Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50);
     }
   }
@@ -846,7 +980,7 @@ var HistoryStore = class _HistoryStore {
       throw this.lockError(err.code, "cannot be created");
     }
     try {
-      linkSync(tmp, this.lockPath);
+      linkSync2(tmp, this.lockPath);
       this.lockToken = token;
       return true;
     } catch (err) {
@@ -957,16 +1091,16 @@ var HistoryStore = class _HistoryStore {
       }
       const version = Math.max(fresh.formatVersion ?? STORE_FORMAT_VERSION, STORE_FORMAT_VERSION);
       const tmp = `${this.path}.tmp`;
-      const fd = openSync2(tmp, "w");
+      const fd = openSync(tmp, "w");
       try {
-        writeSync2(fd, `${JSON.stringify({ version })}
+        writeSync(fd, `${JSON.stringify({ version })}
 `, null, "utf8");
-        for (const r of keep) writeSync2(fd, `${JSON.stringify(r)}
+        for (const r of keep) writeSync(fd, `${JSON.stringify(r)}
 `, null, "utf8");
       } finally {
-        closeSync2(fd);
+        closeSync(fd);
       }
-      renameSync2(tmp, this.path);
+      renameOverSync(tmp, this.path);
       this.adopt(fresh);
       this.records = keep;
       this.formatVersion = version;
@@ -1029,7 +1163,8 @@ function matchGlobs(cwd, patterns) {
     for (const entry of entries) {
       const relPath = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        if (entry.name.startsWith(".") || SKIP_DIRS.has(entry.name)) continue;
+        const name = caseInsensitive ? entry.name.toLowerCase() : entry.name;
+        if (entry.name.startsWith(".") || SKIP_DIRS.has(name)) continue;
         walk3(path4.join(dir, entry.name), relPath);
       } else if (entry.isFile()) {
         if (regexps.some((re) => re.test(relPath))) matches.add(path4.join(dir, entry.name));
@@ -5212,16 +5347,27 @@ function shellSegments(command) {
   }
   return segments;
 }
-var SHELL_BUILTINS = /* @__PURE__ */ new Set([
-  ...[".", ":", "[", "alias", "break", "cd", "command", "continue", "eval", "exec", "exit"],
-  ...["export", "false", "getopts", "hash", "pwd", "read", "readonly", "return", "set"],
-  ...["shift", "source", "test", "times", "trap", "true", "type", "ulimit", "umask"],
-  ...["unalias", "unset", "wait", "echo", "printf", "if", "then", "else", "fi", "for"],
-  ...["while", "do", "done", "case", "esac", "!", "{", "}", "(", ")", "call", "copy"],
-  ...["del", "dir", "md", "mkdir", "move", "rd", "ren", "rmdir", "setlocal", "type", "ver"]
+var POSIX_SHELL_BUILTINS = /* @__PURE__ */ new Set([
+  ...[".", ":", "[", "alias", "bg", "bind", "break", "builtin", "caller", "cd", "command"],
+  ...["compgen", "complete", "compopt", "continue", "declare", "dirs", "disown", "echo"],
+  ...["enable", "eval", "exec", "exit", "export", "false", "fc", "fg", "getopts", "hash"],
+  ...["help", "history", "jobs", "kill", "let", "local", "logout", "mapfile", "popd"],
+  ...["printf", "pushd", "pwd", "read", "readarray", "readonly", "return", "set", "shift"],
+  ...["shopt", "source", "suspend", "test", "times", "trap", "true", "type", "typeset"],
+  ...["ulimit", "umask", "unalias", "unset", "wait", "if", "then", "elif", "else", "fi"],
+  ...["for", "while", "until", "do", "done", "case", "esac", "select", "function", "time"],
+  ...["coproc", "!", "{", "}", "(", ")"]
+]);
+var CMD_SHELL_BUILTINS = /* @__PURE__ */ new Set([
+  ...["assoc", "break", "call", "cd", "chdir", "cls", "color", "copy", "date", "del"],
+  ...["dir", "dpath", "echo", "endlocal", "erase", "exit", "for", "ftype", "goto", "if"],
+  ...["md", "mkdir", "mklink", "move", "path", "pause", "popd", "prompt", "pushd", "rd"],
+  ...["rem", "ren", "rename", "rmdir", "set", "setlocal", "shift", "start", "time", "title"],
+  ...["type", "ver", "verify", "vol"]
 ]);
 function commandResolvable(word, cwd, env = process.env, platform = process.platform) {
-  if (SHELL_BUILTINS.has(platform === "win32" ? word.toLowerCase() : word)) return true;
+  const builtins = platform === "win32" ? CMD_SHELL_BUILTINS : POSIX_SHELL_BUILTINS;
+  if (builtins.has(platform === "win32" ? word.toLowerCase() : word)) return true;
   if (/[$`*?~{(]/.test(word)) return true;
   const exts = platform === "win32" ? ["", ...(env.PATHEXT ?? ".COM;.EXE;.BAT;.CMD").split(";").filter(Boolean)] : [""];
   const isFile = (p) => {
@@ -5334,7 +5480,7 @@ function interruptTree(child2, signal) {
 }
 var INTERRUPT_GRACE_MS = 2e3;
 var SPAWN_FAILED = -2;
-var SHELL_NOT_FOUND = process.platform === "win32" ? 9009 : 127;
+var SHELL_NOT_FOUND_CODES = process.platform === "win32" ? [1, 9009] : [127];
 function spawnCommand(command, cwd, timeoutSeconds, currentChild, env = process.env) {
   const shellArgv = shellArgvFor(command, cwd);
   return new Promise((resolve) => {
@@ -5398,7 +5544,10 @@ function spawnCommand(command, cwd, timeoutSeconds, currentChild, env = process.
       });
       child2.on("close", (code) => {
         if (abandoned) return;
-        const missing = useShell2 && code === SHELL_NOT_FOUND && !timedOut ? directNotFound ? command[0] : missingCommandWord(command, cwd) : void 0;
+        const missing = useShell2 && code !== null && SHELL_NOT_FOUND_CODES.includes(code) && !timedOut ? missingCommandWord(command, cwd) ?? // code 1 is also cmd.exe's ordinary failure code; only the
+        // definitive 9009 may stand in for a command word we cannot
+        // judge statically (a `$VAR` that expanded to nothing)
+        (directNotFound && (process.platform !== "win32" || code === 9009) ? command[shellSegments(command)[0]?.cmd ?? 0] : void 0) : void 0;
         if (missing !== void 0) {
           if (timer) clearTimeout(timer);
           console.error(
@@ -5837,7 +5986,7 @@ function shellArgvFor(command, cwd, platform = process.platform) {
       redirectTarget = false;
     } else if (expectCommand) {
       batch = isBatchCommand(t, cwd);
-      out.push(t.replace(CMD_META, "^$1"));
+      out.push(shellQuote(t, { platform }));
       expectCommand = false;
     } else {
       out.push(shellQuote(t, { platform, doubleEscape: batch }));

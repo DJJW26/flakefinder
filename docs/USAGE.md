@@ -453,9 +453,9 @@ than once — jest `invocations`, vitest/mocha retries, Surefire
 records every attempt's status (oldest first), so a retry-then-pass is
 evidence of flakiness rather than a clean pass.
 
-**Encoding and compression.** A leading byte-order mark is ignored. Reports
-must be plain text: a gzip-compressed report is not read (decompress it
-first). A file no parser recognizes is skipped with a reason, e.g.
+**Encoding and compression.** A leading byte-order mark is ignored and a
+gzip-compressed report (for example a `.gz` artifact uploaded by CI) is
+decompressed automatically. A file no parser recognizes is skipped with a reason, e.g.
 `truncated/invalid JSON (…)` for a JSON report cut off mid-write.
 
 - **table** — sections per classification (`FLAKY (confirmed)`,

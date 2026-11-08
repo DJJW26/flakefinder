@@ -625,6 +625,14 @@ describe('shell-mode quoting (R5 bug 2)', () => {
     expect(shellQuote('a|b', { ...w, doubleEscape: true })).toBe('^^^"a^^^|b^^^"');
   });
 
+  it('win32: a command word containing a space stays one token', async () => {
+    const { shellArgvFor } = await import('./wrap.js');
+    expect(shellArgvFor(['C:\\Program Files\\tool.exe', '--x'], '.', 'win32')).toEqual([
+      '^"C:\\Program^ Files\\tool.exe^"',
+      '--x',
+    ]);
+  });
+
   it('win32: batch shims get double escaping, redirect targets single', async () => {
     const { shellArgvFor } = await import('./wrap.js');
     const argv = shellArgvFor(

@@ -132350,7 +132350,7 @@ function saveCacheV2(paths_1, key_1, options_1) {
 init_core();
 
 // src/action/main.ts
-var import_node_fs9 = require("fs");
+var import_node_fs10 = require("fs");
 var import_node_path5 = __toESM(require("path"), 1);
 
 // src/config.ts
@@ -134279,8 +134279,36 @@ function buildPrComment(verdicts, previous, opts = {}) {
 
 // src/store/history-store.ts
 var import_node_crypto5 = require("crypto");
-var import_node_fs4 = require("fs");
+var import_node_fs5 = require("fs");
 var import_node_path2 = __toESM(require("path"), 1);
+
+// src/util/atomic-rename.ts
+var import_node_fs4 = require("fs");
+var RETRYABLE = /* @__PURE__ */ new Set(["EPERM", "EACCES", "EBUSY"]);
+var RETRY_ATTEMPTS = 30;
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+function renameOverSync(from, to, opts = {}) {
+  const platform2 = opts.platform ?? process.platform;
+  if (platform2 !== "win32") {
+    (0, import_node_fs4.renameSync)(from, to);
+    return;
+  }
+  const attempts = opts.attempts ?? RETRY_ATTEMPTS;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      (0, import_node_fs4.renameSync)(from, to);
+      return;
+    } catch (err) {
+      const code = err.code ?? "";
+      if (attempt + 1 >= attempts || !RETRYABLE.has(code)) throw err;
+      sleepSync(Math.min(5 * (attempt + 1), 100));
+    }
+  }
+}
+
+// src/store/history-store.ts
 function snapshotPath(storeDir) {
   return import_node_path2.default.join(storeDir, "verdicts-snapshot.json");
 }
@@ -134302,7 +134330,7 @@ function lockAgeMs(lockPath, content) {
     }
   }
   try {
-    return Date.now() - (0, import_node_fs4.statSync)(lockPath).mtimeMs;
+    return Date.now() - (0, import_node_fs5.statSync)(lockPath).mtimeMs;
   } catch {
     return null;
   }
@@ -134310,25 +134338,25 @@ function lockAgeMs(lockPath, content) {
 function breakStaleLock(lockPath, observed) {
   const aside = `${lockPath}.stale-${uniqueSuffix()}`;
   try {
-    (0, import_node_fs4.renameSync)(lockPath, aside);
+    renameOverSync(lockPath, aside, { attempts: 5 });
   } catch {
     return false;
   }
   let moved = null;
   try {
-    moved = (0, import_node_fs4.readFileSync)(aside, "utf8");
+    moved = (0, import_node_fs5.readFileSync)(aside, "utf8");
   } catch {
   }
   const age = lockAgeMs(aside, moved);
   if (moved === observed && age !== null && age > LOCK_STALE_MS) {
-    (0, import_node_fs4.rmSync)(aside, { force: true });
+    (0, import_node_fs5.rmSync)(aside, { force: true });
     return true;
   }
   try {
-    (0, import_node_fs4.linkSync)(aside, lockPath);
+    (0, import_node_fs5.linkSync)(aside, lockPath);
   } catch {
   }
-  (0, import_node_fs4.rmSync)(aside, { force: true });
+  (0, import_node_fs5.rmSync)(aside, { force: true });
   return false;
 }
 var warningListeners = /* @__PURE__ */ new Set();
@@ -134371,15 +134399,15 @@ var HistoryStore = class _HistoryStore {
     for (const listener of warningListeners) listener(message);
   }
   ensureStoreDir() {
-    (0, import_node_fs4.mkdirSync)(import_node_path2.default.dirname(this.path), { recursive: true });
+    (0, import_node_fs5.mkdirSync)(import_node_path2.default.dirname(this.path), { recursive: true });
   }
   ensureLoaded() {
     if (this.loaded) return;
     this.loaded = true;
-    if (!(0, import_node_fs4.existsSync)(this.path)) return;
+    if (!(0, import_node_fs5.existsSync)(this.path)) return;
     let raw;
     try {
-      raw = (0, import_node_fs4.readFileSync)(this.path, "utf8");
+      raw = (0, import_node_fs5.readFileSync)(this.path, "utf8");
     } catch (err) {
       const e = err;
       const code = e.code ?? "error";
@@ -134437,8 +134465,8 @@ var HistoryStore = class _HistoryStore {
     this.records.push(parsed);
   }
   ensureHeader() {
-    if ((0, import_node_fs4.existsSync)(this.path) && (0, import_node_fs4.statSync)(this.path).size > 0) return;
-    (0, import_node_fs4.appendFileSync)(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+    if ((0, import_node_fs5.existsSync)(this.path) && (0, import_node_fs5.statSync)(this.path).size > 0) return;
+    (0, import_node_fs5.appendFileSync)(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
 `, "utf8");
     this.formatVersion = STORE_FORMAT_VERSION;
   }
@@ -134470,7 +134498,7 @@ var HistoryStore = class _HistoryStore {
       }
       let content;
       try {
-        content = (0, import_node_fs4.readFileSync)(this.lockPath, "utf8");
+        content = (0, import_node_fs5.readFileSync)(this.lockPath, "utf8");
       } catch (err) {
         const code = err.code;
         if (code === "ENOENT") continue;
@@ -134501,19 +134529,19 @@ var HistoryStore = class _HistoryStore {
     });
     const tmp = `${this.lockPath}.${uniqueSuffix()}.tmp`;
     try {
-      (0, import_node_fs4.writeFileSync)(tmp, token, "utf8");
+      (0, import_node_fs5.writeFileSync)(tmp, token, "utf8");
     } catch (err) {
       throw this.lockError(err.code, "cannot be created");
     }
     try {
-      (0, import_node_fs4.linkSync)(tmp, this.lockPath);
+      (0, import_node_fs5.linkSync)(tmp, this.lockPath);
       this.lockToken = token;
       return true;
     } catch (err) {
       const code = err.code;
       if (code === "EEXIST") return false;
       try {
-        (0, import_node_fs4.writeFileSync)(this.lockPath, token, { flag: "wx" });
+        (0, import_node_fs5.writeFileSync)(this.lockPath, token, { flag: "wx" });
         this.lockToken = token;
         return true;
       } catch (err2) {
@@ -134522,14 +134550,14 @@ var HistoryStore = class _HistoryStore {
         throw this.lockError(code2, "cannot be created");
       }
     } finally {
-      (0, import_node_fs4.rmSync)(tmp, { force: true });
+      (0, import_node_fs5.rmSync)(tmp, { force: true });
     }
   }
   releaseLock() {
     const token = this.lockToken;
     this.lockToken = null;
     try {
-      if ((0, import_node_fs4.readFileSync)(this.lockPath, "utf8") === token) (0, import_node_fs4.rmSync)(this.lockPath, { force: true });
+      if ((0, import_node_fs5.readFileSync)(this.lockPath, "utf8") === token) (0, import_node_fs5.rmSync)(this.lockPath, { force: true });
     } catch {
     }
   }
@@ -134547,7 +134575,7 @@ var HistoryStore = class _HistoryStore {
    * (a directory's stat size is non-zero) and crash in appendFileSync.
    */
   assertWritableFile() {
-    if ((0, import_node_fs4.existsSync)(this.path) && !(0, import_node_fs4.statSync)(this.path).isFile()) {
+    if ((0, import_node_fs5.existsSync)(this.path) && !(0, import_node_fs5.statSync)(this.path).isFile()) {
       throw new Error(
         `history store ${this.path} exists but is not a regular file \u2014 delete or rename it (flakefinder recreates it on the next write)`
       );
@@ -134564,7 +134592,7 @@ var HistoryStore = class _HistoryStore {
     try {
       try {
         this.ensureHeader();
-        (0, import_node_fs4.appendFileSync)(this.path, `${JSON.stringify(run)}
+        (0, import_node_fs5.appendFileSync)(this.path, `${JSON.stringify(run)}
 `, "utf8");
       } catch (err) {
         const e = err;
@@ -134590,7 +134618,7 @@ var HistoryStore = class _HistoryStore {
    */
   prune(maxRuns) {
     if (this.unreadable) return;
-    if (!(0, import_node_fs4.existsSync)(this.path)) return;
+    if (!(0, import_node_fs5.existsSync)(this.path)) return;
     this.ensureStoreDir();
     try {
       this.acquireLock();
@@ -134617,16 +134645,16 @@ var HistoryStore = class _HistoryStore {
       }
       const version5 = Math.max(fresh.formatVersion ?? STORE_FORMAT_VERSION, STORE_FORMAT_VERSION);
       const tmp = `${this.path}.tmp`;
-      const fd = (0, import_node_fs4.openSync)(tmp, "w");
+      const fd = (0, import_node_fs5.openSync)(tmp, "w");
       try {
-        (0, import_node_fs4.writeSync)(fd, `${JSON.stringify({ version: version5 })}
+        (0, import_node_fs5.writeSync)(fd, `${JSON.stringify({ version: version5 })}
 `, null, "utf8");
-        for (const r of keep) (0, import_node_fs4.writeSync)(fd, `${JSON.stringify(r)}
+        for (const r of keep) (0, import_node_fs5.writeSync)(fd, `${JSON.stringify(r)}
 `, null, "utf8");
       } finally {
-        (0, import_node_fs4.closeSync)(fd);
+        (0, import_node_fs5.closeSync)(fd);
       }
-      (0, import_node_fs4.renameSync)(tmp, this.path);
+      renameOverSync(tmp, this.path);
       this.adopt(fresh);
       this.records = keep;
       this.formatVersion = version5;
@@ -134646,7 +134674,7 @@ var HistoryStore = class _HistoryStore {
 
 // src/action/baseline.ts
 var import_node_crypto6 = require("crypto");
-var import_node_fs5 = require("fs");
+var import_node_fs6 = require("fs");
 var import_node_path3 = __toESM(require("path"), 1);
 var CACHE_KEY_PREFIX = "flakefinder-history-";
 function cacheLeg(job, scope) {
@@ -134664,9 +134692,9 @@ function baselinePath(storeDir) {
   return import_node_path3.default.join(storeDir, "action-baseline.json");
 }
 function readJson(file) {
-  if (!(0, import_node_fs5.existsSync)(file)) return null;
+  if (!(0, import_node_fs6.existsSync)(file)) return null;
   try {
-    return { ok: true, value: JSON.parse((0, import_node_fs5.readFileSync)(file, "utf8")) };
+    return { ok: true, value: JSON.parse((0, import_node_fs6.readFileSync)(file, "utf8")) };
   } catch {
     return { ok: false };
   }
@@ -134693,9 +134721,9 @@ function resolveBaseline(storeDir, runId) {
 }
 function recordBaseline(storeDir, runId, previous) {
   if (runId === "") return;
-  (0, import_node_fs5.mkdirSync)(storeDir, { recursive: true });
+  (0, import_node_fs6.mkdirSync)(storeDir, { recursive: true });
   const file = { runId, previous };
-  (0, import_node_fs5.writeFileSync)(baselinePath(storeDir), JSON.stringify(file), "utf8");
+  (0, import_node_fs6.writeFileSync)(baselinePath(storeDir), JSON.stringify(file), "utf8");
 }
 
 // src/action/diff.ts
@@ -134708,7 +134736,7 @@ function computeNewFlakes(current, previous) {
 }
 
 // src/action/github.ts
-var import_node_fs6 = require("fs");
+var import_node_fs7 = require("fs");
 init_core();
 function githubEnv(env = process.env) {
   const [owner = "", repo = ""] = (env.GITHUB_REPOSITORY ?? "/").split("/");
@@ -134721,9 +134749,9 @@ function githubEnv(env = process.env) {
   let isPr = false;
   let prNumber = null;
   const eventPath = env.GITHUB_EVENT_PATH;
-  if (eventPath && (0, import_node_fs6.existsSync)(eventPath)) {
+  if (eventPath && (0, import_node_fs7.existsSync)(eventPath)) {
     try {
-      const payload = JSON.parse((0, import_node_fs6.readFileSync)(eventPath, "utf8"));
+      const payload = JSON.parse((0, import_node_fs7.readFileSync)(eventPath, "utf8"));
       if (payload.pull_request?.number != null) {
         isPr = true;
         prNumber = payload.pull_request.number;
@@ -136786,7 +136814,7 @@ function unrecognizedReason(content) {
 }
 
 // src/util/read-text.ts
-var import_node_fs7 = require("fs");
+var import_node_fs8 = require("fs");
 var import_node_zlib2 = require("zlib");
 function decodeText(buf) {
   if (buf.length >= 2 && buf[0] === 31 && buf[1] === 139) {
@@ -136824,7 +136852,7 @@ function swap16(buf) {
   return out;
 }
 function readTextFile(file) {
-  return decodeText((0, import_node_fs7.readFileSync)(file));
+  return decodeText((0, import_node_fs8.readFileSync)(file));
 }
 
 // src/action/ingest.ts
@@ -136875,7 +136903,7 @@ function ingestReports(files, cfg, storeDir, ctx) {
 }
 
 // src/action/inputs.ts
-var import_node_fs8 = require("fs");
+var import_node_fs9 = require("fs");
 var import_node_path4 = __toESM(require("path"), 1);
 
 // src/util/strict-int.ts
@@ -136907,7 +136935,7 @@ function readInputs(get, baseDir) {
   const wd = raw("working-directory", ".");
   const cwd = import_node_path4.default.resolve(baseDir, wd);
   try {
-    if (!(0, import_node_fs8.statSync)(cwd).isDirectory()) problems.push(`working-directory: not a directory: ${wd}`);
+    if (!(0, import_node_fs9.statSync)(cwd).isDirectory()) problems.push(`working-directory: not a directory: ${wd}`);
   } catch {
     problems.push(`working-directory: does not exist: ${wd}`);
   }
@@ -137056,8 +137084,8 @@ async function runAction(deps) {
   for (const w of outcome.warnings) core.warning(w);
   const verdicts = outcome.verdicts;
   const newFlakes = computeNewFlakes(verdicts, previous);
-  (0, import_node_fs9.mkdirSync)(storeDir, { recursive: true });
-  (0, import_node_fs9.writeFileSync)(snapshotPath(storeDir), JSON.stringify(verdicts), "utf8");
+  (0, import_node_fs10.mkdirSync)(storeDir, { recursive: true });
+  (0, import_node_fs10.writeFileSync)(snapshotPath(storeDir), JSON.stringify(verdicts), "utf8");
   recordBaseline(storeDir, gh.runId, previous);
   if (useCache) await saveHistory(deps.cache, core, storeDir, saveKey);
   const flakyCount = verdicts.filter((v) => v.classification.startsWith("flaky-")).length;
@@ -137068,7 +137096,7 @@ async function runAction(deps) {
   core.setOutput("new-flaky-count", newFlakes.length);
   core.setOutput("failing-count", failingCount);
   const reportJsonPath = import_node_path5.default.resolve(cwd, "flakefinder-report.json");
-  (0, import_node_fs9.writeFileSync)(reportJsonPath, renderJson(verdicts, cfg), "utf8");
+  (0, import_node_fs10.writeFileSync)(reportJsonPath, renderJson(verdicts, cfg), "utf8");
   core.setOutput("report-json", reportJsonPath);
   await core.writeSummary(jobSummaryHtml(verdicts, newFlakes.length, failingCount));
   let dashboardArtifact;
@@ -137088,7 +137116,7 @@ async function runAction(deps) {
         runs
       });
       const htmlPath = import_node_path5.default.resolve(cwd, "flakefinder-dashboard.html");
-      (0, import_node_fs9.writeFileSync)(htmlPath, html, "utf8");
+      (0, import_node_fs10.writeFileSync)(htmlPath, html, "utf8");
       await deps.uploadArtifact("flakefinder-dashboard", [htmlPath], cwd);
       dashboardArtifact = "flakefinder-dashboard";
     } catch (err) {
@@ -137114,7 +137142,7 @@ async function runAction(deps) {
 }
 function historyLines(storeDir) {
   try {
-    return (0, import_node_fs9.readFileSync)(import_node_path5.default.join(storeDir, "history.jsonl"), "utf8").split("\n").filter((l) => l.trim().length > 0).length;
+    return (0, import_node_fs10.readFileSync)(import_node_path5.default.join(storeDir, "history.jsonl"), "utf8").split("\n").filter((l) => l.trim().length > 0).length;
   } catch {
     return 0;
   }

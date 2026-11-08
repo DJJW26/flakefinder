@@ -32,6 +32,9 @@ beforeAll(async () => {
     dts: false,
     clean: false,
   });
+  // The bundle is ESM. Node 22+ warns (on stderr) when a .js file has no
+  // nearest package.json declaring "type": "module"; the temp dir has none.
+  writeFileSync(path.join(buildDir, 'package.json'), '{"type":"module"}\n', 'utf8');
   cliPath = path.join(buildDir, 'cli.js');
 }, 60_000);
 

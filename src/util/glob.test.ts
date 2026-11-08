@@ -67,6 +67,15 @@ describe('matchGlobs', () => {
     expect(matches).toEqual(['a/b/junit2.xml', 'a/junit1.xml', 'junit.xml']);
   });
 
+  it('skips dependency dirs case-insensitively on Windows', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'ff-glob-'));
+    dirs.push(root);
+    mkdirSync(path.join(root, 'NODE_MODULES', 'pkg'), { recursive: true });
+    writeFileSync(path.join(root, 'NODE_MODULES', 'pkg', 'junit.xml'), 'x', 'utf8');
+    const matches = matchGlobs(root, ['**/*.xml']).map((p) => rel(root, p));
+    expect(matches).toEqual(process.platform === 'win32' ? [] : ['NODE_MODULES/pkg/junit.xml']);
+  });
+
   it('dedupes overlapping patterns and returns sorted absolute paths', () => {
     const root = makeTree();
     const matches = matchGlobs(root, ['junit.xml', '**/junit*.xml', 'a/*.xml']);

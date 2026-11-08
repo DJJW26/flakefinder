@@ -1,17 +1,8 @@
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-  writeSync,
-} from 'node:fs';
+import { existsSync, linkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { titleAlternation } from '../runner/adapters.js';
 import type { QuarantineEntry, RunnerKind, TestVerdict } from '../types.js';
+import { renameOverSync } from '../util/atomic-rename.js';
 
 interface QuarantineFile {
   version: 1;
@@ -38,31 +29,211 @@ function applyOp(entries: QuarantineEntry[], op: QuarantineOp): QuarantineEntry[
 
 /** How long save() waits for another process's lock before giving up. */
 const LOCK_TIMEOUT_MS = 10_000;
-/** A lock older than this is treated as abandoned even if its pid looks alive. */
+/** Unparseable/legacy lock older than this is abandoned (live pids never age out). */
 const LOCK_STALE_MS = 30_000;
 
 function sleepSync(ms: number): void {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 }
 
-/** A lock left behind by a crashed process: owner pid gone, or simply too old. */
-function lockIsStale(lockPath: string): boolean {
-  let pid: number;
+/** The pid in a lock token; accepts this version's JSON and legacy bare pids. */
+function lockPid(content: string): number {
+  try {
+    const parsed: unknown = JSON.parse(content);
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      typeof (parsed as { pid?: unknown }).pid === 'number'
+    ) {
+      return (parsed as { pid: number }).pid;
+    }
+  } catch {
+    // legacy lock: a bare pid
+  }
+  return Number.parseInt(content, 10);
+}
+
+/** Remove a temp file without letting a sharing violation escape. */
+function removeQuietly(target: string): boolean {
+  try {
+    rmSync(target, { force: true });
+    return true;
+  } catch {
+    // a scanner may still hold it; the caller may retry
+    return false;
+  }
+}
+
+/** Remove a partially written fallback lock, but only if it is still ours. */
+function removePartialLock(lockPath: string, token: string): void {
+  try {
+    const content = readFileSync(lockPath, 'utf8');
+    if (content !== '' && !token.startsWith(content)) return; // foreign owner
+  } catch {
+    return; // gone or unreadable: leave it alone
+  }
+  removeQuietly(lockPath);
+}
+
+/** Create the lock atomically WITH its token: a reader can never see a partial lock. */
+function tryCreateLock(lockPath: string): string | null {
+  const token = JSON.stringify({
+    pid: process.pid,
+    epoch: Date.now(),
+    nonce: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`,
+  });
+  const tmp = `${lockPath}.${process.pid}.${Date.now().toString(36)}.${Math.random()
+    .toString(36)
+    .slice(2, 8)}.tmp`;
+  try {
+    writeFileSync(tmp, token, 'utf8');
+    try {
+      linkSync(tmp, lockPath); // fails EEXIST when someone else holds it
+      return token;
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EEXIST') return null;
+      // filesystems without hard links: exclusive create, then write
+      try {
+        writeFileSync(lockPath, token, { flag: 'wx' });
+      } catch (fallbackErr) {
+        if ((fallbackErr as NodeJS.ErrnoException).code === 'EEXIST') return null;
+        removePartialLock(lockPath, token);
+        throw fallbackErr;
+      }
+      // wx is create-then-write, so a reader can briefly see an empty lock.
+      // If we were paused long enough for another process to age-break it,
+      // the path may hold someone else's token: never report ownership we
+      // cannot verify (the caller will re-classify and retry).
+      try {
+        if (readFileSync(lockPath, 'utf8') !== token) return null;
+      } catch {
+        return null;
+      }
+      return token;
+    }
+  } finally {
+    removeQuietly(tmp);
+  }
+}
+
+/** Is a pid still running? EPERM means it exists but we may not signal it. */
+function processAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    // ESRCH = gone. EINVAL/ERANGE/ERR_INVALID_ARG_TYPE/ERR_OUT_OF_RANGE =
+    // not a pid this host can have (e.g. >2^31-1); age it out instead of
+    // treating a corrupt token as a live owner forever.
+    return (
+      code !== 'ESRCH' &&
+      code !== 'EINVAL' &&
+      code !== 'ERANGE' &&
+      code !== 'ERR_INVALID_ARG_TYPE' &&
+      code !== 'ERR_OUT_OF_RANGE'
+    );
+  }
+}
+
+/** @internal exported for tests. */
+export type LockState =
+  | { state: 'missing' }
+  | { state: 'live' }
+  | { state: 'stale'; content: string };
+
+/** Is this lock content abandoned? Only a dead/own pid or an unparseable old lock. */
+function contentIsStale(content: string, ageMs: number): boolean {
+  const pid = lockPid(content);
+  if (Number.isInteger(pid) && pid > 0) {
+    // Our own pid means an earlier release failed; no withFileLock call nests.
+    return pid === process.pid || !processAlive(pid);
+  }
+  // Legacy/torn write with no usable pid: age is the only evidence.
+  return ageMs > LOCK_STALE_MS;
+}
+
+/** Classify the current lock. 'missing' is NOT stale: retry create, never break. @internal exported for tests. */
+export function lockState(lockPath: string): LockState {
+  let content: string;
   let mtimeMs: number;
   try {
-    pid = Number.parseInt(readFileSync(lockPath, 'utf8'), 10);
+    content = readFileSync(lockPath, 'utf8');
     mtimeMs = statSync(lockPath).mtimeMs;
-  } catch {
-    return true; // vanished meanwhile: just retry the create
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { state: 'missing' };
+    // Windows reports a transient sharing violation while the owner is
+    // creating/replacing the lock; treat it as "someone holds it" and retry.
+    if (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES') return { state: 'live' };
+    // A directory or another layout problem is not "another process holds
+    // it": retrying would only hide it for 10s.
+    throw new Error(
+      `quarantine lock ${lockPath} exists but cannot be read as a lock file (${code ?? 'error'}) — ` +
+        'check that the quarantine directory is writable and that the lock path is not a directory',
+    );
   }
-  if (Number.isInteger(pid) && pid > 0 && pid !== process.pid) {
+  return contentIsStale(content, Date.now() - mtimeMs)
+    ? { state: 'stale', content }
+    : { state: 'live' };
+}
+
+/**
+ * One breaker at a time. The break file is created atomically with its
+ * token; a crashed breaker (dead pid) is recovered, a live one is waited out.
+ */
+function tryTakeBreaker(breakPath: string): string | null {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const token = tryCreateLock(breakPath);
+    if (token !== null) return token;
     try {
-      process.kill(pid, 0);
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code === 'ESRCH') return true;
+      const content = readFileSync(breakPath, 'utf8');
+      const age = Date.now() - statSync(breakPath).mtimeMs;
+      if (contentIsStale(content, age)) {
+        if (!removeQuietly(breakPath)) return null;
+        continue;
+      }
+    } catch {
+      // vanished or transiently unreadable: try once more
+    }
+    return null;
+  }
+  return null;
+}
+
+/**
+ * Remove a lock that is still exactly the abandoned one we observed.
+ *
+ * Holding `<lock>.break` serializes breakers. While that mutex is held the
+ * lock file is NEVER moved aside: a live process cannot acquire it (it still
+ * exists), and no other breaker can remove it, so deleting it in place cannot
+ * capture a lock that someone just acquired. The content is re-read and must
+ * match `observed`; a replaced lock is left untouched.
+ * @internal exported for tests.
+ */
+export function breakStaleLock(lockPath: string, observed: string): boolean {
+  const breakPath = `${lockPath}.break`;
+  const breakerToken = tryTakeBreaker(breakPath);
+  if (breakerToken === null) return false;
+  try {
+    let content: string;
+    let mtimeMs: number;
+    try {
+      content = readFileSync(lockPath, 'utf8');
+      mtimeMs = statSync(lockPath).mtimeMs;
+    } catch {
+      return false; // vanished or unreadable: just retry acquisition
+    }
+    if (content !== observed || !contentIsStale(content, Date.now() - mtimeMs)) return false;
+    return removeQuietly(lockPath);
+  } finally {
+    try {
+      if (readFileSync(breakPath, 'utf8') === breakerToken) removeQuietly(breakPath);
+    } catch {
+      // breaker token already recovered/removed
     }
   }
-  return Date.now() - mtimeMs > LOCK_STALE_MS;
 }
 
 /**
@@ -74,33 +245,46 @@ function lockIsStale(lockPath: string): boolean {
 function withFileLock<T>(target: string, fn: () => T): T {
   const lockPath = `${target}.lock`;
   const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  let token: string;
   for (;;) {
-    try {
-      const fd = openSync(lockPath, 'wx');
-      try {
-        writeSync(fd, String(process.pid));
-      } finally {
-        closeSync(fd);
-      }
+    const acquired = tryCreateLock(lockPath);
+    if (acquired !== null) {
+      token = acquired;
       break;
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err;
-      if (lockIsStale(lockPath)) {
-        rmSync(lockPath, { force: true });
-        continue;
-      }
-      if (Date.now() > deadline) {
-        throw new Error(
-          `quarantine file is locked by another flakefinder process (${lockPath}) — delete the lock if no other flakefinder is running`,
-        );
-      }
-      sleepSync(10 + Math.floor(Math.random() * 20));
     }
+    // checked on EVERY iteration — breakStaleLock may fail forever on a
+    // lock that cannot be removed (AV/indexer/read-only), so the stale
+    // branch must not bypass the deadline
+    if (Date.now() > deadline) {
+      throw new Error(
+        `quarantine file is locked by another flakefinder process (${lockPath}) — delete the lock if no other flakefinder is running`,
+      );
+    }
+    const state = lockState(lockPath);
+    if (state.state === 'missing') continue; // vanished: retry the create now
+    if (state.state === 'stale') {
+      // another waiter may be breaking it; back off briefly instead of spinning
+      if (!breakStaleLock(lockPath, state.content)) {
+        sleepSync(5 + Math.floor(Math.random() * 15));
+      }
+      continue;
+    }
+    sleepSync(10 + Math.floor(Math.random() * 20));
   }
   try {
     return fn();
   } finally {
-    rmSync(lockPath, { force: true });
+    try {
+      // only remove the lock if it is still OURS: it may have been broken as
+      // stale and re-acquired while we held it
+      const current = readFileSync(lockPath, 'utf8');
+      const ours = current === token;
+      if (ours) {
+        rmSync(lockPath, { force: true });
+      }
+    } catch {
+      // already gone
+    }
   }
 }
 
@@ -216,7 +400,7 @@ export class QuarantineManager {
       const tmp = `${this.filePath}.${process.pid}.${Date.now().toString(36)}.tmp`;
       try {
         writeFileSync(tmp, `${JSON.stringify(fresh, null, 2)}\n`, 'utf8');
-        renameSync(tmp, this.filePath);
+        renameOverSync(tmp, this.filePath);
       } catch (err) {
         rmSync(tmp, { force: true });
         throw err;

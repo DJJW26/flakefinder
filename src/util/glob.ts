@@ -52,7 +52,8 @@ export function matchGlobs(cwd: string, patterns: string[]): string[] {
     for (const entry of entries) {
       const relPath = rel ? `${rel}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+        const name = caseInsensitive ? entry.name.toLowerCase() : entry.name;
+        if (entry.name.startsWith('.') || SKIP_DIRS.has(name)) continue;
         walk(path.join(dir, entry.name), relPath);
       } else if (entry.isFile()) {
         if (regexps.some((re) => re.test(relPath))) matches.add(path.join(dir, entry.name));

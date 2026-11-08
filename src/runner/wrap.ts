@@ -133,14 +133,26 @@ function shellSegments(command: string[]): Array<{ cmd: number; end: number }> {
   return segments;
 }
 
-/** Shell builtins / keywords that never resolve on PATH (POSIX sh and cmd.exe). */
-const SHELL_BUILTINS = new Set([
-  ...['.', ':', '[', 'alias', 'break', 'cd', 'command', 'continue', 'eval', 'exec', 'exit'],
-  ...['export', 'false', 'getopts', 'hash', 'pwd', 'read', 'readonly', 'return', 'set'],
-  ...['shift', 'source', 'test', 'times', 'trap', 'true', 'type', 'ulimit', 'umask'],
-  ...['unalias', 'unset', 'wait', 'echo', 'printf', 'if', 'then', 'else', 'fi', 'for'],
-  ...['while', 'do', 'done', 'case', 'esac', '!', '{', '}', '(', ')', 'call', 'copy'],
-  ...['del', 'dir', 'md', 'mkdir', 'move', 'rd', 'ren', 'rmdir', 'setlocal', 'type', 'ver'],
+/** POSIX sh builtins and keywords that never resolve on PATH. */
+const POSIX_SHELL_BUILTINS = new Set([
+  ...['.', ':', '[', 'alias', 'bg', 'bind', 'break', 'builtin', 'caller', 'cd', 'command'],
+  ...['compgen', 'complete', 'compopt', 'continue', 'declare', 'dirs', 'disown', 'echo'],
+  ...['enable', 'eval', 'exec', 'exit', 'export', 'false', 'fc', 'fg', 'getopts', 'hash'],
+  ...['help', 'history', 'jobs', 'kill', 'let', 'local', 'logout', 'mapfile', 'popd'],
+  ...['printf', 'pushd', 'pwd', 'read', 'readarray', 'readonly', 'return', 'set', 'shift'],
+  ...['shopt', 'source', 'suspend', 'test', 'times', 'trap', 'true', 'type', 'typeset'],
+  ...['ulimit', 'umask', 'unalias', 'unset', 'wait', 'if', 'then', 'elif', 'else', 'fi'],
+  ...['for', 'while', 'until', 'do', 'done', 'case', 'esac', 'select', 'function', 'time'],
+  ...['coproc', '!', '{', '}', '(', ')'],
+]);
+
+/** cmd.exe internal commands: these never resolve on PATH. */
+const CMD_SHELL_BUILTINS = new Set([
+  ...['assoc', 'break', 'call', 'cd', 'chdir', 'cls', 'color', 'copy', 'date', 'del'],
+  ...['dir', 'dpath', 'echo', 'endlocal', 'erase', 'exit', 'for', 'ftype', 'goto', 'if'],
+  ...['md', 'mkdir', 'mklink', 'move', 'path', 'pause', 'popd', 'prompt', 'pushd', 'rd'],
+  ...['rem', 'ren', 'rename', 'rmdir', 'set', 'setlocal', 'shift', 'start', 'time', 'title'],
+  ...['type', 'ver', 'verify', 'vol'],
 ]);
 
 /** Can `word` be resolved as a command from `cwd` (path, PATH lookup, or builtin)? */
@@ -150,7 +162,8 @@ export function commandResolvable(
   env: NodeJS.ProcessEnv = process.env,
   platform: NodeJS.Platform = process.platform,
 ): boolean {
-  if (SHELL_BUILTINS.has(platform === 'win32' ? word.toLowerCase() : word)) return true;
+  const builtins = platform === 'win32' ? CMD_SHELL_BUILTINS : POSIX_SHELL_BUILTINS;
+  if (builtins.has(platform === 'win32' ? word.toLowerCase() : word)) return true;
   // anything the shell would expand or that we cannot judge statically
   if (/[$`*?~{(]/.test(word)) return true;
   const exts =
@@ -360,8 +373,13 @@ export const INTERRUPT_GRACE_MS = 2000;
  */
 export const SPAWN_FAILED = -2;
 
-/** Exit code a shell uses for "command not found" (POSIX sh 127, cmd.exe 9009). */
-const SHELL_NOT_FOUND = process.platform === 'win32' ? 9009 : 127;
+/**
+ * Exit codes a shell uses for "command not found". POSIX sh uses 127. cmd.exe
+ * normally uses 9009, but `cmd /d /s /c <missing>` (what Node's shell:true
+ * spawns) exits 1, which is also the ordinary failure code — callers therefore
+ * confirm with missingCommandWord() before calling it a start failure.
+ */
+const SHELL_NOT_FOUND_CODES: readonly number[] = process.platform === 'win32' ? [1, 9009] : [127];
 
 function spawnCommand(
   command: string[],
@@ -445,10 +463,14 @@ function spawnCommand(
         // of the line genuinely resolves nowhere (a test script that itself
         // exits 127 must stay a test failure)
         const missing =
-          useShell && code === SHELL_NOT_FOUND && !timedOut
-            ? directNotFound
-              ? command[0]!
-              : missingCommandWord(command, cwd)
+          useShell && code !== null && SHELL_NOT_FOUND_CODES.includes(code) && !timedOut
+            ? (missingCommandWord(command, cwd) ??
+              // code 1 is also cmd.exe's ordinary failure code; only the
+              // definitive 9009 may stand in for a command word we cannot
+              // judge statically (a `$VAR` that expanded to nothing)
+              (directNotFound && (process.platform !== 'win32' || code === 9009)
+                ? command[shellSegments(command)[0]?.cmd ?? 0]
+                : undefined))
             : undefined;
         if (missing !== undefined) {
           if (timer) clearTimeout(timer);
@@ -1056,9 +1078,11 @@ export function isBatchCommand(
 
 /**
  * The argv for shell mode: operators stay bare, everything else is quoted.
- * On win32 a segment's command token is only caret-escaped (cmd must still
- * resolve it), and its arguments are double-escaped when it is a batch shim;
- * redirect targets are single-escaped (cmd opens them itself).
+ * On win32 command tokens are quoted too: caret-escaping alone does not keep
+ * a space in a path (`C:\Program^ Files\node.exe` is still split by cmd), and
+ * cmd resolves a quoted executable path just fine. Arguments are
+ * double-escaped when the command is a batch shim; redirect targets are
+ * single-escaped (cmd opens them itself).
  */
 export function shellArgvFor(
   command: string[],
@@ -1084,7 +1108,7 @@ export function shellArgvFor(
       redirectTarget = false;
     } else if (expectCommand) {
       batch = isBatchCommand(t, cwd);
-      out.push(t.replace(CMD_META, '^$1'));
+      out.push(shellQuote(t, { platform }));
       expectCommand = false;
     } else {
       out.push(shellQuote(t, { platform, doubleEscape: batch }));
