@@ -134369,6 +134369,22 @@ function lastRuns(records, maxRuns) {
   if (kept.size === new Set(records.map((r) => r.runId)).size) return records;
   return records.filter((r) => kept.has(r.runId));
 }
+function isJsonObject2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function isTestStatus(status) {
+  return status === "pass" || status === "fail" || status === "skip" || status === "error";
+}
+function isOptionalString(value) {
+  return value === void 0 || typeof value === "string";
+}
+function isTestResult(result) {
+  return isJsonObject2(result) && typeof result.testId === "string" && typeof result.suite === "string" && typeof result.name === "string" && isTestStatus(result.status) && (result.durationMs === null || Number.isFinite(result.durationMs)) && isOptionalString(result.message) && isOptionalString(result.stack) && (result.attempts === void 0 || Array.isArray(result.attempts) && result.attempts.every(isTestStatus));
+}
+function hasValidRunData(record) {
+  return typeof record.runId === "string" && typeof record.timestamp === "string" && // Older or hand-authored history can omit execution metadata.
+  (record.attempt === void 0 || Number.isInteger(record.attempt)) && isOptionalString(record.commitSha) && isOptionalString(record.branch) && isOptionalString(record.ciRunId) && Array.isArray(record.results) && record.results.every(isTestResult);
+}
 var HistoryStore = class _HistoryStore {
   path;
   warnings = [];
@@ -134443,6 +134459,12 @@ var HistoryStore = class _HistoryStore {
       }
       return;
     }
+    if (!isJsonObject2(parsed)) {
+      if (this.warnings.length < 10) {
+        this.warn(`skipping record-shaped garbage at line ${i} in ${this.path}`);
+      }
+      return;
+    }
     if (parsed.runId === void 0 && parsed.results === void 0) {
       if (typeof parsed.version === "number") {
         if (i === 1) this.formatVersion = parsed.version;
@@ -134456,7 +134478,7 @@ var HistoryStore = class _HistoryStore {
       }
       return;
     }
-    if (typeof parsed.runId !== "string" || !Array.isArray(parsed.results)) {
+    if (!hasValidRunData(parsed)) {
       if (this.warnings.length < 10) {
         this.warn(`skipping invalid record at line ${i} in ${this.path}`);
       }

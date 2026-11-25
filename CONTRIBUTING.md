@@ -5,8 +5,9 @@ dependency-light — please keep it that way.
 
 ## Setup
 
-Node 20+ for development (the vitest toolchain requires it); the published CLI
-itself supports Node 18+ and CI exercises that separately.
+Use Node 24 for development. Vitest 5 also supports Node 22.12+ in the 22.x
+line and Node 26+. The published CLI supports Node 18+, and CI installs and runs
+the packed CLI on Node 18.
 
 ```bash
 git clone https://github.com/DJJW26/flakefinder.git
@@ -22,8 +23,8 @@ npm run e2e       # fixture end-to-end (needs go/python for those sections; jest
 ## Ground rules
 
 - **No new runtime dependencies** without opening an issue first. The CLI
-  bundles to a single file with exactly two runtime deps (`commander`,
-  `fast-xml-parser`) — that's a feature.
+  builds to a single entry file with two direct runtime dependencies
+  (`commander` and `fast-xml-parser`).
 - **The engine contract is PLAN.md §5.** Classification precedence, score
   arithmetic and confidence formulas are behavioral contracts covered by
   table-driven tests. If you change behavior, change PLAN.md and the tests in

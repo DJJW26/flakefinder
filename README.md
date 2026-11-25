@@ -132,7 +132,7 @@ repo are fine. Point `flakefinder.config.json` → `reports` globs at them.
 ```yaml
       - run: npm test            # your tests write report files
       - name: flakefinder
-        uses: DJJW26/flakefinder@v1
+        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
         if: always()
 ```
 
@@ -142,8 +142,8 @@ artifact, and can fail the job when *new* flakes appear. Matrix legs keep
 separate histories automatically. Full input/output reference, matrix and
 monorepo recipes: [docs/github-action.md](docs/github-action.md).
 
-Pin `@v1` (or a full release tag/commit SHA), not `@main`: `main` can carry
-unreleased changes and a stale `dist/`.
+The example pins a full commit SHA so every workflow run uses the same
+Action code. This commit is on the `fix/windows-parity` branch.
 
 ## Quarantine
 
@@ -173,8 +173,8 @@ tracked and reported, but not auto-excluded.
 
 - **Local-first.** No network calls, no accounts, no telemetry. Your test data
   never leaves the machine (or your GitHub cache, if you use the Action).
-- **Tiny and bundled.** Two runtime dependencies (`commander`,
-  `fast-xml-parser`) compiled into a single-file CLI. `npx` and go.
+- **Small CLI.** A single entry file with two direct runtime dependencies
+  (`commander` and `fast-xml-parser`), installed by npm.
 - **Exit codes you can script.** `0` clean or flakes-only, `1` deterministic
   failure, `2` usage/environment error. CI gates are one line.
 - **Deterministic.** Classification, scores, and confidence are transparent

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ResolvedConfig, RunRecord, TestStatus } from '../types.js';
 import { makeTestId } from '../util/test-id.js';
 import { classifyAll } from './classify.js';
@@ -18,6 +18,14 @@ const cfg: ResolvedConfig = {
   retryMode: 'auto',
   timeoutSeconds: null,
 };
+
+beforeEach(() => {
+  vi.setSystemTime(new Date('2026-10-27T00:00:00.000Z'));
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 let clock = 0;
 function run(

@@ -72,7 +72,7 @@ remaining QA items except the deferred test-identity decision (PAR-4/5/15).
 - The dashboard follows the OS light/dark preference and escapes bidi and
   control characters.
 - `THIRD_PARTY_NOTICES.md` is added; CI actions are pinned to commit SHAs;
-  docs use `@v1`.
+  Action examples use a full commit SHA.
 
 ### Round 5
 QA round 5: about 80 fixes across the runner, quarantine, engine, store,

@@ -1,7 +1,7 @@
 /**
  * Black-box CLI tests: the CURRENT source of src/cli/index.ts is bundled
- * once (tsup, deps inlined) into a temp dir and spawned like a user would —
- * so these never depend on a stale committed dist/.
+ * into a temporary ESM bundle using the installed runtime dependencies,
+ * just like the published CLI. These tests use the current source.
  */
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
@@ -17,14 +17,16 @@ let cliPath = '';
 let dirs: string[] = [];
 
 beforeAll(async () => {
-  buildDir = mkdtempSync(path.join(tmpdir(), 'ff-cli-build-'));
+  // Keep the temporary build in the installed dependency tree so the
+  // child process can resolve the CLI's external dependencies.
+  const dependencyDir = fileURLToPath(new URL('../../node_modules/', import.meta.url));
+  buildDir = mkdtempSync(path.join(dependencyDir, '.ff-cli-build-'));
   await build({
     entry: { cli: fileURLToPath(new URL('./index.ts', import.meta.url)) },
     format: ['esm'],
     platform: 'node',
     target: 'node18',
     outDir: buildDir,
-    noExternal: [/.*/],
     config: false,
     silent: true,
     sourcemap: false,
@@ -32,8 +34,7 @@ beforeAll(async () => {
     dts: false,
     clean: false,
   });
-  // The bundle is ESM. Node 22+ warns (on stderr) when a .js file has no
-  // nearest package.json declaring "type": "module"; the temp dir has none.
+  // The entry sits under node_modules, so give the bundle its own ESM scope.
   writeFileSync(path.join(buildDir, 'package.json'), '{"type":"module"}\n', 'utf8');
   cliPath = path.join(buildDir, 'cli.js');
 }, 60_000);

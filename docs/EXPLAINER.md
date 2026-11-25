@@ -120,7 +120,7 @@ called a **GitHub Action**. Anyone can publish an Action, and anyone else
 can use it in their workflow with one line:
 
 ```yaml
-- uses: DJJW26/flakefinder@v1
+- uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
 ```
 
 The traffic light is sacred. Entire team rituals, merge rules, and release
@@ -233,7 +233,7 @@ your data anywhere. That gap is exactly what flakefinder fills.
 One npm package that is simultaneously:
 
 1. a **CLI** (`npx flakefinder …`) for local use and any CI system,
-2. a **GitHub Action** (`uses: DJJW26/flakefinder@v1`) for GitHub,
+2. a **GitHub Action** for GitHub,
 3. a **library** (the engine is importable — this matters for the cloud plan,
    Part 11).
 
@@ -1209,10 +1209,10 @@ additionally upserts the MR note (6.9) — full recipe in docs/USAGE.md.
 
 ## 6.15 Build and release machinery
 
-- **Build:** `tsup` bundles the CLI (`dist/cli.js`, single ESM file with a
-  shebang, ~115 KB) and the Action (`dist/action/index.cjs`, CJS).
-  Runtime dependencies: exactly two (`commander`, `fast-xml-parser`),
-  bundled in — the published tarball is ~90 KB and installs in seconds.
+- **Build.** `tsup` builds the CLI (`dist/cli.js`, ESM) and the GitHub
+  Action (`dist/action/index.cjs`, CommonJS). npm installs the CLI's two
+  direct runtime dependencies, `commander` and `fast-xml-parser`. The Action
+  bundle includes its dependencies.
 - **Release:** `node scripts/release.mjs 1.2.0 --push` bumps the version in
   *both* places (package.json + `FLAKEFINDER_VERSION` in types.ts — a
   two-location trap the script exists to prevent), inserts a CHANGELOG

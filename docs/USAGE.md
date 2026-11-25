@@ -43,8 +43,9 @@ $ cd flakefinder && npm install && npm run build
 $ node dist/cli.js run -- npm test        # or: npm link
 ```
 
-Requires Node >= 18. The CLI is a single bundled file (`dist/cli.js`) with two
-runtime dependencies baked in — nothing else to manage.
+The installed CLI requires Node 18 or newer. Use Node 24 to build it from
+source. npm installs its two direct runtime dependencies, `commander` and
+`fast-xml-parser`.
 
 ## The 5-minute path
 
@@ -619,7 +620,7 @@ jobs:
       - run: npm ci
       - run: npm test                      # must write report files
       - name: flakefinder
-        uses: DJJW26/flakefinder@v1
+        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
         if: always()                       # analyze even when tests fail
 ```
 
@@ -628,7 +629,7 @@ moment they're recorded — that's the point):
 
 ```yaml
       - name: flakefinder
-        uses: DJJW26/flakefinder@v1
+        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
         if: always()
         with:
           fail-on-new-flakes: true
@@ -643,7 +644,7 @@ moment they're recorded — that's the point):
 
 ```yaml
       - name: flakefinder (services/api)
-        uses: DJJW26/flakefinder@v1
+        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
         if: always()
         with:
           working-directory: services/api
@@ -655,7 +656,7 @@ dimensions you care about if you want it stable when the matrix changes:
 
 ```yaml
       - name: flakefinder
-        uses: DJJW26/flakefinder@v1
+        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
         if: always()
         with:
           history-key: ${{ matrix.os }}-node${{ matrix.node }}

@@ -13,7 +13,7 @@ What it *cannot* do:
 
 - **Cross-repo / org-wide views** — "which teams own the flakiest suites?"
 - **Zero-setup CI history** — today every repo must wire `actions/cache`;
-  a hosted store makes `uses: DJJW26/flakefinder@v1` work with no cache step.
+  a hosted store would let the Flakefinder Action run without a cache step.
 - **Cross-service correlation** — "test X became flaky after commit Y in
   service A" across repos sharing a monorepo dependency.
 - **Trend dashboards that outlive 300-run retention** and survive cache eviction.

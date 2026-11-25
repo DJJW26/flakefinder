@@ -124,6 +124,47 @@ export function lastRuns(records: RunRecord[], maxRuns: number): RunRecord[] {
   return records.filter((r) => kept.has(r.runId));
 }
 
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isTestStatus(status: unknown): boolean {
+  return status === 'pass' || status === 'fail' || status === 'skip' || status === 'error';
+}
+
+function isOptionalString(value: unknown): boolean {
+  return value === undefined || typeof value === 'string';
+}
+
+function isTestResult(result: unknown): boolean {
+  return (
+    isJsonObject(result) &&
+    typeof result.testId === 'string' &&
+    typeof result.suite === 'string' &&
+    typeof result.name === 'string' &&
+    isTestStatus(result.status) &&
+    (result.durationMs === null || Number.isFinite(result.durationMs)) &&
+    isOptionalString(result.message) &&
+    isOptionalString(result.stack) &&
+    (result.attempts === undefined ||
+      (Array.isArray(result.attempts) && result.attempts.every(isTestStatus)))
+  );
+}
+
+function hasValidRunData(record: Record<string, unknown>): boolean {
+  return (
+    typeof record.runId === 'string' &&
+    typeof record.timestamp === 'string' &&
+    // Older or hand-authored history can omit execution metadata.
+    (record.attempt === undefined || Number.isInteger(record.attempt)) &&
+    isOptionalString(record.commitSha) &&
+    isOptionalString(record.branch) &&
+    isOptionalString(record.ciRunId) &&
+    Array.isArray(record.results) &&
+    record.results.every(isTestResult)
+  );
+}
+
 /**
  * Append-only JSONL history store. One RunRecord per line, prefixed by a
  * `{"version":1}` schema header (v0.2.0+; legacy header-less files load
@@ -211,18 +252,23 @@ export class HistoryStore {
 
   private processLine(line: string, i: number): void {
     if (!line) return;
-    let parsed: Record<string, unknown>;
+    let parsed: unknown;
     try {
-      parsed = JSON.parse(line) as Record<string, unknown>;
+      parsed = JSON.parse(line);
     } catch {
       if (this.warnings.length < 10) {
         this.warn(`skipping corrupt line ${i} in ${this.path}`);
       }
       return;
     }
+    if (!isJsonObject(parsed)) {
+      if (this.warnings.length < 10) {
+        this.warn(`skipping record-shaped garbage at line ${i} in ${this.path}`);
+      }
+      return;
+    }
     // Schema marker: {"version":N} with no record fields. Legitimate at
-    // line 0; elsewhere it means a merged/partial write — skip it, don't
-    // crash downstream (RunRecord consumers iterate `results`).
+    // the first line; elsewhere it means a merged/partial write.
     if (parsed.runId === undefined && parsed.results === undefined) {
       if (typeof parsed.version === 'number') {
         if (i === 1) this.formatVersion = parsed.version;
@@ -236,9 +282,7 @@ export class HistoryStore {
       }
       return;
     }
-    // Record shape validation: anything without a runId + results array is
-    // skipped with a warning instead of blowing up the classifier later.
-    if (typeof parsed.runId !== 'string' || !Array.isArray(parsed.results)) {
+    if (!hasValidRunData(parsed)) {
       if (this.warnings.length < 10) {
         this.warn(`skipping invalid record at line ${i} in ${this.path}`);
       }

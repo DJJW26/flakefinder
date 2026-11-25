@@ -24,7 +24,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npx biome check src tests
@@ -42,13 +42,16 @@ jobs:
           git diff --exit-code dist/ || (echo '::error::dist/ is stale — run "npm run build" and commit' && exit 1)
 
   matrix:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        # vitest (dev toolchain) needs Node >= 20.19; Node 18 is covered by the runtime job below.
-        # 24 is the Action runtime (action.yml `using: node24`).
-        node: [20, 22, 24]
+        # Vitest 5 supports Node 22.12+, 24.x, and 26+. The Action runs on Node 24.
+        os: [ubuntu-latest]
+        node: ['22', '24', '26']
+        include:
+          - os: windows-latest
+            node: '24'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -63,8 +66,7 @@ jobs:
       - run: node dist/cli.js version
 
   node-18-runtime:
-    # The PUBLISHED CLI supports Node 18 (engines: >=18); exercise the built
-    # artifact directly, without the dev toolchain.
+    # Build with the dev toolchain, then install and run the published CLI on Node 18.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -72,36 +74,51 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 18
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npm run build
-      - run: node dist/cli.js version
-      - name: CLI smoke (ingest → report → html)
+      - name: Pack the CLI
         run: |
-          SMOKE=$(mktemp -d)
-          cp tests/parsers-fixtures/jest.json "$SMOKE/"
-          node dist/cli.js --cwd "$SMOKE" ingest jest.json
-          node dist/cli.js --cwd "$SMOKE" report --no-color | grep -q "tracked test"
-          node dist/cli.js --cwd "$SMOKE" html
-          test -s "$SMOKE/flakefinder-report.html"
+          PACK=$(npm pack --silent --pack-destination "$RUNNER_TEMP")
+          echo "CLI_TARBALL=$RUNNER_TEMP/$PACK" >> "$GITHUB_ENV"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 18
+      - name: CLI smoke (ingest → report → html)
+        shell: bash
+        run: |
+          cd "$(mktemp -d)"
+          npm install --prefix "$PWD" --engine-strict --no-audit --no-fund "$CLI_TARBALL"
+          FIXTURES="$GITHUB_WORKSPACE/tests/parsers-fixtures"
+          cp "$FIXTURES/jest.json" "$FIXTURES/junit-node-test.xml" .
+          CLI=./node_modules/.bin/flakefinder
+          "$CLI" version
+          "$CLI" ingest jest.json junit-node-test.xml
+          REPORT=$("$CLI" report --no-color)
+          grep -q "tracked test" <<< "$REPORT"
+          "$CLI" html
+          test -s flakefinder-report.html
           echo "node-18 runtime smoke OK"
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - name: Cache jest fixture deps
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: fixtures/jest-project/node_modules
-          key: jest-fixture-${{ hashFiles('fixtures/jest-project/package.json') }}
+          key: jest-fixture-${{ runner.os }}-${{ hashFiles('fixtures/jest-project/package-lock.json') }}
       - run: npm ci
-      - run: npm run build
-      - run: node scripts/e2e.mjs
+      - run: npm run e2e

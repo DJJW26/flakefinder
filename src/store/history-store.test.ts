@@ -191,6 +191,28 @@ describe('store robustness (review round)', () => {
     expect(b.warnings.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('warns about malformed JSON values and records, then continues loading', () => {
+    const store = tmpStore();
+    const good = record('good', 'pass');
+    const malformed = [
+      null,
+      [],
+      42,
+      { ...good, timestamp: null },
+      { ...good, results: [null] },
+      { ...good, results: [{ ...good.results[0], name: [] }] },
+    ];
+    const lines = [{ version: 1 }, ...malformed, good];
+    writeFileSync(store.path, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`, 'utf8');
+
+    expect(store.loadAll()).toEqual([good]);
+    expect(store.formatVersion).toBe(1);
+    expect(store.warnings).toHaveLength(malformed.length);
+    for (const [index, warning] of store.warnings.entries()) {
+      expect(warning).toContain(`line ${index + 2}`);
+    }
+  });
+
   it('warns when the store format is newer than this build', () => {
     const a = tmpStore();
     a.append(record('r1', 'pass'));
@@ -370,16 +392,23 @@ describe('prune keeps the format header (R5 #1)', () => {
     expect(fresh.warnings).toEqual([]);
   });
 
-  it('a newer-version header is preserved, not downgraded', () => {
+  it('prune preserves a newer version and unknown fields on retained records', () => {
     const a = tmpStore();
-    for (let i = 1; i <= 4; i++) a.append(record(`r${i}`, 'pass'));
-    const lines = readFileSync(a.path, 'utf8').split('\n');
-    lines[0] = JSON.stringify({ version: 7 });
-    writeFileSync(a.path, lines.join('\n'), 'utf8');
-    const b = new HistoryStore(path.dirname(a.path));
-    b.prune(2);
-    expect(headerOf(b.path)).toEqual({ version: 7 });
-    expect(b.formatVersion).toBe(7);
+    const latest = record('latest', 'pass');
+    const extended = {
+      ...latest,
+      futureRunField: { label: 'new' },
+      results: latest.results.map((result) => ({ ...result, futureTestField: true })),
+    };
+    const lines = [{ version: 7 }, record('old', 'pass'), extended];
+    writeFileSync(a.path, `${lines.map((line) => JSON.stringify(line)).join('\n')}\n`, 'utf8');
+
+    a.prune(1);
+
+    expect(headerOf(a.path)).toEqual({ version: 7 });
+    const fresh = new HistoryStore(path.dirname(a.path));
+    expect(fresh.loadAll()).toEqual([extended]);
+    expect(fresh.formatVersion).toBe(7);
   });
 });
 
