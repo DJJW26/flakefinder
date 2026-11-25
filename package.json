@@ -49,7 +49,7 @@
   },
   "homepage": "https://github.com/DJJW26/flakefinder#readme",
   "dependencies": {
-    "commander": "^15.0.0",
+    "commander": "^13.1.0",
     "fast-xml-parser": "^5.11.2"
   },
   "devDependencies": {

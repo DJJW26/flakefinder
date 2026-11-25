@@ -59,7 +59,7 @@ describe('repro: identical timestamps + retry rescue', () => {
 
 describe('runId-grouped ordering (QA round 4 regression)', () => {
   it('retry pairs survive identical timestamps interleaved with other runIds', () => {
-    const T = '2026-10-26T10:00:00.000Z';
+    const T = new Date().toISOString();
     const runs = [
       mk('R', 1, 'shaA', 'fail', T, 't'),
       mk('R2', 1, 'shaB', 'fail', T, 't'),

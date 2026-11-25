@@ -129213,8 +129213,10 @@ var HistoryStore = class {
   loaded = false;
   records = [];
   constructor(storeDir) {
-    (0, import_node_fs4.mkdirSync)(storeDir, { recursive: true });
     this.path = import_node_path2.default.join(storeDir, "history.jsonl");
+  }
+  ensureStoreDir() {
+    (0, import_node_fs4.mkdirSync)(import_node_path2.default.dirname(this.path), { recursive: true });
   }
   ensureLoaded() {
     if (this.loaded) return;
@@ -129326,6 +129328,7 @@ var HistoryStore = class {
   }
   append(run) {
     this.ensureLoaded();
+    this.ensureStoreDir();
     this.acquireLock();
     try {
       this.ensureHeader();
@@ -129346,6 +129349,7 @@ var HistoryStore = class {
   prune(maxRuns) {
     this.ensureLoaded();
     if (!(0, import_node_fs4.existsSync)(this.path)) return;
+    this.ensureStoreDir();
     this.acquireLock();
     try {
       const fresh = [];
@@ -130028,7 +130032,13 @@ var junitParser = {
       return { results: ctx.results, warnings: ctx.warnings };
     }
     const rootKey = Object.keys(doc).find((k) => /(?:^|:)testsuites?$/.test(k));
-    const root = rootKey !== void 0 ? doc[rootKey] : void 0;
+    let root = rootKey !== void 0 ? doc[rootKey] : void 0;
+    if (Array.isArray(root)) {
+      ctx.warnings.push(
+        `junit: ${sourcePath}: multiple <testsuites> roots found \u2014 using the first`
+      );
+      root = root[0];
+    }
     if (root === void 0) {
       ctx.warnings.push(`junit: ${sourcePath}: no <testsuites> or <testsuite> root element found`);
       return { results: ctx.results, warnings: ctx.warnings };
@@ -130087,7 +130097,14 @@ var mochaParser = {
     if (!isObj(doc)) {
       return { results, warnings: [`mocha: ${sourcePath}: not a JSON object`] };
     }
-    const all = Array.isArray(doc.results) ? doc.results : Array.isArray(doc.tests) ? doc.tests : null;
+    const all = Array.isArray(doc.results) ? doc.results : Array.isArray(doc.tests) ? doc.tests : Array.isArray(doc.passes) || Array.isArray(doc.failures) ? (
+      // passes/failures-only shape (sniff accepts it): merge the buckets
+      [
+        ...Array.isArray(doc.passes) ? doc.passes : [],
+        ...Array.isArray(doc.failures) ? doc.failures : [],
+        ...Array.isArray(doc.pending) ? doc.pending : []
+      ]
+    ) : null;
     if (all === null) {
       return { results, warnings: [`mocha: ${sourcePath}: missing "tests"/"results" array`] };
     }
@@ -130165,15 +130182,15 @@ var tapParser = {
       const line = lines[i];
       const sub = line.match(/^\s*# Subtest: (.+?)\s*$/);
       if (sub) {
-        ancestors.push({ name: sub[1], children: 0 });
+        ancestors.push({ name: sub[1].replace(/\\#/g, "#"), children: 0 });
         continue;
       }
       const assertion = line.match(
-        /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s+#\s*(SKIP|TODO)\b(.*))?$/
+        /^\s*(not ok|ok)\s+\d+\s+-\s+(.+?)(?:\s+#\s*([A-Za-z]+)\b(.*))?$/
       );
       if (assertion) {
         const [, verdict, rawName, directive, directiveText] = assertion;
-        const name = rawName.trim();
+        const name = rawName.trim().replace(/\\#/g, "#");
         let yaml = { isSuite: false };
         if (lines[i + 1]?.trim() === "---") {
           let j = i + 2;
@@ -130195,7 +130212,8 @@ var tapParser = {
         const suite = chain.length > 0 ? chain.map((a) => a.name).join(" > ") : ROOT_SUITE;
         let status = verdict === "not ok" ? "fail" : "pass";
         let message = yaml.error;
-        if (directive === "SKIP" || directive === "TODO") {
+        const directiveKind = directive?.toUpperCase();
+        if (directiveKind === "SKIP" || directiveKind === "TODO") {
           status = "skip";
           const reason = directiveText?.replace(/^\s*-\s*/, "").trim();
           if (reason) message = reason;
@@ -130280,13 +130298,14 @@ function textOf2(node) {
 }
 function durationMs(raw) {
   if (raw === void 0) return null;
-  const m = raw.match(/^(?:(\d+)):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/);
+  const m = raw.match(/^(?:(\d+)\.)?(?:(\d+)):([0-5]?\d):([0-5]?\d(?:\.\d+)?)$/);
   if (!m) return null;
-  const h = Number.parseInt(m[1], 10);
-  const min = Number.parseInt(m[2], 10);
-  const sec = Number.parseFloat(m[3]);
+  const days = m[1] !== void 0 ? Number.parseInt(m[1], 10) : 0;
+  const h = Number.parseInt(m[2], 10);
+  const min = Number.parseInt(m[3], 10);
+  const sec = Number.parseFloat(m[4]);
   if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(sec) || sec < 0) return null;
-  return Math.round(((h * 60 + min) * 60 + sec) * 1e3);
+  return Math.round((((days * 24 + h) * 60 + min) * 60 + sec) * 1e3);
 }
 function outcomeStatus(outcome, hasErrorInfo) {
   switch (outcome) {
@@ -130329,7 +130348,11 @@ var trxParser = {
       ctx.warnings.push(`trx: ${sourcePath}: no <TestRun> root element found`);
       return { results: ctx.results, warnings: ctx.warnings };
     }
-    const root = doc[rootKey];
+    let root = doc[rootKey];
+    if (Array.isArray(root)) {
+      ctx.warnings.push(`trx: ${sourcePath}: multiple <TestRun> roots found \u2014 using the first`);
+      root = root[0];
+    }
     if (!isObj(root)) return { results: ctx.results, warnings: ctx.warnings };
     const suiteByTestName = /* @__PURE__ */ new Map();
     const defKey = Object.keys(root).find((k) => /(?:^|:)TestDefinitions$/.test(k));
