@@ -1,67 +1,179 @@
+import { execFileSync, spawnSync } from 'node:child_process';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-interface ReleaseLib {
-  insertChangelogStub(changelog: string, version: string): string;
-  bumpLockfile(lockText: string, version: string): string;
+const script = fileURLToPath(new URL('../scripts/release.mjs', import.meta.url));
+const version = '3.1.0-rc.1';
+const notes = '### Fixes\n\n- Preserve paths with spaces.';
+const changelog = `# Changelog\r\n\r\n## ${version}\r\n\r\n${notes.replaceAll('\n', '\r\n')}\r\n\r\n## 3.0.0\r\n\r\n- Earlier notes.\r\n`;
+
+let root: string;
+
+function write(file: string, content: string) {
+  writeFileSync(path.join(root, file), content);
 }
 
-let lib: ReleaseLib;
-beforeAll(async () => {
-  const script = path.join(
-    path.dirname(fileURLToPath(import.meta.url)),
-    '..',
-    'scripts',
-    'release.mjs',
+function runRelease(...args: string[]) {
+  return spawnSync(process.execPath, [path.join(root, 'scripts', 'release.mjs'), ...args], {
+    cwd: root,
+    encoding: 'utf8',
+  });
+}
+
+function git(...args: string[]) {
+  return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+}
+
+function commitFixture() {
+  git('init', '--quiet');
+  git('config', 'core.autocrlf', 'false');
+  git(
+    'add',
+    '--',
+    'scripts/release.mjs',
+    'package.json',
+    'package-lock.json',
+    'src/types.ts',
+    'CHANGELOG.md',
   );
-  // importing must not run a release (main is guarded)
-  lib = (await import(pathToFileURL(script).href)) as ReleaseLib;
+  git(
+    '-c',
+    'user.name=Release Test',
+    '-c',
+    'user.email=release-test@example.test',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '--quiet',
+    '-m',
+    'release test fixture',
+  );
+}
+
+beforeEach(() => {
+  root = mkdtempSync(path.join(os.tmpdir(), 'ff release '));
+  mkdirSync(path.join(root, 'src'));
+  mkdirSync(path.join(root, 'scripts'));
+  copyFileSync(script, path.join(root, 'scripts', 'release.mjs'));
+  write('package.json', JSON.stringify({ version }));
+  write('package-lock.json', JSON.stringify({ version, packages: { '': { version } } }));
+  write('src/types.ts', `export const FLAKEFINDER_VERSION = '${version}';\r\n`);
+  write('CHANGELOG.md', changelog);
 });
 
-describe('scripts/release.mjs (R5 #15)', () => {
-  it('inserts the new stub BELOW the # Changelog title, above the newest entry', () => {
-    const before = '# Changelog\n\n## 1.1.1\n\n- fixes\n';
-    const after = lib.insertChangelogStub(before, '1.2.0');
-    expect(after.startsWith('# Changelog\n\n## 1.2.0\n\n- _(fill in')).toBe(true);
-    expect(after.indexOf('## 1.2.0')).toBeLessThan(after.indexOf('## 1.1.1'));
-    expect(after.endsWith('## 1.1.1\n\n- fixes\n')).toBe(true);
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true });
+});
+
+describe('release tag validation', () => {
+  it('prints only the exact prerelease notes from a CRLF changelog', () => {
+    const result = runRelease('--validate-tag', `v${version}`);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(`${notes}\n`);
+    expect(result.stderr).toBe('');
   });
 
-  it('handles a title with no blank line after it, and files without a title', () => {
-    expect(lib.insertChangelogStub('# Changelog\n## 1.0.0\n', '1.0.1')).toMatch(
-      /^# Changelog\n\n## 1\.0\.1\n\n- .*\n\n## 1\.0\.0\n$/,
-    );
-    expect(lib.insertChangelogStub('## 1.0.0\n', '1.0.1')).toMatch(
-      /^## 1\.0\.1\n\n- .*\n\n## 1\.0\.0\n$/,
-    );
+  it.each(['3.1.0-rc.1', 'v03.1.0', 'v3.1.0-rc.01', 'v3.1.0+build.1', 'v3.1', 'v3.1.0\n'])(
+    'rejects malformed or unsupported tags (%j)',
+    (tag) => {
+      const result = runRelease('--validate-tag', tag);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toMatch(/Invalid release version|start with v/);
+    },
+  );
+
+  it.each([
+    ['package.json', JSON.stringify({ version: '3.0.0' }), 'package.json'],
+    [
+      'package-lock.json',
+      JSON.stringify({ version: '3.0.0', packages: { '': { version } } }),
+      'package-lock.json: 3.0.0',
+    ],
+    [
+      'package-lock.json',
+      JSON.stringify({ version, packages: {} }),
+      'package-lock.json (root package): (missing)',
+    ],
+    [
+      'src/types.ts',
+      "export const FLAKEFINDER_VERSION = '3.0.0';\n",
+      'src/types.ts (FLAKEFINDER_VERSION): 3.0.0',
+    ],
+  ])('rejects a version mismatch in %s before printing notes', (file, contents, message) => {
+    write(file, contents);
+    const result = runRelease('--validate-tag', `v${version}`);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(message);
   });
 
-  it('does not add a second stub when the version already has a section', () => {
-    const c = '# Changelog\n\n## 1.2.0\n\n- done\n\n## 1.1.1\n';
-    expect(lib.insertChangelogStub(c, '1.2.0')).toBe(c);
-    // 1.2.0 is not mistaken for 1.2.0-rc.1 (or vice versa)
-    expect(lib.insertChangelogStub(c, '1.2.0-rc.1')).toContain('## 1.2.0-rc.1\n');
+  it.each([
+    '## 3.1.0-rc.10\n\n- Different release.',
+    `## ${version}\n\n## 3.0.0\n\n- Earlier notes.`,
+    `## ${version}\n\n### Fixes\n\n<!-- Add notes here -->`,
+    `## ${version}\n\n- _(fill in before tagging — this stub is created by scripts/release.mjs)_`,
+    `## ${version}\n\n- Fix a bug.\n- **TODO**`,
+    `## ${version}\n\n- TODO: Add the release summary.`,
+    `## ${version}\n\n- Fix a bug.\n\n## ${version}\n\n- Duplicate notes.`,
+  ])('rejects missing, empty, placeholder, or ambiguous notes (%j)', (body) => {
+    write('CHANGELOG.md', `# Changelog\n\n${body}\n`);
+    const result = runRelease('--validate-tag', `v${version}`);
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toMatch(/CHANGELOG\.md/);
+  });
+});
+
+describe('release preparation', () => {
+  it('refuses to mutate a checkout with unrelated changes', () => {
+    commitFixture();
+    write('unrelated.txt', 'local work');
+    const result = runRelease('3.2.0');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('clean working tree');
+    expect(git('status', '--porcelain').trim()).toBe('?? unrelated.txt');
+    expect(git('tag', '--list')).toBe('');
   });
 
-  it('bumps both root versions in package-lock.json and leaves dependencies alone', () => {
-    const lock = JSON.stringify(
-      {
-        name: 'flakefinder',
-        version: '1.1.1',
-        lockfileVersion: 3,
-        packages: {
-          '': { name: 'flakefinder', version: '1.1.1' },
-          'node_modules/x': { version: '1.1.1' },
-        },
-      },
-      null,
-      2,
-    );
-    const out = JSON.parse(lib.bumpLockfile(lock, '1.2.0'));
-    expect(out.version).toBe('1.2.0');
-    expect(out.packages[''].version).toBe('1.2.0');
-    expect(out.packages['node_modules/x'].version).toBe('1.1.1');
-    expect(lib.bumpLockfile(lock, '1.2.0').endsWith('}\n')).toBe(true);
+  it('refuses to prepare a clean checkout without notes for the requested version', () => {
+    commitFixture();
+    const result = runRelease('3.2.0');
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('## 3.2.0');
+    expect(git('status', '--porcelain')).toBe('');
+    expect(readFileSync(path.join(root, 'package.json'), 'utf8')).toContain(version);
+    expect(git('tag', '--list')).toBe('');
   });
+
+  it('prepares only local version changes and preserves dependency versions', () => {
+    const next = '3.2.0-beta.2';
+    const scripts = Object.fromEntries(
+      ['test', 'typecheck', 'lint', 'build', 'perf', 'e2e'].map((name) => [name, 'node --version']),
+    );
+    write('package.json', JSON.stringify({ version, scripts }));
+    write(
+      'package-lock.json',
+      JSON.stringify({ version, packages: { '': { version }, 'node_modules/x': { version } } }),
+    );
+    write('CHANGELOG.md', `# Changelog\n\n## ${next}\n\n${notes}\n`);
+    commitFixture();
+
+    const result = runRelease(next);
+    expect(result.stderr).toBe('');
+    expect(result.status).toBe(0);
+    expect(runRelease('--validate-tag', `v${next}`).stdout).toBe(`${notes}\n`);
+    const lockfile = readFileSync(path.join(root, 'package-lock.json'), 'utf8');
+    expect(JSON.parse(lockfile).packages['node_modules/x'].version).toBe(version);
+    expect(git('diff', '--name-only').trim().split('\n')).toEqual([
+      'package-lock.json',
+      'package.json',
+      'src/types.ts',
+    ]);
+    expect(git('diff', '--cached', '--name-only')).toBe('');
+    expect(git('tag', '--list')).toBe('');
+  }, 15_000);
 });

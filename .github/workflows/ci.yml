@@ -2,7 +2,7 @@ name: ci
 
 on:
   push:
-    branches: [main, fix/windows-parity]
+    branches: [main, fix/windows-parity, codex/release-parity]
   pull_request:
 
 concurrency:
@@ -12,113 +12,18 @@ concurrency:
 permissions:
   contents: read
 
-# third-party actions are pinned to full commit SHAs (tags are mutable);
-# checkout does not persist the token into .git/config
-
 jobs:
-  check:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
+  required:
+    name: Release parity
+    needs: verify
+    if: always()
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npx biome check src tests
-      - run: npx tsc -p .
-      - run: npx vitest run
-      - name: coverage gate (engine/parsers/store ≥85% lines)
-        run: npx vitest run --coverage
-      - run: npm run build
-      - name: performance smoke (150k observations)
-        run: node scripts/perf-smoke.mjs
-      - name: third-party notices are up to date
-        run: node scripts/third-party-notices.mjs --check
-      - name: dist is committed and up to date
-        run: |
-          git diff --exit-code dist/ || (echo '::error::dist/ is stale — run "npm run build" and commit' && exit 1)
-
-  matrix:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        # Vitest 5 supports Node 22.12+, 24.x, and 26+. The Action runs on Node 24.
-        os: [ubuntu-latest]
-        node: ['22', '24', '26']
-        include:
-          - os: windows-latest
-            node: '24'
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
-      - run: npx vitest run
-      - run: npm run build
-      - run: node dist/cli.js version
-
-  node-18-runtime:
-    # Build with the dev toolchain, then install and run the published CLI on Node 18.
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - name: Pack the CLI
-        run: |
-          PACK=$(npm pack --silent --pack-destination "$RUNNER_TEMP")
-          echo "CLI_TARBALL=$RUNNER_TEMP/$PACK" >> "$GITHUB_ENV"
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 18
-      - name: CLI smoke (ingest → report → html)
-        shell: bash
-        run: |
-          cd "$(mktemp -d)"
-          npm install --prefix "$PWD" --engine-strict --no-audit --no-fund "$CLI_TARBALL"
-          FIXTURES="$GITHUB_WORKSPACE/tests/parsers-fixtures"
-          cp "$FIXTURES/jest.json" "$FIXTURES/junit-node-test.xml" .
-          CLI=./node_modules/.bin/flakefinder
-          "$CLI" version
-          "$CLI" ingest jest.json junit-node-test.xml
-          REPORT=$("$CLI" report --no-color)
-          grep -q "tracked test" <<< "$REPORT"
-          "$CLI" html
-          test -s flakefinder-report.html
-          echo "node-18 runtime smoke OK"
-
-  e2e:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 24
-          cache: npm
-      - name: Cache jest fixture deps
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: fixtures/jest-project/node_modules
-          key: jest-fixture-${{ runner.os }}-${{ hashFiles('fixtures/jest-project/package-lock.json') }}
-      - run: npm ci
-      - run: npm run e2e
+      - name: Require all verification jobs to pass
+        env:
+          RESULT: ${{ needs.verify.result }}
+          VERIFIED: ${{ needs.verify.outputs.verified }}
+        run: test "$RESULT" = success && test "$VERIFIED" = true

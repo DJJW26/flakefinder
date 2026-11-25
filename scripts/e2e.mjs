@@ -13,20 +13,32 @@
  *
  * Env:
  *   FF_E2E_SKIP=pytest,go   comma-separated section names to skip
+ *   FF_E2E_STRICT=1         fail if any fixture is skipped
  *   FF_E2E_NOBUILD=1        skip `npm run build` when dist/cli.js already exists
  *
  * Plain Node ESM on purpose: node:assert + child_process.spawnSync, no test
  * framework. Exit code 1 when any required step fails.
  */
+import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import assert from 'node:assert/strict';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLI = path.join(ROOT, 'dist', 'cli.js');
+const STRICT = process.env.FF_E2E_STRICT === '1';
+const WINDOWS = process.platform === 'win32';
 
 const SKIP = new Set(
   (process.env.FF_E2E_SKIP ?? '')
@@ -43,24 +55,28 @@ let skipped = 0;
 
 const line = (mark, name) => console.log(`  ${mark.padEnd(4)} ${name}`);
 
-/** One step. `fn` may return 'skip' to record a skip without failing. */
 function step(name, fn) {
   try {
-    const r = fn();
-    if (r === 'skip') {
-      skipped++;
-      line('SKIP', name);
-      return 'skip';
-    }
+    fn();
     passed++;
     line('PASS', name);
-    return 'pass';
+    return true;
   } catch (err) {
     failed++;
     line('FAIL', name);
-    const msg = String(err && err.message ? err.message : err).split('\n')[0];
+    const msg = String(err?.message ?? err).split('\n')[0];
     console.log(`       ${msg}`);
-    return 'fail';
+    return false;
+  }
+}
+
+function skipFixture(name, reason) {
+  const label = `${name} section (${reason})`;
+  if (STRICT) {
+    step(label, () => assert.fail(`${name} fixture is required by FF_E2E_STRICT=1`));
+  } else {
+    skipped++;
+    line('SKIP', label);
   }
 }
 
@@ -68,17 +84,33 @@ function sh(cmd, args = [], opts = {}) {
   return spawnSync(cmd, args, { encoding: 'utf8', ...opts });
 }
 
-/** Run the flakefinder CLI. NOTE: only add `shell: true` when no argv token
- *  contains shell metacharacters that must survive into the CLI (see go). */
+function npm(args, cwd) {
+  const opts = { cwd, timeout: 600_000 };
+  if (!WINDOWS) return sh('npm', args, opts);
+  // The harness supplies only fixed flags. cmd.exe resolves npm.cmd on PATH.
+  return sh(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', `npm ${args.join(' ')}`], {
+    ...opts,
+    windowsVerbatimArguments: true,
+  });
+}
+
+/** Preserve literal shell tokens for flakefinder's runner (see the Go fixture). */
 function cli(args, opts = {}) {
-  return sh('node', [CLI, ...args], opts);
+  return sh(process.execPath, [CLI, ...args], opts);
 }
 
 const output = (r) => `${r.stdout ?? ''}\n${r.stderr ?? ''}`;
 const tail = (r, n = 400) => output(r).slice(-n).replace(/\s+/g, ' ').trim();
 
-function cleanDir(dir, names) {
-  for (const name of names) rmSync(path.join(dir, name), { recursive: true, force: true });
+function copyFixture(scratch, name, files) {
+  const fixture = `${name}-project`;
+  const source = path.join(ROOT, 'fixtures', fixture);
+  const cwd = path.join(scratch, fixture);
+  mkdirSync(cwd);
+  for (const file of ['flakefinder.config.json', ...files]) {
+    cpSync(path.join(source, file), path.join(cwd, file), { recursive: true });
+  }
+  return cwd;
 }
 
 function assertDashboard(cwd, file, label) {
@@ -93,32 +125,20 @@ function assertDashboard(cwd, file, label) {
 
 /* ------------------------------------------------------------- jest section */
 
-function jestSection() {
+function jestSection(scratch) {
   console.log('\n=== jest fixture (REQUIRED) ===');
-  const cwd = path.join(ROOT, 'fixtures', 'jest-project');
-
-  if (existsSync(path.join(cwd, 'node_modules'))) {
-    line('note', 'jest: node_modules present — skipping npm install');
-  } else {
-    step('jest: npm install', () => {
-      const r = sh('npm', ['install', '--no-audit', '--no-fund'], {
-        cwd,
-        shell: true,
-        timeout: 600_000,
-      });
-      assert.equal(r.status, 0, `npm install failed: ${tail(r)}`);
-    });
-  }
-
-  // Deterministic starting state: no history, no report, counter at zero.
-  cleanDir(cwd, [
-    '.flakefinder',
-    'junit.xml',
-    'counter.txt',
-    'flakefinder.quarantine.json',
-    'dash.html',
-    'flakefinder-report.html',
+  const cwd = copyFixture(scratch, 'jest', [
+    'package.json',
+    'package-lock.json',
+    'jest.config.cjs',
+    'tests',
   ]);
+
+  const installed = step('jest: npm ci', () => {
+    const r = npm(['ci', '--no-audit', '--no-fund'], cwd);
+    assert.equal(r.status, 0, `npm ci failed: ${tail(r)}`);
+  });
+  if (!installed) return;
 
   // A) run -R 2 → attempts: fail(counter 1), pass(counter 2), fail(counter 3)
   //    → flaky-counter = flaky-retry (rescued on attempt 2), always-fail = failing.
@@ -127,7 +147,11 @@ function jestSection() {
       cwd,
       timeout: 300_000,
     });
-    assert.equal(r.status, 1, `expected exit 1 (deterministic failure persists), got ${r.status}`);
+    assert.equal(
+      r.status,
+      1,
+      `expected exit 1 with persistent failure, got ${r.status}: ${tail(r)}`,
+    );
     const out = output(r);
     assert.match(out, /FLAKY \(/i, 'no FLAKY section in report');
     assert.match(out, /counter/i, 'flaky-counter not flagged');
@@ -174,38 +198,19 @@ function jestSection() {
 
 /* ----------------------------------------------------------- pytest section */
 
-function pytestSection() {
+function pytestSection(scratch) {
   console.log('\n=== pytest fixture ===');
   if (SKIP.has('pytest')) {
-    skipped++;
-    line('SKIP', 'pytest section (FF_E2E_SKIP)');
+    skipFixture('pytest', 'FF_E2E_SKIP');
     return;
   }
 
-  const probe = () => sh('python', ['-m', 'pytest', '--version'], { shell: true }).status === 0;
-  if (!probe()) {
-    console.log('  note  pytest missing — attempting `python -m pip install --user -q pytest`');
-    sh('python', ['-m', 'pip', 'install', '--user', '-q', 'pytest'], {
-      shell: true,
-      timeout: 300_000,
-    });
-  }
-  if (!probe()) {
-    skipped++;
-    line('SKIP', 'pytest section (python/pytest unavailable)');
+  if (sh('python', ['-m', 'pytest', '--version']).status !== 0) {
+    skipFixture('pytest', 'python/pytest unavailable');
     return;
   }
 
-  const cwd = path.join(ROOT, 'fixtures', 'pytest-project');
-  cleanDir(cwd, [
-    '.flakefinder',
-    'junit.xml',
-    'counter.txt',
-    '__pycache__',
-    '.pytest_cache',
-    'flakefinder.quarantine.json',
-    'flakefinder-report.html',
-  ]);
+  const cwd = copyFixture(scratch, 'pytest', ['pytest.ini', 'test_sample.py']);
 
   // A) run -R 2 → fail(1), pass(2), fail(3) → test_flaky_counter = flaky-retry.
   step('pytest: run -R 2 exits 1 and separates flake from real failure', () => {
@@ -213,7 +218,7 @@ function pytestSection() {
       cwd,
       timeout: 300_000,
     });
-    assert.equal(r.status, 1, `expected exit 1, got ${r.status}`);
+    assert.equal(r.status, 1, `expected exit 1, got ${r.status}: ${tail(r)}`);
     const out = output(r);
     assert.match(out, /FLAKY \(/i, 'no FLAKY section in report');
     assert.match(out, /counter/i, 'flaky counter not flagged');
@@ -236,43 +241,50 @@ function pytestSection() {
 
 /* --------------------------------------------------------------- go section */
 
-function goSection() {
+function goSection(scratch) {
   console.log('\n=== go fixture ===');
   if (SKIP.has('go')) {
-    skipped++;
-    line('SKIP', 'go section (FF_E2E_SKIP)');
+    skipFixture('go', 'FF_E2E_SKIP');
     return;
   }
-  if (sh('go', ['version'], { shell: true }).status !== 0) {
-    skipped++;
-    line('SKIP', 'go section (go unavailable)');
+  if (sh('go', ['version']).status !== 0) {
+    skipFixture('go', 'go unavailable');
     return;
   }
 
-  const cwd = path.join(ROOT, 'fixtures', 'go-project');
+  const cwd = copyFixture(scratch, 'go', [
+    'go.mod',
+    'alwayfail_test.go',
+    'counter_test.go',
+    'slow_test.go',
+    'stable_test.go',
+  ]);
   const report = path.join(cwd, 'test-output.jsonl');
 
-  // Primary path — `run` mode with the shell redirect passed as literal argv
+  // `run` mode with the shell redirect passed as literal argv
   // tokens. This outer spawn deliberately has NO shell: cmd.exe would eat the
   // `>` itself. The CLI joins the tokens and spawns them through its own
   // shell, where the redirect takes effect:
   //   go test -count=1 -json ./... > test-output.jsonl
   // (-count=1 disables go's result cache; a flake hunter must re-execute.)
-  cleanDir(cwd, [
-    '.flakefinder',
-    'test-output.jsonl',
-    'counter.txt',
-    'flakefinder.quarantine.json',
-    'flakefinder-report.html',
-  ]);
-
-  let runModeOk = false;
   step('go: run -R 1 with shell redirect classifies TestFlakyCounter flaky', () => {
     const r = cli(
-      ['run', '-R', '1', '--', 'go', 'test', '-count=1', '-json', './...', '>', 'test-output.jsonl'],
+      [
+        'run',
+        '-R',
+        '1',
+        '--',
+        'go',
+        'test',
+        '-count=1',
+        '-json',
+        './...',
+        '>',
+        'test-output.jsonl',
+      ],
       { cwd, timeout: 300_000 }, // no shell — '>' must survive as an argv token
     );
-    assert.equal(r.status, 1, `expected exit 1, got ${r.status}`);
+    assert.equal(r.status, 1, `expected exit 1, got ${r.status}: ${tail(r)}`);
     assert.ok(existsSync(report), 'redirect produced no test-output.jsonl');
     const out = output(r);
     assert.match(out, /FLAKY \(/i, 'no FLAKY section in report');
@@ -281,6 +293,7 @@ function goSection() {
     assert.match(out, /TestAlwaysFail/, 'TestAlwaysFail not listed as failing');
 
     const rj = cli(['report', '--format', 'json'], { cwd });
+    assert.equal(rj.status, 0, `json report exited ${rj.status}: ${tail(rj)}`);
     const verdicts = JSON.parse(rj.stdout).verdicts;
     const v = verdicts.find((x) => x.name === 'TestFlakyCounter');
     assert.ok(v, 'TestFlakyCounter verdict missing');
@@ -297,52 +310,18 @@ function goSection() {
       v.classification === 'flaky-confirmed' || v.classification === 'flaky-retry',
       `expected flaky-confirmed/flaky-retry, got ${v.classification}`,
     );
-    console.log(`       (TestFlakyCounter: ${v.classification}, retryRescues=${v.retryRescues}, sameShaFlips=${v.sameShaFlips})`);
+    console.log(
+      `       (TestFlakyCounter: ${v.classification}, retryRescues=${v.retryRescues}, sameShaFlips=${v.sameShaFlips})`,
+    );
     const a = verdicts.find((x) => x.name === 'TestAlwaysFail');
-    assert.equal(a && a.classification, 'failing', `TestAlwaysFail: expected failing, got ${a && a.classification}`);
-    runModeOk = true;
+    assert.equal(a?.classification, 'failing', 'TestAlwaysFail did not remain failing');
   });
-
-  // Fallback — if run-mode redirect routing failed, drive the redirect
-  // ourselves and ingest twice. NOTE the semantics: each `ingest` invocation
-  // mints its OWN runId, so attempt 1 → 2 cannot form a retryRescue pair.
-  // Detection still works through sameShaFlips (both attempts observed both
-  // families on the same commit) → the counter classifies as flaky-confirmed
-  // instead of flaky-retry. Recorded here, not silently weakened.
-  if (!runModeOk) {
-    console.log('  note  go run-mode redirect unusable — falling back to manual redirect + double ingest');
-    cleanDir(cwd, ['.flakefinder', 'test-output.jsonl', 'counter.txt']);
-    step('go: fallback double-ingest classifies TestFlakyCounter flaky', () => {
-      for (const attempt of [1, 2]) {
-        // go test exits 1 (TestAlwaysFail fails) — fine, the redirect still writes.
-        sh('go test -count=1 -json ./... > test-output.jsonl', {
-          cwd,
-          shell: true,
-          timeout: 300_000,
-        });
-        assert.ok(existsSync(report), `attempt ${attempt}: go test produced no report`);
-        const ri = cli(['ingest', 'test-output.jsonl', '--attempt', String(attempt)], { cwd });
-        assert.equal(ri.status, 0, `ingest ${attempt} exited ${ri.status}: ${tail(ri)}`);
-      }
-      const rj = cli(['report', '--format', 'json'], { cwd });
-      const verdicts = JSON.parse(rj.stdout).verdicts;
-      const v = verdicts.find((x) => x.name === 'TestFlakyCounter');
-      assert.ok(v, 'TestFlakyCounter verdict missing');
-      assert.ok(
-        v.classification.startsWith('flaky-'),
-        `expected flaky-* via same-commit flip, got ${v.classification}`,
-      );
-      console.log(`       (double-ingest classification: ${v.classification}; separate ingest runIds preclude flaky-retry)`);
-      const a = verdicts.find((x) => x.name === 'TestAlwaysFail');
-      assert.equal(a && a.classification, 'failing', `TestAlwaysFail: expected failing, got ${a && a.classification}`);
-    });
-  }
 
   step('go: report --flakes-only lists TestFlakyCounter', () => {
     const r = cli(['report', '--flakes-only', '--no-color'], { cwd });
     assert.equal(r.status, 0, `report exited ${r.status}: ${tail(r)}`);
     assert.match(r.stdout, /TestFlakyCounter/, 'TestFlakyCounter missing from report');
-    assert.match(r.stdout, /TestAlwaysFail/, 'TestAlwaysFail missing from report');
+    assert.match(r.stdout, /TestAlwaysFail/, 'TestAlwaysFail missing from problem report');
   });
 
   step('go: html dashboard > 5 KB', () => {
@@ -360,7 +339,7 @@ if (SKIP.size > 0) console.log(`skip list: ${[...SKIP].join(', ')}`);
 const needBuild = !(existsSync(CLI) && process.env.FF_E2E_NOBUILD === '1');
 if (needBuild) {
   step('build: npm run build', () => {
-    const r = sh('npm', ['run', 'build'], { cwd: ROOT, shell: true, timeout: 600_000 });
+    const r = npm(['run', 'build'], ROOT);
     assert.equal(r.status, 0, `build failed: ${tail(r)}`);
   });
 } else {
@@ -371,9 +350,14 @@ if (!existsSync(CLI)) {
   console.error('\nE2E: dist/cli.js missing — aborting');
   process.exitCode = 1;
 } else {
-  jestSection();
-  pytestSection();
-  goSection();
+  const scratch = mkdtempSync(path.join(tmpdir(), 'ff-e2e-'));
+  try {
+    jestSection(scratch);
+    pytestSection(scratch);
+    goSection(scratch);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true, maxRetries: 3 });
+  }
   console.log(`\nE2E: ${passed} passed, ${failed} failed, ${skipped} skipped`);
   if (failed > 0) {
     console.log('failed steps are marked FAIL above');

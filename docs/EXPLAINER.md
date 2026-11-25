@@ -1213,12 +1213,10 @@ additionally upserts the MR note (6.9) — full recipe in docs/USAGE.md.
   Action (`dist/action/index.cjs`, CommonJS). npm installs the CLI's two
   direct runtime dependencies, `commander` and `fast-xml-parser`. The Action
   bundle includes its dependencies.
-- **Release:** `node scripts/release.mjs 1.2.0 --push` bumps the version in
-  *both* places (package.json + `FLAKEFINDER_VERSION` in types.ts — a
-  two-location trap the script exists to prevent), inserts a CHANGELOG
-  stub, runs the full pipeline, rebuilds dist, commits, tags, pushes.
-  The `release` workflow then publishes to npm with provenance when the
-  `NPM_TOKEN` secret is configured and opens a GitHub Release.
+- **Release.** The preparation script updates version metadata and builds the
+  bundles for review. After the release PR lands, a maintainer pushes the
+  version tag. The workflow checks the npm tarball on Windows and Ubuntu
+  and publishes those verified bytes. See [Releasing flakefinder](RELEASING.md).
 
 ---
 
