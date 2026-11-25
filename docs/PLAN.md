@@ -3,9 +3,10 @@
 > **flakefinder** detects, tracks, and quarantines flaky tests — from your terminal and from CI.
 > One npm package (`flakefinder`) that is also a GitHub Action. TypeScript, ESM, Node >= 18.
 
-This document is the **single source of truth** for all agents/workers. Interfaces in §4 are
-**frozen**: code against them exactly; if you believe a contract must change, do NOT edit this
-file or `src/types.ts` — note the deviation in your final report instead and the integrator decides.
+This plan records the original build design and the shared contracts in §4 and §5.
+Use the current [project context](PROJECT_CONTEXT.md) for the repository layout,
+verification, and release process. Keep contract changes in sync with the source
+and tests.
 
 ---
 
@@ -19,8 +20,8 @@ A daily programmer should be able to, in under 5 minutes:
 3. Over weeks of CI runs, accumulate history and get **flake scores, trend reports, an HTML
    dashboard, PR comments, and one-command quarantine** of the worst offenders.
 
-Honest, deterministic, zero cloud. No telemetry. Two runtime dependencies (`commander`,
-`fast-xml-parser`) bundled into a single-file CLI.
+The local CLI uses two direct runtime dependencies, `commander` and
+`fast-xml-parser`, installed by npm.
 
 ## 2. Non-goals (v1)
 
@@ -30,7 +31,7 @@ Honest, deterministic, zero cloud. No telemetry. Two runtime dependencies (`comm
   annotations which many CI systems understand; native GitLab is v1.1).
 - No per-test targeted re-runs (v1 re-runs the full command; targeted reruns are v1.1).
 
-## 3. Repository layout
+## 3. Original repository layout
 
 ```
 /
@@ -482,7 +483,7 @@ file. If you need a helper module, put it inside your own paths.
   during parallel phase (siblings are incomplete; integration is the integrator's job).
 - Never run `npm install`/`npm update`, never run git commands.
 
-## 16. v1.1 roadmap (document, don't build)
+## 16. Historical v1.1 roadmap
 
 TRX (.NET) & node:test TAP parsers · targeted failed-only re-runs per runner · SQLite store
 option · GitLab CI native comments · `flakefinder doctor` (CI wiring checks) · optional LLM

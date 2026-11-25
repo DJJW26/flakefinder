@@ -217,7 +217,7 @@ yes — that covers most of the ecosystem.
 ## Development
 
 ```console
-$ npm install && npm run build      # build dist/cli.js
+$ npm ci && npm run build           # build the CLI and Action bundles
 $ npm test                          # unit tests
 $ npm run e2e                       # real jest/pytest/go fixtures, end to end
 ```
@@ -226,14 +226,11 @@ The fixtures under `fixtures/` are three real mini-projects (Jest, pytest, Go)
 with a deterministic file-counter flake — the e2e harness proves the whole
 pipeline: run → retries → classify → report → dashboard → quarantine.
 
-## Roadmap (v1.1)
+## Project documentation
 
-- TRX (.NET) and node:test TAP parsers
-- Targeted failed-only re-runs per runner (instead of full-suite retries)
-- SQLite store option for very large histories
-- GitLab CI native comments
-- `flakefinder doctor` — CI wiring checks
-- Optional LLM failure explanations (off by default, bring your own key)
+- [Usage guide](docs/USAGE.md) for CLI commands, configuration, and report formats.
+- [Project context](docs/PROJECT_CONTEXT.md) for the codebase and build map.
+- [Release runbook](docs/RELEASING.md) for preparing releases and verifying Windows and Linux builds.
 
 ## Contributing
 

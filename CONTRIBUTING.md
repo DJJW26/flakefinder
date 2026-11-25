@@ -25,9 +25,9 @@ npm run e2e
 - **No new runtime dependencies** without opening an issue first. The CLI
   builds to a single entry file with two direct runtime dependencies
   (`commander` and `fast-xml-parser`).
-- **The engine contract is PLAN.md §5.** Classification precedence, score
+- **The engine contract is docs/PLAN.md §5.** Classification precedence, score
   arithmetic and confidence formulas are behavioral contracts covered by
-  table-driven tests. If you change behavior, change PLAN.md and the tests in
+  table-driven tests. If you change behavior, change docs/PLAN.md and the tests in
   the same PR.
 - **Parsers never throw.** Malformed input → `{ results: partial, warnings: [...] }`.
 - **Quarantine never edits test source files.** Exclusion happens via runner
@@ -89,5 +89,5 @@ checking the exact tag and artifacts, and configuring npm credentials.
 - [ ] `npm run typecheck`, `npm test`, `npm run lint` pass
 - [ ] Changed bundles from `npm run build` committed
 - [ ] Strict E2E passes for changes that affect runner or CLI behavior
-- [ ] PLAN.md updated if contracts changed
+- [ ] docs/PLAN.md updated if contracts changed
 - [ ] No new runtime dependencies (or issue link justifying one)

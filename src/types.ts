@@ -2,7 +2,7 @@
  * flakefinder — frozen shared contract.
  *
  * Owned by the integrator. All modules code against this file; NEVER edit it
- * without integrator approval. See PLAN.md §4 for the full contract list.
+ * without integrator approval. See docs/PLAN.md §4 for the full contract list.
  */
 
 /** Status of a single test case in a single run. `fail` and `error` form the "fail family". */

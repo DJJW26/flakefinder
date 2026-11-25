@@ -205,8 +205,8 @@ globs like `packages/api/junit.xml` relative to the repo root.
 Jest/vitest JSON, Mocha JSON, `go test -json` output, **TAP** (e.g.
 `node --test --test-reporter=tap > results.tap`; nested subtests become
 `parent > child` suites, `# SKIP`/`# TODO` count as skipped) and **TRX**
-(.NET, `dotnet test --logger trx`; the suite is the test class name). The
-format is detected from file content, so a glob like
+(.NET, `dotnet test --logger trx`; the suite is the test class name), plus
+Playwright JSON and pytest-json-report. The format is detected from file content, so a glob like
 `"reports": ["results.tap", "**/TestResults/*.trx"]` is all it takes.
 
 **What if my tests fail?** Add `if: always()` to the flakefinder step so it

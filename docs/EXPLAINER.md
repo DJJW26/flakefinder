@@ -1,37 +1,14 @@
-# flakefinder — The Complete Guide
+# Flakefinder technical guide
 
-> **One document, zero assumptions.** This is the full story of the
-> flakefinder project: the problem it solves, why it exists, how every single
-> part of it works — from the smallest utility function to the GitHub Action —
-> how it is tested, why every major design decision was made, and where it is
-> going in the cloud.
->
-> **You need no prior knowledge.** If you have never written a test, never
-> heard of CI, and never opened this repository, start at Part 1 and read
-> straight through. Every term is defined the first time it appears, and the
-> full glossary is in Part 12.
->
-> Companion documents, for when you want a different depth:
->
-> | Document | Depth | Best for |
-> |---|---|---|
-> | **docs/EXPLAINER.md** (this file) | everything, from zero | understanding the project |
-> | README.md | the pitch | deciding whether to use it |
-> | docs/USAGE.md | command reference | daily operation |
-> | PLAN.md | the build spec | changing behavior safely |
-> | docs/BUILD_REPORT.md | how it was engineered | contributors |
-> | docs/CLOUD_SCALING.md | the cloud plan | the roadmap |
->
-> Current at: v1.1.0 · 261 tests across 27 files · six report parsers ·
-> MIT licensed.
-
----
+This guide explains Flakefinder's detection model, CLI, GitHub Action, and test
+strategy. Start with the [usage guide](USAGE.md) for command examples or the
+[project context](PROJECT_CONTEXT.md) for the codebase and build map.
 
 ## Table of contents
 
 - **Part 1 — The world this tool lives in** (tests, CI, traffic lights)
-- **Part 2 — The villain: flaky tests** (what, why, the damage)
-- **Part 3 — What flakefinder does** (the pitch, the two superpowers, what's
+- **Part 2 — Flaky tests** (what, why, the damage)
+- **Part 3 — What flakefinder does** (scope, retry and history modes, what's
   new for the community, design principles)
 - **Part 4 — The 60-second tour**
 - **Part 5 — Architecture overview** (module map, data flow)
@@ -55,10 +32,9 @@
 - **Part 8 — Design decisions and rejected alternatives**
 - **Part 9 — QA war stories** (real bugs, what they teach)
 - **Part 10 — Configuration reference**
-- **Part 11 — The cloud plan**
-- **Part 12 — Glossary**
-- **Part 13 — FAQ**
-- **Part 14 — Where to go next**
+- **Part 11 — Glossary**
+- **Part 12 — FAQ**
+- **Part 13 — Where to go next**
 
 ---
 
@@ -89,9 +65,9 @@ Tests come in flavors: *unit tests* check one function in isolation,
 drive the whole product like a user would. flakefinder is agnostic — it
 reads *results*, whatever kind of test produced them.
 
-The crucial property of a good test: **deterministic**. Same code in, same
-result out, every single time. Keep that word in mind — the entire villain
-of this story is a test that violates it.
+A deterministic test produces the same result when the code and execution
+conditions are the same. Flaky tests produce different outcomes under
+apparently equivalent conditions.
 
 ## 1.2 What CI is (from zero)
 
@@ -141,7 +117,7 @@ that light at the lowest possible cost.
 
 ---
 
-# Part 2 — The villain: flaky tests
+# Part 2 — Flaky tests
 
 ## 2.1 What a flaky test is
 
@@ -222,7 +198,7 @@ your data anywhere. That gap is exactly what flakefinder fills.
 
 # Part 3 — What flakefinder does
 
-## 3.1 The pitch
+## 3.1 Project scope
 
 > **flakefinder** finds your flaky tests before they find your CI.
 > It detects them (instantly and from history), scores them 0–100,
@@ -234,10 +210,9 @@ One npm package that is simultaneously:
 
 1. a **CLI** (`npx flakefinder …`) for local use and any CI system,
 2. a **GitHub Action** for GitHub,
-3. a **library** (the engine is importable — this matters for the cloud plan,
-   Part 11).
+3. a **library** (the engine is importable inside the project).
 
-## 3.2 Superpower 1 — the instant detective (retry mode)
+## 3.2 Live retry mode
 
 You run your tests *through* flakefinder:
 
@@ -267,7 +242,7 @@ light:
 This is the whole trick that makes CI sane again: **flaky no longer means
 red.** A rescued flake exits 0 (with a loud report), a real failure exits 1.
 
-## 3.3 Superpower 2 — the long-term memory (history mode)
+## 3.3 History mode
 
 Every run flakefinder sees is appended to a private diary:
 `.flakefinder/history.jsonl` inside your project (one JSON object per line —
@@ -288,7 +263,7 @@ per test:
 - **Confidence 0–100** — how much evidence backs the verdict?
 
 (The exact arithmetic is in Part 6.6 — it's simple, transparent, and has no
-AI in it. Every rule is published in PLAN.md and pinned by tests.)
+AI in it. Every rule is published in docs/PLAN.md and pinned by tests.)
 
 ## 3.4 What you get
 
@@ -317,7 +292,7 @@ AI in it. Every rule is published in PLAN.md and pinned by tests.)
   recorded evidence; the rules are published and pinned by tests.
 - **No daemon, no background processes.** Run it, get answers, done.
 
-## 3.6 What's new for the community (honest positioning)
+## 3.6 Project design and trade-offs
 
 The flaky-test space has commercial players (BuildPulse, Trunk Flaky Tests,
 Datadog Test Visibility, Buildkite Test Engine — all good products, all
@@ -331,13 +306,10 @@ paid SaaS, all cloud-first). What flakefinder adds:
 | Setup | Vendor onboarding | `npx flakefinder init` → done; no account |
 | Local experience | CI-only products | First-class CLI: your laptop is a first-class citizen |
 | Determinism | Some vendors add opaque "AI scoring" | Pure arithmetic; reproducible verdicts |
-| Format coverage | Varies by vendor | Six formats out of the box: JUnit XML, Jest/vitest JSON, Mocha JSON, `go test -json`, TAP (node:test), TRX (.NET) |
+| Format coverage | Varies by vendor | Eight supported formats, including JUnit, TAP, TRX, and Playwright JSON |
 | Story for CI cost | Detection only | *Targeted re-runs*: retry loops cost suite + 2×(failed tests), not 3×(whole suite) |
 
-Also — and this is the part the community asked for — it is the **only**
-tool in this space whose detection engine is a small, dependency-light,
-importable TypeScript library, which makes the cloud roadmap (Part 11)
-"the same engine, hosted if you want it" instead of a rewrite.
+The detection engine is a TypeScript module shared by the CLI and the GitHub Action.
 
 ---
 
@@ -419,19 +391,17 @@ pipeline from the terminal and from CI.
 
 ```
 flakefinder/
-├── PLAN.md                  the spec of record (§5 = the algorithm contract)
-├── TASKS.md                 build log, phase by phase
 ├── README.md                the product page
 ├── action.yml               GitHub Action definition (inputs/outputs/runtime)
 ├── dist/                    COMMITTED build output (the Action runs from here)
-├── docs/                    this file, USAGE, BUILD_REPORT, QA_FINDINGS, CLOUD_SCALING
+├── docs/                    usage, architecture, project context, releases, and archive
 ├── fixtures/                real jest/pytest/go projects with deterministic flakes
 ├── scripts/                 e2e harness, perf smoke, release automation
 ├── src/
 │   ├── types.ts             THE frozen contract (all shared types)
 │   ├── config.ts            config loading/validation/defaults + runner detection
 │   ├── doctor.ts            the `doctor` setup checker
-│   ├── parsers/             six report parsers + format sniffing
+│   ├── parsers/             report parsers and format detection
 │   ├── store/               the JSONL history store
 │   ├── engine/              statistics + the classification algorithm
 │   ├── runner/              live execution + targeted re-run adapters
@@ -455,7 +425,7 @@ why it is shaped that way, and the non-obvious decisions inside it.
 
 Everything starts here. `types.ts` defines the shared vocabulary every other
 module speaks, and the project treats it as a **contract**: changing it
-requires updating PLAN.md and the tests in the same commit. The important
+requires updating docs/PLAN.md and the tests in the same commit. The important
 types, field by field:
 
 ### `TestCaseResult` — one test, one run
@@ -803,7 +773,7 @@ freshly-appended record must survive.
 ## 6.6 The detection engine — `src/engine/*`
 
 This is the heart. Two files: `stats.ts` (tiny, exact) and `classify.ts`
-(the algorithm). PLAN.md §5 is the contract; `classify.test.ts` pins it
+(the algorithm). docs/PLAN.md §5 is the contract; `classify.test.ts` pins it
 with table-driven tests that read like the spec.
 
 ### 6.6.1 Statistics
@@ -949,7 +919,7 @@ full walk-through:
 ### The spawn strategy (harder than it sounds)
 
 Cross-platform process spawning with *injected arguments* (quarantine
-patterns, targeted selectors) is a minefield. The current model, hardened
+patterns, targeted selectors) requires platform-specific handling. The current model, hardened
 through three QA rounds:
 
 - **No shell by default.** Arguments pass verbatim — a pattern like
@@ -1222,10 +1192,9 @@ additionally upserts the MR note (6.9) — full recipe in docs/USAGE.md.
 
 # Part 7 — How it's tested
 
-The quality machine has five layers, each catching what the previous
-can't:
+Verification covers source behavior, real runners, and the installed package.
 
-1. **Unit tests (261, colocated `*.test.ts`):** the engine's classification
+1. **Unit tests (colocated `*.test.ts`):** the engine's classification
    rules are *table-driven* — one test per precedence rule, per score cap,
    per recency tier — so `classify.test.ts` reads like PLAN §5. Parsers are
    tested against **fixture files shaped like real tool output** (including
@@ -1241,14 +1210,17 @@ can't:
    containing a stable test, a deterministic failure, a counter-flake, and
    a slow test. Asserts exit codes, classifications, dashboard generation,
    and the quarantine round-trip. Flakes in the fixtures are
-   **deterministic by counter parity** — no `Math.random()` anywhere near
-   CI, so the test suite itself cannot be flaky (that would be embarrassing).
+   **deterministic by counter parity**, so test fixtures can assert the
+   outcome of each attempt.
 4. **Performance smoke (`scripts/perf-smoke.mjs`, wired into CI):**
    regenerates a worst-case store (300 runs × 500 tests = 150,000
    observations, ~13 MB) and asserts `report` and `html` stay under budget
-   — currently ~90 ms each. A regression here fails CI loudly.
+   specified in the script. A regression fails CI.
 5. **Coverage gates (in CI):** ≥85% lines on `src/engine`, `src/parsers`,
-   `src/store` — the correctness-critical core.
+   `src/store`.
+6. **Packed CLI checks:** Windows and Ubuntu install the same Ubuntu-built
+   tarball on Node 18 and 24. Both hosts also run the real runner fixtures in
+   strict mode. The [release runbook](RELEASING.md) describes the shared CI gate.
 
 Beyond the automated layers, four rounds of **adversarial QA** (black-box
 agents attacking the built CLI from scratch directories — Part 9) found the
@@ -1346,49 +1318,7 @@ validated. Full prose reference: docs/USAGE.md.
 
 ---
 
-# Part 11 — The cloud plan
-
-flakefinder is local-first by design, and that stays. But local history
-can't answer org-wide questions ("which team owns the flakiest suites?",
-"show me flake trends for the last quarter"). The researched, staged plan
-(full analysis: docs/CLOUD_SCALING.md):
-
-**Stage 1 — Extract `@flakefinder/engine`.** The classification engine
-becomes a shared workspace package consumed by the CLI and the future
-server. One tested engine everywhere; no behavior change.
-
-**Stage 2 — A hosted history store (the first real product).** One
-endpoint: `POST /v1/ingest` accepting the exact `RunRecord` JSONL the CLI
-already produces (the store schema versioning from 0.2.0 was done
-precisely to enable this). Repo-scoped write-only ingest tokens; the
-GitHub Action gains a `cloud-token` input and uploads in the background —
-classification still happens in the Action, the server accumulates and
-re-classifies for dashboards using the same engine. Failure to upload is a
-warning, never a broken build.
-
-**Stage 3 — Hosted dashboards + org views.** The dashboard renderer is a
-pure function — serve its output from stored runs. Org rollups, trends,
-CODEOWNERS-based ownership mapping.
-
-**Stage 4 — A GitHub App** for read-side enrichment (check-run
-annotations at scale, auto-quarantine suggestions, org installs) — the
-Action remains the write-side worker.
-
-**Stage 5 — Self-hosted image** (server + Postgres in docker compose) for
-teams whose data can't leave their network. This tier keeps the OSS story
-honest.
-
-Key choices already made: managed Postgres with JSONB run-blobs (the JSONL
-shape maps directly; ClickHouse deferred to Datadog scale), redaction
-before upload with the store-stays-raw principle preserved (the *server*
-never sees what the Action doesn't send), per-token rate limiting and
-idempotent ingest keys (CI retries must not double-count), purge/export
-APIs from day one. Pricing sketch: free single-repo tier, team tier
-anchored against BuildPulse/Trunk, flat self-hosted tier.
-
----
-
-# Part 12 — Glossary
+# Part 11 — Glossary
 
 | Term | Meaning |
 |---|---|
@@ -1414,7 +1344,7 @@ anchored against BuildPulse/Trunk, flat self-hosted tier.
 
 ---
 
-# Part 13 — FAQ
+# Part 12 — FAQ
 
 **Does it slow my tests down?** In `report`/`ingest`/`html` modes, overhead
 is reading small files (~90 ms for a 150k-observation history). In `run`
@@ -1444,13 +1374,11 @@ runs.
 
 ---
 
-# Part 14 — Where to go next
+# Part 13 — Where to go next
 
 - **Use it:** README.md quickstart → docs/USAGE.md for every flag.
-- **Understand the algorithm:** PLAN.md §5 (the contract) and
+- **Understand the algorithm:** docs/PLAN.md §5 (the contract) and
   `src/engine/classify.test.ts` (the tests that pin it).
 - **Contribute:** CONTRIBUTING.md — especially the parser guide if your
   ecosystem isn't covered yet.
-- **The roadmap:** docs/CLOUD_SCALING.md (the staged cloud path) and
-  docs/QA_FINDINGS.md (the ranked improvement backlog).
-- **The engineering story:** docs/BUILD_REPORT.md.
+- **Build and release:** [Project context](PROJECT_CONTEXT.md) and the [release runbook](RELEASING.md).

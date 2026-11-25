@@ -315,7 +315,7 @@ export const SLOW_RELATIVE_FLOOR_MS = 100;
 /**
  * Classify every test seen in `runs`. Implements PLAN §5 exactly — the
  * classification precedence, score arithmetic, confidence formulas and tags
- * are contractual; change them only with an update to PLAN.md.
+ * are contractual; change them only with an update to docs/PLAN.md.
  */
 export function classifyAll(runs: RunRecord[], cfg: ResolvedConfig): TestVerdict[] {
   if (runs.length === 0) return [];
