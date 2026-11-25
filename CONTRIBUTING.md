@@ -48,6 +48,11 @@ npm run e2e
 
 ## Cross-platform CLI checks
 
+Use `node:path` for filesystem operations and pass arguments as an array
+when spawning commands. Keep platform-specific quoting and process handling
+in the runner helpers. Cover changes there with behavior tests that run on
+both hosts, using fixture paths relative to the test project.
+
 For changes to spawning, quoting, or filesystem behavior, test from a checkout
 whose absolute path contains a space. On Windows, use PowerShell and
 `cmd.exe` to exercise the npm-installed CLI shim. The invoking shell parses
