@@ -77,7 +77,7 @@ jobs:
           : "${NODE_AUTH_TOKEN:?The repository NPM_TOKEN secret is required to publish}"
           dist_tag=latest
           if [[ "${TAG%%+*}" == *-* ]]; then dist_tag=next; fi
-          npm publish "$tarball" --tag "$dist_tag" --provenance
+          npm publish "$tarball" --access public --tag "$dist_tag" --provenance
 
   github-release:
     name: Create GitHub Release
