@@ -25,7 +25,7 @@
 4. Review the version and bundle diff and stage the intended release files.
 
    ```sh
-   git add -- package.json package-lock.json src/types.ts dist/action/index.cjs dist/cli.js.map
+   git add -- package.json package-lock.json src/types.ts dist/action/index.cjs
    git add --chmod=+x -- dist/cli.js
    git diff --cached --stat
    ```

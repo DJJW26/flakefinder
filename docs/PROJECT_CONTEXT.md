@@ -42,7 +42,7 @@ npm run perf
 node scripts/third-party-notices.mjs --check
 ```
 
-- [tsup.config.ts](../tsup.config.ts) builds `dist/cli.js` and its sourcemap for npm, plus the self-contained `dist/action/index.cjs` for GitHub Actions. The CLI keeps its npm dependencies external. Build output is committed. `dist/cli.js` has Git mode `100755`.
+- [tsup.config.ts](../tsup.config.ts) builds `dist/cli.js` for npm and the self-contained `dist/action/index.cjs` for GitHub Actions. The CLI keeps its npm dependencies external. Build output is committed. `dist/cli.js` has Git mode `100755`.
 - Colocated Vitest tests are under `src`. `tests` also holds release-script tests and parser samples. Coverage gates apply to the engine, parsers, and history store.
 - [scripts/e2e.mjs](../scripts/e2e.mjs) runs real Jest, pytest, and Go projects from scratch directories. Set `FF_E2E_STRICT=1` to require all three. pytest and Go need to be available locally. `FF_E2E_NOBUILD=1` uses the existing built CLI.
 - [scripts/packed-smoke.mjs](../scripts/packed-smoke.mjs) accepts an absolute `.tgz` path and an expected SHA-256. It installs the tarball in a temporary directory and invokes the installed CLI shim to check ingest, report, HTML, and live retry behavior with spaced paths and redirection.

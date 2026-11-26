@@ -12,7 +12,6 @@
   },
   "files": [
     "dist/cli.js",
-    "dist/cli.js.map",
     "README.md",
     "LICENSE"
   ],

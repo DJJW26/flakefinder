@@ -7,7 +7,7 @@ export default defineConfig([
     platform: 'node',
     target: 'node18',
     banner: { js: '#!/usr/bin/env node' },
-    sourcemap: true,
+    sourcemap: false,
     clean: false,
     splitting: false,
     dts: false,
