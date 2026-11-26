@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -187,7 +187,12 @@ async function main(args) {
   }
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+const entry = process.argv[1];
+if (
+  entry &&
+  existsSync(entry) &&
+  realpathSync.native(entry) === realpathSync.native(fileURLToPath(import.meta.url))
+) {
   try {
     await main(process.argv.slice(2));
   } catch (error) {

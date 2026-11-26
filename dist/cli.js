@@ -3,7 +3,14 @@
 // src/cli/index.ts
 import { spawnSync as spawnSync4 } from "child_process";
 import { randomUUID as randomUUID2 } from "crypto";
-import { existsSync as existsSync6, mkdirSync as mkdirSync2, readFileSync as readFileSync7, statSync as statSync7, writeFileSync as writeFileSync4 } from "fs";
+import {
+  existsSync as existsSync6,
+  mkdirSync as mkdirSync2,
+  readFileSync as readFileSync7,
+  realpathSync as realpathSync2,
+  statSync as statSync7,
+  writeFileSync as writeFileSync4
+} from "fs";
 import path8 from "path";
 import { Command } from "commander";
 
@@ -6402,7 +6409,19 @@ async function main(argv) {
       exitCode = 2;
       return;
     }
-    const targets = files.length > 0 ? [...new Set(files.map((f) => path8.resolve(g.cwd, f)))] : matchGlobs(g.cwd, cfg.reports);
+    const targets = files.length > 0 ? [] : matchGlobs(g.cwd, cfg.reports);
+    const seen = /* @__PURE__ */ new Set();
+    for (const file of files) {
+      const resolved = path8.resolve(g.cwd, file);
+      let identity = resolved;
+      try {
+        identity = realpathSync2.native(resolved);
+      } catch {
+      }
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      targets.push(resolved);
+    }
     if (targets.length === 0) {
       console.error(
         'flakefinder: no report files matched \u2014 pass files explicitly or set "reports" globs (see flakefinder init)'

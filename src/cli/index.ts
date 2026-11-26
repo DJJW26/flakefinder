@@ -1,6 +1,13 @@
 import { spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import path from 'node:path';
 import { Command } from 'commander';
 import { computeNewFlakes } from '../action/diff.js';
@@ -420,12 +427,20 @@ export async function main(argv: string[]): Promise<number> {
         exitCode = 2;
         return;
       }
-      // resolve BEFORE dedupe: `r.xml ./r.xml` is one file, ingesting it
-      // twice would double-count every result in the same run (QA A6)
-      const targets =
-        files.length > 0
-          ? [...new Set(files.map((f) => path.resolve(g.cwd, f)))]
-          : matchGlobs(g.cwd, cfg.reports);
+      const targets = files.length > 0 ? [] : matchGlobs(g.cwd, cfg.reports);
+      const seen = new Set<string>();
+      for (const file of files) {
+        const resolved = path.resolve(g.cwd, file);
+        let identity = resolved;
+        try {
+          identity = realpathSync.native(resolved);
+        } catch {
+          // Keep inaccessible paths so the reader can report the error.
+        }
+        if (seen.has(identity)) continue;
+        seen.add(identity);
+        targets.push(resolved);
+      }
       if (targets.length === 0) {
         console.error(
           'flakefinder: no report files matched — pass files explicitly or set "reports" globs (see flakefinder init)',

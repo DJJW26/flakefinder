@@ -1,6 +1,14 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -77,6 +85,21 @@ afterEach(() => {
 });
 
 describe('release tag validation', () => {
+  it('runs the entry point through a directory alias', () => {
+    const alias = path.join(root, 'alias');
+    symlinkSync(path.join(root, 'scripts'), alias, 'junction');
+    const result = spawnSync(
+      process.execPath,
+      [path.join(alias, 'release.mjs'), '--validate-tag', `v${version}`],
+      {
+        cwd: root,
+        encoding: 'utf8',
+      },
+    );
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(`${notes}\n`);
+  });
+
   it('prints only the exact prerelease notes from a CRLF changelog', () => {
     const result = runRelease('--validate-tag', `v${version}`);
     expect(result.status).toBe(0);

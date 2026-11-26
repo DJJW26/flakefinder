@@ -5,7 +5,15 @@
  */
 import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -101,6 +109,17 @@ describe('ingest dedupes explicitly-passed files (QA A6)', () => {
     const records = historyRecords(d);
     expect(records).toHaveLength(1);
     expect(records[0]!.results).toHaveLength(2);
+  });
+
+  it('counts a report once when an explicit path uses a directory alias', () => {
+    const d = tmp();
+    const reports = path.join(d, 'reports');
+    mkdirSync(reports);
+    symlinkSync(reports, path.join(d, 'alias'), 'junction');
+    writeFileSync(path.join(reports, 'r.xml'), JUNIT, 'utf8');
+    const result = cli(['ingest', 'reports/r.xml', 'alias/r.xml'], d);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain('ingested 2 test result(s) from 1/1 file(s)');
   });
 });
 
