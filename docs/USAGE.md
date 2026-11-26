@@ -621,7 +621,7 @@ jobs:
       - run: npm ci
       - run: npm test                      # must write report files
       - name: flakefinder
-        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+        uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
         if: always()                       # analyze even when tests fail
 ```
 
@@ -630,7 +630,7 @@ moment they're recorded — that's the point):
 
 ```yaml
       - name: flakefinder
-        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+        uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
         if: always()
         with:
           fail-on-new-flakes: true
@@ -645,7 +645,7 @@ moment they're recorded — that's the point):
 
 ```yaml
       - name: flakefinder (services/api)
-        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+        uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
         if: always()
         with:
           working-directory: services/api
@@ -657,7 +657,7 @@ dimensions you care about if you want it stable when the matrix changes:
 
 ```yaml
       - name: flakefinder
-        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+        uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
         if: always()
         with:
           history-key: ${{ matrix.os }}-node${{ matrix.node }}

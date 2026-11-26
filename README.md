@@ -1,27 +1,24 @@
 # flakefinder
 
-**Find your flaky tests before they find your CI.**
+**Find flaky tests locally and track them in CI.**
 
 [![CI](https://github.com/DJJW26/flakefinder/actions/workflows/ci.yml/badge.svg)](https://github.com/DJJW26/flakefinder/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/flakefinder)](https://www.npmjs.com/package/flakefinder)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D18-green.svg)](package.json)
 
-flakefinder detects, tracks, and quarantines flaky tests — from your terminal
-and from CI. It wraps your existing test command, re-runs failures, and tells
-you which red is a *flake* and which red is a *real bug*. Over time it builds
-a local history of every test run and turns it into flake scores, a terminal
-report, an HTML dashboard, PR comments, and one-command quarantine.
+flakefinder wraps your existing test command and shows which tests passed on
+retry and which failures persisted. In CI, it reads the reports your tests
+already produce and builds a history you can review in the terminal, an HTML
+dashboard, or GitHub pull requests.
 
-## The problem
+## Who it’s for
 
-Every suite with tests that pass "sometimes" slowly stops meaning anything:
-people re-run jobs on vibes, CI minutes burn on reruns, and a genuinely broken
-build hides behind three known-flaky failures. Most teams cope by ignoring the
-noise or paying for vendor SaaS that ships their test data off-site.
-flakefinder is the open, local-first alternative: deterministic rules, no
-network calls, no accounts, no telemetry — just a CLI and a GitHub Action that
-read the report files your test runner already knows how to write.
+If your team regularly reruns red builds, flakefinder can show which tests
+repeatedly cost you time. It accepts mixed report formats, including Playwright
+JSON, pytest reports, and Go test output, so you can use it across a repo with
+multiple test runners. The CLI stores history locally and requires no hosted
+account or separate service.
 
 ## How it works
 
@@ -30,9 +27,9 @@ Two modes, one history store.
 **INSTANT — `flakefinder run -- <command>`**
 Wraps your command and re-runs it when it fails (up to `--retries` extra
 attempts). A test that fails on attempt 1 and passes on attempt 2 of the same
-invocation was *rescued by a retry* — that is a proven flake, not a guess. A
-test that fails on every attempt is a real failure. Different exit codes keep
-the two straight, so `run` can gate CI without punishing you for known flakes.
+invocation was *rescued by a retry*. A test that still fails on the final
+attempt is reported as a persistent failure. The exit code lets CI distinguish
+a run with only retry-rescued tests from one with failures still present.
 
 **HISTORY — `flakefinder ingest` / `report` / `html`**
 Every parsed run lands in an append-only JSONL store (`.flakefinder/history.jsonl`).
@@ -46,10 +43,10 @@ value. Weeks of CI runs turn into a ranked list of worst offenders.
 
 | Verdict | Meaning |
 |---|---|
-| `FLAKY (confirmed)` | failed **and** passed on the same commit — proven flake |
+| `FLAKY (confirmed)` | observed both a failure and a pass on the same commit |
 | `FLAKY (retry-rescued)` | failed, then passed on a retry of the same run |
 | `FLAKY (suspected)` | result flipped ≥ 2 times across commits/runs; score-gated |
-| `FAILING` | last 5 observations all failed — real failure |
+| `FAILING` | last 5 observations all failed |
 | `NEW FAILURE` | failed on the latest run, not enough data yet to say more |
 | passing / skipped / gone | healthy, always-skipped, not seen in 30 runs |
 
@@ -74,9 +71,9 @@ $ npx flakefinder run -- npm test
 flakefinder: attempt 1/3 → npm test
   … your normal test output — attempt 1 fails …
 flakefinder: attempt 2/3 → npm test
-  … the flaky test passes this time; the real failure persists …
+  … the flaky test passes this time; the other test still fails …
 flakefinder: attempt 3/3 → npm test
-  … attempt 3 confirms which failure is deterministic …
+  … the other test still fails on the final attempt …
 
 flakefinder — 5 tracked test(s), 2 need attention
 
@@ -94,7 +91,7 @@ next steps:
   • full interactive report: flakefinder html
 
 $ echo $?
-1        # a real failure persists — the flake above did NOT cause this exit code
+1        # a failure persisted through the final attempt
 
 $ npx flakefinder report          # terminal table from accumulated history
 $ npx flakefinder report --flakes-only --no-color   # CI-friendly, problems only
@@ -132,8 +129,10 @@ repo are fine. Point `flakefinder.config.json` → `reports` globs at them.
 ```yaml
       - run: npm test            # your tests write report files
       - name: flakefinder
-        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+        uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
         if: always()
+        with:
+          fail-on-new-flakes: 'false'
 ```
 
 The action caches `.flakefinder/` between runs (history-aware verdicts),
@@ -142,8 +141,9 @@ artifact, and can fail the job when *new* flakes appear. Matrix legs keep
 separate histories automatically. Full input/output reference, matrix and
 monorepo recipes: [docs/github-action.md](docs/github-action.md).
 
-The example pins a full commit SHA so every workflow run uses the same
-Action code. This commit is on the `fix/windows-parity` branch.
+Start with reporting and review the results from your own suite before
+enabling `fail-on-new-flakes`. The example pins a full commit SHA from `main`
+so each workflow run uses the same Action code.
 
 ## Quarantine
 
@@ -170,21 +170,23 @@ tracked and reported, but not auto-excluded.
 
 ## Design principles
 
-- **Local-first.** No network calls, no accounts, no telemetry. Your test data
-  never leaves the machine (or your GitHub cache, if you use the Action).
+- **Local-first.** The CLI keeps test history on disk. The optional GitHub
+  Action uses GitHub for caching, dashboard artifacts, and PR comments.
 - **Small CLI.** A single entry file with two direct runtime dependencies
   (`commander` and `fast-xml-parser`), installed by npm.
-- **Exit codes you can script.** `0` clean or flakes-only, `1` deterministic
-  failure, `2` usage/environment error. CI gates are one line.
+- **Exit codes you can script.** For `run`, `0` means clean or retry-rescued
+  tests only, `1` means a failure persisted, and `2` means a usage or
+  environment error.
 - **Deterministic.** Classification, scores, and confidence are transparent
   rules over your history — no AI, no randomness, same input → same verdict.
 
 ## FAQ
 
 **How much overhead does `run` add?**
-One extra full-suite run per retry, and retries only happen when the previous
-attempt failed. A green suite runs exactly once. Tune with `-R` /
-`liveRetries`, or skip live retries entirely and only ingest reports.
+Retries run only after a failed attempt. By default, supported runners retry
+just the failed tests and other runners retry the full command. A green suite
+runs once. Set the retry limit with `-R` or `liveRetries`, or ingest reports
+directly to skip live retries.
 
 **What happens when tests get renamed?**
 Identity is `sha256(suite + name)`, so a rename forks history: the old test

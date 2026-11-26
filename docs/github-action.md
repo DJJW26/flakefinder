@@ -24,7 +24,7 @@ jobs:
       - run: npm ci
       - run: npm test                       # your tests must write report files
       - name: flakefinder
-        uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+        uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
         if: always()                        # analyze even when tests fail
 ```
 
@@ -103,7 +103,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       # …checkout, setup, run tests…
-      - uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+      - uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
         if: always()
         with:
           # equivalent to the default, but stable if you later add a
@@ -185,8 +185,8 @@ applies.
 **Do I need the config file if I set the `reports` input?**
 No — the input overrides it. The config file is still useful for local runs.
 
-**Which version should I pin?** The examples pin a full commit SHA from
-`fix/windows-parity` that includes the 1.2.0 Action bundle. To upgrade,
+**Which version should I pin?** The examples pin a tested commit from
+`main` that includes the 1.2.0 Action bundle. To upgrade,
 replace it with the full SHA of the revision you want to run.
 
 **Private repos?** Yes; the default `GITHUB_TOKEN` works. PR comments need the

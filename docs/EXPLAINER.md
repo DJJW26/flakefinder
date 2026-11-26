@@ -96,7 +96,7 @@ called a **GitHub Action**. Anyone can publish an Action, and anyone else
 can use it in their workflow with one line:
 
 ```yaml
-- uses: DJJW26/flakefinder@a8dfd321a5ed3a4c147e020b016cf3f3b9bcffb3
+- uses: DJJW26/flakefinder@f1bc4dd92ad2a11ac49d74d7ac272f9f25e11d7f
 ```
 
 The traffic light is sacred. Entire team rituals, merge rules, and release
