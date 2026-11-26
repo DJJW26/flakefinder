@@ -197,6 +197,30 @@ describe('go parser robustness (review round)', () => {
     expect(warnings.some((w) => w.includes('no test results'))).toBe(true);
   });
 
+  it('keeps a TestMain teardown failure after all individual tests passed', () => {
+    const content = [
+      '{"Action":"pass","Package":"p","Test":"TestA"}',
+      '{"Action":"output","Package":"p","Output":"database teardown failed"}',
+      '{"Action":"fail","Package":"p"}',
+    ].join('\n');
+    const { results, warnings } = goTestParser.parse(content, 'teardown.jsonl');
+    expect(results).toHaveLength(2);
+    expect(results[1]).toMatchObject({ name: '(package)', status: 'error' });
+    expect(results[1]?.message).toContain('database teardown failed');
+    expect(warnings.join(' ')).toContain('package p failed');
+  });
+
+  it('does not report skipped repeats as flaky passes', () => {
+    const content = [
+      '{"Action":"skip","Package":"p","Test":"TestA"}',
+      '{"Action":"fail","Package":"p","Test":"TestA"}',
+    ].join('\n');
+    const { results, warnings } = goTestParser.parse(content, 'repeat.jsonl');
+    expect(results[0]).toMatchObject({ status: 'fail', attempts: ['skip', 'fail'] });
+    expect(results[0]?.message).toBeUndefined();
+    expect(warnings).toEqual([]);
+  });
+
   it('does not double-report when a package fails WITH tests (dangling logic covers it)', () => {
     const content = [
       '{"Action":"run","Package":"p3","Test":"TestA"}',

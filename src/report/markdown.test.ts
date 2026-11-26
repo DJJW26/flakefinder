@@ -225,3 +225,24 @@ describe('dashboard footer only when uploaded (QA ACT-13)', () => {
     );
   });
 });
+
+it('includes passing, skipped, and gone tests when all rows are requested', () => {
+  const tests = [
+    verdict({ name: 'Passing example', classification: 'passing' }),
+    verdict({ name: 'Skipped example', classification: 'skipped' }),
+    verdict({ name: 'Gone example', classification: 'gone' }),
+  ];
+
+  const all = renderMarkdown(tests, { flakesOnly: false, allRows: true });
+  const defaults = renderMarkdown(tests, { flakesOnly: false });
+  for (const { name } of tests) {
+    expect(all).toContain(name);
+    expect(defaults).not.toContain(name);
+  }
+});
+
+it('mentions deterministic failures when there are no flakes', () => {
+  const body = buildPrComment([verdict({ classification: 'failing' })], null);
+  expect(body).toContain('1 failing');
+  expect(body).toContain('no flakes detected among 1 tracked tests');
+});

@@ -326,7 +326,7 @@ export const goTestParser: ReportParser = {
       };
       // a pass carries no message: its output is t.Log noise, not a reason
       let message = reported.status === 'pass' ? undefined : messageFromOutputs(reported.outputs);
-      const isFlaky = failed.length > 0 && failed.length < acc.runs.length;
+      const isFlaky = failed.length > 0 && acc.runs.some((r) => r.status === 'pass');
       if (isFlaky) {
         const note = `flaky: failed ${failed.length} of ${acc.runs.length} runs in this report`;
         message = message !== undefined ? `${note}\n${message}` : note;
@@ -384,15 +384,20 @@ export const goTestParser: ReportParser = {
       );
     }
 
-    const pkgsWithTests = new Set([...tests.values()].map((a) => a.pkg));
+    const pkgsWithFailures = new Set(
+      results.filter((r) => isFailFamily(r.status)).map((r) => r.suite),
+    );
+    const pkgsWithTests = new Set(results.map((r) => r.suite));
     for (const [pkg, entry] of failedPackages) {
-      if (!entry.failed || pkgsWithTests.has(pkg)) continue; // per-test results already reflect it
+      if (!entry.failed || pkgsWithFailures.has(pkg)) continue; // per-test results already reflect it
       const build = entry.failedBuild !== undefined ? builds.get(entry.failedBuild) : undefined;
       const output = messageFromOutputs([...(build?.outputs ?? []), ...entry.outputs]);
       const reason =
         build !== undefined
           ? 'package failed to build'
-          : 'package failed before any test completed (build or init crash?)';
+          : pkgsWithTests.has(pkg)
+            ? 'package failed outside an individual test (TestMain or teardown?)'
+            : 'package failed before any test completed (build or init crash?)';
       results.push({
         testId: makeTestId(pkg, '(package)'),
         suite: pkg,
@@ -404,7 +409,7 @@ export const goTestParser: ReportParser = {
       // a build-fail warning above already reported this package
       if (build === undefined || !build.failed) {
         warnings.push(
-          `go: ${sourcePath}: package ${pkg} failed with no test results — synthesized as error`,
+          `go: ${sourcePath}: package ${pkg} failed with ${pkgsWithTests.has(pkg) ? 'no failing tests' : 'no test results'} — synthesized as error`,
         );
       }
     }

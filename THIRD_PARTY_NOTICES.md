@@ -89,8 +89,8 @@ dependency changes.
 | event-target-shim | 5.0.1 | MIT |
 | events-universal | 1.0.1 | Apache-2.0 |
 | fast-fifo | 1.3.2 | MIT |
-| fast-xml-builder | 1.3.1 | MIT |
-| fast-xml-parser | 5.11.2 | MIT |
+| fast-xml-builder | 1.3.2 | MIT |
+| fast-xml-parser | 5.12.1 | MIT |
 | flatbuffers | 25.9.23 | Apache-2.0 |
 | for-each | 0.3.5 | MIT |
 | function-bind | 1.1.2 | MIT |
@@ -128,7 +128,7 @@ dependency changes.
 | is-string | 1.1.1 | MIT |
 | is-symbol | 1.1.1 | MIT |
 | is-typed-array | 1.1.15 | MIT |
-| is-unsafe | 2.0.2 | MIT |
+| is-unsafe | 2.0.3 | MIT |
 | is-weakmap | 2.0.2 | MIT |
 | is-weakref | 1.1.1 | MIT |
 | is-weakset | 2.0.4 | MIT |
@@ -3483,7 +3483,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-### fast-xml-builder@1.3.1
+### fast-xml-builder@1.3.2
 
 License: MIT
 Repository: git+https://github.com/NaturalIntelligence/fast-xml-builder.git
@@ -3512,7 +3512,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### fast-xml-parser@5.11.2
+### fast-xml-parser@5.12.1
 
 License: MIT
 Repository: git+https://github.com/NaturalIntelligence/fast-xml-parser.git
@@ -4747,7 +4747,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-### is-unsafe@2.0.2
+### is-unsafe@2.0.3
 
 License: MIT
 Repository: https://github.com/NaturalIntelligence/is-unsafe

@@ -1,3 +1,8 @@
+import { lstatSync } from 'node:fs';
+import path from 'node:path';
+import { snapshotPath } from '../store/history-store.js';
+import { baselinePath } from './baseline.js';
+
 /**
  * History persistence via the Actions cache. The cache API is injected so
  * the behavior is testable without a cache service.
@@ -38,6 +43,20 @@ export function cacheUsable(api: CacheApi, log: Log): boolean {
   return ok;
 }
 
+// @actions/cache accepts newline-delimited glob patterns. Pass only the
+// owned files, even when the config places the store at the workspace root.
+function historyFiles(storeDir: string): string[] {
+  return [path.join(storeDir, 'history.jsonl'), snapshotPath(storeDir), baselinePath(storeDir)];
+}
+
+function literalPatterns(files: string[]): string[] {
+  return files.map((file) => {
+    if (/[\r\n]/.test(file)) throw new Error('cache paths cannot contain line breaks');
+    const pattern = process.platform === 'win32' ? file : file.replaceAll('\\', '\\\\');
+    return pattern.replace(/[[?*]/g, (c) => `[${c}]`);
+  });
+}
+
 export async function restoreHistory(
   api: CacheApi,
   log: Log,
@@ -46,7 +65,11 @@ export async function restoreHistory(
   restoreKeys: string[],
 ): Promise<void> {
   try {
-    const hit = await api.restoreCache([storeDir], saveKey, restoreKeys);
+    const hit = await api.restoreCache(
+      literalPatterns(historyFiles(storeDir)),
+      saveKey,
+      restoreKeys,
+    );
     if (hit) log.info(`history cache restored from ${hit}`);
   } catch (err) {
     log.warning(`history cache restore failed (continuing): ${(err as Error).message}`);
@@ -61,7 +84,12 @@ export async function saveHistory(
   saveKey: string,
 ): Promise<void> {
   try {
-    const id = await api.saveCache([storeDir], saveKey);
+    const files = historyFiles(storeDir);
+    for (const file of files) {
+      const stat = lstatSync(file, { throwIfNoEntry: false });
+      if (stat && !stat.isFile()) throw new Error(`expected a regular history file at ${file}`);
+    }
+    const id = await api.saveCache(literalPatterns(files), saveKey);
     if (id === -1) {
       log.warning(
         `history cache was not saved under ${saveKey} (key taken — e.g. matrix legs of one job — or cache unavailable); this run's history will not carry over`,

@@ -35,6 +35,16 @@ describe('action outputs are redacted and escaped (R5 #12)', () => {
     expect(msg).toContain('1 NEW flaky test(s)');
   });
 
+  it('bounds annotations and makes control characters visible in the summary and failure', () => {
+    const tests = Array.from({ length: 23 }, () =>
+      verdict({ name: `wobble\u202e${'x'.repeat(6000)}` }),
+    );
+    expect(jobSummaryHtml(tests, 23, 0)).toContain('wobble\\u202e');
+    const message = newFlakesFailure(tests);
+    expect(message).toContain('See report-json for all 23 tests');
+    expect(message.length).toBeLessThan(12_000);
+    expect(message).not.toContain('\u202e');
+  });
   it('job-summary cells are redacted and HTML-escaped', () => {
     const rows = summaryRows([
       verdict({ name: `</td><img src=x onerror=alert(1)> ${TOKEN}`, suite: 'a&b' }),

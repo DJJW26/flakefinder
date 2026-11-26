@@ -70,6 +70,19 @@ function cli(
 const JUNIT =
   '<testsuites><testsuite name="s"><testcase name="a"/><testcase name="b"/></testsuite></testsuites>';
 
+it('report --format md --all includes the passing and skipped rows', () => {
+  const d = tmp();
+  writeFileSync(
+    path.join(d, 'r.xml'),
+    JUNIT.replace('name="b"/>', 'name="b"><skipped/></testcase>'),
+  );
+  expect(cli(['ingest', 'r.xml'], d).status).toBe(0);
+  const report = cli(['report', '--format', 'md', '--all'], d);
+  expect(report.status).toBe(0);
+  expect(report.stdout).toContain('| a | s | passing |');
+  expect(report.stdout).toContain('| b | s | skipped |');
+});
+
 function historyRecords(cwd: string): { runId: string; results: unknown[] }[] {
   return readFileSync(path.join(cwd, '.flakefinder', 'history.jsonl'), 'utf8')
     .split('\n')
@@ -339,6 +352,28 @@ describe('ci annotations and table are redacted (QA ACT-3)', () => {
 });
 
 describe('ci on a first run where nothing parses (QA ACT-5 / CLI-7)', () => {
+  it.each(['not a report', '<testsuite name="empty"/>'])(
+    'keeps history and the baseline when an explicit gate has no test results (%s)',
+    (input) => {
+      const d = tmp();
+      writeFileSync(path.join(d, 'flakefinder.config.json'), '{"reports":["r.xml"]}');
+      writeFileSync(path.join(d, 'r.xml'), JUNIT);
+      expect(cli(['ci', '--fail-on-new-flakes'], d).status).toBe(0);
+      const files = [
+        '.flakefinder/history.jsonl',
+        '.flakefinder/verdicts-snapshot.json',
+        'flakefinder-report.json',
+      ];
+      const contents = () => files.map((file) => readFileSync(path.join(d, file), 'utf8'));
+      const before = contents();
+      writeFileSync(path.join(d, 'r.xml'), input);
+      const gate = cli(['ci', '--fail-on-new-flakes'], d);
+      expect(gate.status).toBe(2);
+      expect(gate.stderr).toContain('no usable report data');
+      expect(contents()).toEqual(before);
+    },
+  );
+
   it('does not crash with ENOENT writing the snapshot', () => {
     const d = tmp();
     writeFileSync(path.join(d, 'flakefinder.config.json'), '{"reports": ["r.xml"]}', 'utf8');
@@ -535,6 +570,44 @@ describe('quarantine exit codes, output and side effects (QA CLI-11/CLI-22/CLI-3
     expect(existsSync(path.join(d, 'flakefinder.quarantine.json'))).toBe(false);
   });
 
+  it('only a real pass after quarantine justifies pruning when the latest report skips a test', () => {
+    const d = tmp();
+    const store = path.join(d, '.flakefinder');
+    mkdirSync(store);
+    const record = (day: number, status: string) =>
+      JSON.stringify({
+        runId: String(day),
+        timestamp: new Date(Date.UTC(2026, 0, day)).toISOString(),
+        source: 'report',
+        parsedFrom: 'junit',
+        attempt: 1,
+        results: [{ testId: 'a', suite: 's', name: 'a', status, durationMs: 0 }],
+      });
+    const passes = Array.from({ length: 10 }, (_, i) => record(i + 1, 'pass'));
+    const writeHistory = (rows: string[]) =>
+      writeFileSync(path.join(store, 'history.jsonl'), `${rows.join('\n')}\n`);
+    writeHistory([...passes, record(12, 'skip')]);
+    writeFileSync(
+      path.join(d, 'flakefinder.quarantine.json'),
+      JSON.stringify({
+        version: 1,
+        entries: [
+          {
+            testId: 'a',
+            suite: 's',
+            name: 'a',
+            reason: 'flaky',
+            flakeScore: 50,
+            quarantinedAt: '2026-01-11T00:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(cli(['quarantine', 'prune'], d).stdout).toContain('nothing to prune');
+    writeHistory([...passes, record(12, 'pass'), record(13, 'skip')]);
+    expect(cli(['quarantine', 'prune'], d).stdout).toContain('pruned 1 entry');
+  });
+
   it('control characters in --reason are escaped by quarantine list', () => {
     const d = tmp();
     writeFileSync(path.join(d, 'r.xml'), JUNIT, 'utf8');
@@ -587,6 +660,12 @@ describe('quarantine exit codes, output and side effects (QA CLI-11/CLI-22/CLI-3
 });
 
 describe('help behaviour (QA CLI-20)', () => {
+  it.each(['--cwd', '--config'])('reports the missing value for a trailing %s', (flag) => {
+    const result = cli(['--no-color', flag], tmp());
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('argument missing');
+  });
+
   it('bare flakefinder prints help to stdout and exits 0', () => {
     const d = tmp();
     for (const args of [[], ['--no-color'], ['--cwd', '.']]) {

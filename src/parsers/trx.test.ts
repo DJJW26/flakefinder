@@ -55,6 +55,16 @@ describe('trxParser', () => {
     expect(results[0]!.status).toBe('fail');
   });
 
+  it('never borrows another class for an unmatched result id', () => {
+    const content =
+      '<TestRun><Results><UnitTestResult testId="missing" testName="run" outcome="Failed"/>' +
+      '</Results><TestDefinitions><UnitTest id="other" name="run">' +
+      '<TestMethod className="OtherClass"/></UnitTest></TestDefinitions></TestRun>';
+    const { results, warnings } = trxParser.parse(content, 'partial.trx');
+    expect(results[0]).toMatchObject({ name: 'run', suite: 'unknown', status: 'fail' });
+    expect(warnings.join(' ')).toContain('no matching');
+  });
+
   it('unknown outcomes are skipped with warnings, never throw', () => {
     const content =
       '<TestRun><Results><UnitTestResult testName="a" outcome="Bogus" /></Results></TestRun>';

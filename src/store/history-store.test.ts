@@ -10,7 +10,7 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { hostname, tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RunRecord } from '../types.js';
@@ -67,6 +67,21 @@ describe('HistoryStore', () => {
     expect(loaded[0]).toEqual(first);
     expect(loaded[1]).toEqual(second);
   });
+
+  it.each([false, true])(
+    'appends independently of an unterminated final line (torn=%s)',
+    (torn) => {
+      const a = tmpStore();
+      const earlier = record('earlier', 'pass');
+      const next = record('next', 'pass');
+      writeFileSync(a.path, torn ? '{"runId":' : JSON.stringify(earlier));
+      a.append(next);
+
+      const fresh = new HistoryStore(path.dirname(a.path));
+      expect(fresh.loadAll()).toEqual(torn ? [next] : [earlier, next]);
+      expect(fresh.warnings).toHaveLength(torn ? 1 : 0);
+    },
+  );
 
   it('skips corrupt lines, records warnings, keeps good lines', () => {
     const a = tmpStore();
@@ -147,6 +162,13 @@ describe('store format header (v0.2.0)', () => {
     expect(b.formatVersion).toBeNull();
     expect(b.loadAll()).toHaveLength(1);
     expect(b.loadAll()[0]!.runId).toBe('legacy');
+  });
+
+  it('defaults a missing legacy attempt to the initial execution', () => {
+    const a = tmpStore();
+    const { attempt: _attempt, ...legacy } = record('legacy', 'fail');
+    writeFileSync(a.path, JSON.stringify(legacy));
+    expect(a.loadAll()[0]).toEqual({ ...legacy, attempt: 1 });
   });
 
   it('prune inserts the header on rewrite of a legacy store', () => {
@@ -256,7 +278,7 @@ describe('store concurrency lock (C1)', () => {
     const a = tmpStore();
     a.append(record('r1', 'pass'));
     const stale = Date.now() - 31_000;
-    writeFileSync(`${a.path}.lock`, JSON.stringify({ pid: 123, epoch: stale }), 'utf8');
+    writeFileSync(`${a.path}.lock`, JSON.stringify({ pid: 2147483647, epoch: stale }), 'utf8');
     a.append(record('r2', 'pass'));
     expect(a.runs().map((r) => r.runId)).toEqual(['r1', 'r2']);
     expect(existsSync(`${a.path}.lock`)).toBe(false);
@@ -501,7 +523,7 @@ describe('lock cannot be stolen from a live holder (R5 #2)', () => {
     const live = JSON.stringify({ pid: 1, epoch: Date.now() });
     writeFileSync(lock, live, 'utf8');
     // waiter 2 still believes it saw a stale lock
-    const staleSeen = JSON.stringify({ pid: 2, epoch: Date.now() - 60_000 });
+    const staleSeen = JSON.stringify({ pid: 2147483647, epoch: Date.now() - 60_000 });
     expect(breakStaleLock(lock, staleSeen)).toBe(false);
     expect(readFileSync(lock, 'utf8')).toBe(live); // live holder's lock intact
     // even when the content matches, a lock whose own age is fresh is kept
@@ -509,11 +531,29 @@ describe('lock cannot be stolen from a live holder (R5 #2)', () => {
     expect(readFileSync(lock, 'utf8')).toBe(live);
   });
 
+  it.each([
+    { host: hostname(), pid: process.pid },
+    { host: `another-${hostname()}`, pid: 2147483647 },
+  ])('keeps an old lock whose owner cannot be proven dead ($host)', (owner) => {
+    const lock = `${tmpStore().path}.lock`;
+    const observed = JSON.stringify({ ...owner, epoch: Date.now() - 60_000 });
+    writeFileSync(lock, observed);
+    expect(breakStaleLock(lock, observed)).toBe(false);
+    expect(readFileSync(lock, 'utf8')).toBe(observed);
+  });
+
+  it('reclaims a malformed PID outside the supported process-id range', () => {
+    const lock = `${tmpStore().path}.lock`;
+    const observed = JSON.stringify({ pid: 2 ** 40, epoch: Date.now() - 60_000 });
+    writeFileSync(lock, observed);
+    expect(breakStaleLock(lock, observed)).toBe(true);
+  });
+
   it('breakStaleLock removes a genuinely stale lock and leaves no side files', () => {
     const a = tmpStore();
     const dir = path.dirname(a.path);
     const lock = `${a.path}.lock`;
-    const stale = JSON.stringify({ pid: 2, epoch: Date.now() - 60_000 });
+    const stale = JSON.stringify({ pid: 2147483647, epoch: Date.now() - 60_000 });
     writeFileSync(lock, stale, 'utf8');
     expect(breakStaleLock(lock, stale)).toBe(true);
     expect(existsSync(lock)).toBe(false);

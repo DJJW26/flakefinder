@@ -58,6 +58,10 @@ export function ingestReports(
       continue;
     }
     warnings.push(...parsed.warnings);
+    if (parsed.results.length === 0) {
+      warnings.push(`${parser.name}: no test results in ${file}`);
+      continue;
+    }
     const record: RunRecord = {
       runId,
       timestamp: new Date().toISOString(),
@@ -73,6 +77,7 @@ export function ingestReports(
     ingestedFiles.push(file);
   }
 
-  store.prune(cfg.maxRuns);
-  return { store, verdicts: classifyAll(store.runs(), cfg), ingestedFiles, warnings };
+  if (ingestedFiles.length > 0) store.prune(cfg.maxRuns);
+  const verdicts = classifyAll(store.runs(), cfg);
+  return { store, verdicts, ingestedFiles, warnings: [...warnings, ...store.warnings] };
 }

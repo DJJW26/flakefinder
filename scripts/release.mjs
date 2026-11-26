@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -96,6 +97,9 @@ function checkVersions(version, { pkg, lock, sourceVersion }) {
       `Expected release version ${version} in all version files. Found:\n${details.join('\n')}`,
     );
   }
+  if (pkg.name !== 'flakefinder' || lock.name !== pkg.name || lock.packages[''].name !== pkg.name) {
+    throw new Error('Release manifests must agree on the npm package name flakefinder.');
+  }
 }
 
 function runNpm(script, env = process.env) {
@@ -148,8 +152,31 @@ function prepare(version) {
   console.log(`Prepared ${version}. Review the changes and open a release PR before tagging.`);
 }
 
-function main(args) {
-  if (args.length === 2 && args[0] === '--validate-tag') {
+// A publish can reach npm before the runner records success. On a rerun,
+// resume only when the registry's immutable version is the same tarball.
+async function publicationStatus(tag, tarball) {
+  const version = requireTag(tag);
+  const expected = `sha512-${createHash('sha512').update(readFileSync(tarball)).digest('base64')}`;
+  const response = await fetch(`https://registry.npmjs.org/flakefinder/${version}`, {
+    redirect: 'error',
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (response.status === 404) return 'unpublished';
+  if (!response.ok) throw new Error(`npm registry lookup failed (HTTP ${response.status}).`);
+  const pkg = await response.json();
+  if (pkg?.name !== 'flakefinder' || pkg.version !== version || pkg.dist?.integrity !== expected) {
+    throw new Error(`Published flakefinder@${version} does not match the verified tarball.`);
+  }
+  if (!pkg.dist.attestations?.provenance) {
+    throw new Error(`Published flakefinder@${version} has no provenance attestation.`);
+  }
+  return 'published';
+}
+
+async function main(args) {
+  if (args.length === 3 && args[0] === '--publication-status') {
+    console.log(await publicationStatus(args[1], args[2]));
+  } else if (args.length === 2 && args[0] === '--validate-tag') {
     const version = requireTag(args[1]);
     checkVersions(version, readProject());
     process.stdout.write(`${releaseNotes(read(CHANGELOG), version)}\n`);
@@ -162,7 +189,7 @@ function main(args) {
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
-    main(process.argv.slice(2));
+    await main(process.argv.slice(2));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

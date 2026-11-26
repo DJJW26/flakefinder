@@ -93,6 +93,22 @@ describe('runLive', () => {
     expect(stable.classification).toBe('passing');
   }, 30_000);
 
+  it('passes a multiline argument containing an ampersand verbatim', async () => {
+    const cwd = tmpCwd();
+    writeFileSync(
+      path.join(cwd, 'capture.cjs'),
+      "require('fs').writeFileSync('arg.txt', process.argv[2]);",
+    );
+    const argument = 'first & second\nthird';
+    const result = await runLive(['node', 'capture.cjs', argument], cfg({ reports: [] }), {
+      retries: 0,
+      cwd,
+      applyQuarantine: false,
+    });
+    expect(result.finalExitCode).toBe(0);
+    expect(readFileSync(path.join(cwd, 'arg.txt'), 'utf8')).toBe(argument);
+  });
+
   it('falls back to suite-level verdict when no reports match', async () => {
     const cwd = tmpCwd();
     writeFileSync(path.join(cwd, 'script.js'), SCRIPT_EXIT_FLIP, 'utf8');
@@ -186,6 +202,8 @@ describe('quarantine forwarding mechanics', () => {
     );
     expect(isPackageManagerWrapper(['npm', 'test'])).toBe(true);
     expect(isPackageManagerWrapper(['npm.cmd', 'test'])).toBe(true);
+    expect(isPackageManagerWrapper(['C:\\Program Files\\nodejs\\npm.cmd', 'test'])).toBe(true);
+    expect(isPackageManagerWrapper(['/usr/local/bin/npm', 'test'])).toBe(true);
     expect(isPackageManagerWrapper(['yarn', 'jest'])).toBe(true);
     expect(isPackageManagerWrapper(['npx', 'jest'])).toBe(false);
     expect(isPackageManagerWrapper(['node', 'script.js'])).toBe(false);
@@ -694,6 +712,18 @@ describe('shell-mode quoting (R5 bug 2)', () => {
 });
 
 describe('package-manager separator (R5 bug 3)', () => {
+  it('forwards a selector directly to a pnpm script and after -- to an absolute npm executable', async () => {
+    const { insertRunnerArgs } = await import('./wrap.js');
+    const selector = ['-t', 'refund'];
+    expect(insertRunnerArgs(['pnpm', 'test'], selector)).toEqual(['pnpm', 'test', ...selector]);
+    expect(insertRunnerArgs(['/usr/bin/npm', 'test'], selector)).toEqual([
+      '/usr/bin/npm',
+      'test',
+      '--',
+      ...selector,
+    ]);
+  });
+
   it('does not add a second -- when the wrapper command already has one', async () => {
     const { insertRunnerArgs } = await import('./wrap.js');
     expect(insertRunnerArgs(['npm', 'test', '--', '--ci'], ['-t', 'p'])).toEqual([
@@ -787,6 +817,32 @@ setInterval(() => {}, 1000);
   const waitFile = async (file: string): Promise<void> => {
     for (let i = 0; i < 200 && !existsSync(file); i++) await new Promise((r) => setTimeout(r, 25));
   };
+
+  it('keeps the interrupt exit status when an in-report retry also triggers --fail-on-flake', async () => {
+    const cwd = tmpCwd();
+    const report = {
+      testResults: [
+        {
+          name: 'billing.js',
+          assertionResults: [{ title: 'refund', status: 'passed', invocations: 2 }],
+        },
+      ],
+    };
+    writeFileSync(
+      path.join(cwd, 'runner.cjs'),
+      `require('fs').writeFileSync('out.json', ${JSON.stringify(JSON.stringify(report))}); setTimeout(() => {}, 15000);`,
+    );
+    const pending = runLive(['node', 'runner.cjs'], cfg({ failOnFlakes: true }), {
+      retries: 0,
+      cwd,
+      applyQuarantine: false,
+    });
+    await waitFile(path.join(cwd, 'out.json'));
+    process.emit('SIGTERM', 'SIGTERM');
+    const result = await pending;
+    expect(result.verdicts[0]?.classification).toBe('flaky-retry');
+    expect(result.finalExitCode).toBe(130);
+  }, 30_000);
 
   it('a timeout kills grandchildren too, not just the direct child', async () => {
     if (process.platform === 'win32') return;

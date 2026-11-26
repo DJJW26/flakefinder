@@ -49,7 +49,7 @@ node scripts/third-party-notices.mjs --check
 
 ## CI and releases
 
-[ci.yml](../.github/workflows/ci.yml) calls [verify.yml](../.github/workflows/verify.yml) and reports the stable `Release parity` check. The reusable workflow builds and packs once on Ubuntu with Node 24. Windows and Ubuntu jobs verify the digest and install the same tarball on Node 18 and Node 24. Real runner fixtures run on both operating systems in strict mode. Ubuntu also runs source tests on Node 22 and 26.
+[ci.yml](../.github/workflows/ci.yml) calls [verify.yml](../.github/workflows/verify.yml) and reports the stable `Release parity` check. The reusable workflow builds and packs once on Ubuntu with Node 24. Windows, Ubuntu, and macOS jobs verify the digest and install the same tarball on Node 18 and Node 24. Real runner fixtures run on all three operating systems in strict mode. Ubuntu also runs source tests on Node 22 and 26.
 
 [release.yml](../.github/workflows/release.yml) validates the version tag, default-branch ancestry, package metadata, and changelog. It calls the same verification workflow and publishes the verified tarball with the repository’s `NPM_TOKEN`. The GitHub Release follows a successful npm publish. `scripts/release.mjs <version>` prepares reviewable local changes. Tagging and pushing the chosen version are separate maintainer steps. Follow the [release runbook](RELEASING.md) for the exact procedure.
 

@@ -7,16 +7,11 @@
  * double-clicked from file:// on Chrome/Edge/Firefox.
  *
  * Implementation notes:
- * - All template pieces use String.raw (single consistent approach). The embedded
- *   JS deliberately uses NO template literals and NO backslash sequences other than
- *   the one reversal regex, so nothing needs escaping inside the TS template.
+ * - String.raw keeps the embedded JavaScript and CSS escapes verbatim.
  * - User-derived strings (suite, name, testId, messages, shas) only ever enter the
  *   DOM via textContent/createElement — never innerHTML. Colors are applied through
  *   class-name lookup maps, never built color strings.
- * - Data safety escapes: every "</script" (case-insensitive) becomes "<\/script"
- *   (still valid JSON) and every "<!--" becomes "<\!--" (reversed by the reader
- *   before JSON.parse; "\!" can never occur in valid JSON text, so the reversal
- *   is unambiguous).
+ * - Data uses valid JSON Unicode escapes for <, preserving the original text.
  * - TestVerdict carries no per-observation data, so the detail drawer shows a
  *   compact stats panel (score bar, confidence bar, pass-rate donut, counters)
  *   instead of an observation timeline / duration sparkline.
@@ -65,8 +60,7 @@ function redactData(data: DashboardData): DashboardData {
  */
 function embedJson(data: DashboardData): string {
   return JSON.stringify(data)
-    .replace(/<\/script/gi, '<\\/script')
-    .replace(/<!--/g, '<\\!--')
+    .replace(/</g, '\\u003c')
     .replace(
       /[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g,
       (c) => `\\u${c.charCodeAt(0).toString(16)}`,
@@ -822,9 +816,7 @@ ${lightTokens}    }
   function readData() {
     var node = document.getElementById('ff-data');
     var text = node ? (node.textContent || '') : '{}';
-    // Undo the safety escape applied by renderDashboard before parsing.
-    // The escaped end-tag form is already valid JSON and needs no reversal.
-    return JSON.parse(text.replace(/<\\!/g, '<!'));
+    return JSON.parse(text);
   }
 
   var data = readData();
@@ -1384,12 +1376,12 @@ ${lightTokens}    }
   });
 
   // ---------- clipboard ----------
-  function flashCopied(btn) {
+  function flashCopyStatus(btn, copied) {
     if (!btn) return;
     var original = btn.getAttribute('data-label') || btn.textContent;
     btn.setAttribute('data-label', original);
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
+    btn.textContent = copied ? 'Copied!' : 'Copy failed';
+    btn.classList.toggle('copied', copied);
     window.setTimeout(function () {
       btn.textContent = original;
       btn.classList.remove('copied');
@@ -1404,12 +1396,13 @@ ${lightTokens}    }
       ta.style.opacity = '0';
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand('copy'); } catch (err) { /* ignore */ }
+      var copied = false;
+      try { copied = document.execCommand('copy'); } catch (err) { /* copy unavailable */ }
       document.body.removeChild(ta);
-      flashCopied(btn);
+      flashCopyStatus(btn, copied);
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { flashCopied(btn); }, fallback);
+      navigator.clipboard.writeText(text).then(function () { flashCopyStatus(btn, true); }, fallback);
     } else {
       fallback();
     }

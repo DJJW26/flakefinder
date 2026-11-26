@@ -64,7 +64,8 @@ interface Ctx {
   warnings: string[];
   /** `suite.name` of tests that passed only after a Surefire rerun. */
   flaky: string[];
-  /** The report came from pytest (`<testsuite name="pytest">`). */
+  pytestFlaky: string[];
+  /** The current suite came from pytest (`<testsuite name="pytest">`). */
   pytest: boolean;
 }
 
@@ -237,7 +238,7 @@ function collapsePytestReruns(ctx: Ctx): void {
     if (final.status === 'pass') {
       final.message = flakyRetryMessage(earlier.length, how, undefined, MESSAGE_MAX_CHARS);
       final.attempts = retryAttempts(earlier.length, 'pass');
-      ctx.flaky.push(`${final.suite}.${final.name}`);
+      ctx.pytestFlaky.push(`${final.suite}.${final.name}`);
     } else if (final.status === 'fail' || final.status === 'error') {
       const note = `(failed all ${group.length} attempts)`;
       final.message = trimTo(
@@ -273,7 +274,13 @@ function children(el: Record<string, unknown>, localName: string): unknown[] {
 function walk(el: unknown, inheritedSuite: string, ctx: Ctx): void {
   if (!isObj(el)) return;
   const ownSuite = attr(el, '@_name') ?? inheritedSuite;
-  if (ownSuite === 'pytest') ctx.pytest = true;
+  if (ownSuite === 'pytest' && !ctx.pytest) {
+    const local: Ctx = { ...ctx, pytest: true, results: [] };
+    walk(el, ownSuite, local);
+    collapsePytestReruns(local);
+    for (const result of local.results) ctx.results.push(result);
+    return;
+  }
   for (const tc of children(el, 'testcase')) mapTestCase(tc, ownSuite, ctx);
   for (const ts of children(el, 'testsuite')) walk(ts, ownSuite, ctx);
 }
@@ -288,7 +295,14 @@ export const junitParser: ReportParser = {
   },
 
   parse(content: string, sourcePath: string): { results: TestCaseResult[]; warnings: string[] } {
-    const ctx: Ctx = { sourcePath, results: [], warnings: [], flaky: [], pytest: false };
+    const ctx: Ctx = {
+      sourcePath,
+      results: [],
+      warnings: [],
+      flaky: [],
+      pytestFlaky: [],
+      pytest: false,
+    };
     const body = stripBom(content);
 
     if (body.trim() === '') {
@@ -327,10 +341,13 @@ export const junitParser: ReportParser = {
       return { results: ctx.results, warnings: ctx.warnings };
     }
     walk(root, 'unknown', ctx);
-    if (ctx.pytest) collapsePytestReruns(ctx);
     if (ctx.flaky.length > 0) {
-      const how = ctx.pytest ? 'pytest-rerunfailures rerun' : 'Surefire rerun';
-      ctx.warnings.push(flakyRetryWarning('junit', sourcePath, how, ctx.flaky));
+      ctx.warnings.push(flakyRetryWarning('junit', sourcePath, 'Surefire rerun', ctx.flaky));
+    }
+    if (ctx.pytestFlaky.length > 0) {
+      ctx.warnings.push(
+        flakyRetryWarning('junit', sourcePath, 'pytest-rerunfailures rerun', ctx.pytestFlaky),
+      );
     }
     return { results: ctx.results, warnings: ctx.warnings };
   },

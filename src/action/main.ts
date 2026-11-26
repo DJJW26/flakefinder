@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadConfig, resolveConfig } from '../config.js';
 import { renderDashboard } from '../report/html.js';
@@ -76,7 +76,7 @@ export async function runAction(deps: ActionDeps): Promise<void> {
 
   // 1. restore history cache (best-effort — miss on first run is normal).
   // Saved per run attempt + job, restored by prefix: see baseline.ts.
-  const { saveKey, restoreKeys } = cacheKeys(gh, {
+  const { leg, saveKey, restoreKeys } = cacheKeys(gh, {
     workingDirectory: inputs.workingDirectoryRel,
     historyKey: inputs.historyKey,
   });
@@ -101,18 +101,24 @@ export async function runAction(deps: ActionDeps): Promise<void> {
     return;
   }
   const files = await deps.glob(patterns, cwd);
-  if (files.length === 0 && historyLines(storeDir) === 0) {
-    core.setFailed(
-      `flakefinder: no files matched ${patterns.join(', ')} and there is no history yet. Ensure your test step runs BEFORE this step and writes reports.`,
-    );
-    return;
-  }
   const outcome = ingestReports(files, cfg, storeDir, {
     commitSha: gh.sha,
     branch: gh.ref.replace('refs/heads/', ''),
     ciRunId: gh.runId,
   });
   for (const w of outcome.warnings) core.warning(w);
+  if (files.length === 0 && (inputs.failOnNewFlakes || outcome.store.runs().length === 0)) {
+    core.setFailed(
+      `flakefinder: no files matched ${patterns.join(', ')}. Ensure your test step runs BEFORE this step and writes reports.`,
+    );
+    return;
+  }
+  if (inputs.failOnNewFlakes && outcome.ingestedFiles.length === 0) {
+    core.setFailed(
+      'flakefinder: no usable report data for the new-flakes gate. Check the report warnings above.',
+    );
+    return;
+  }
   const verdicts = outcome.verdicts;
 
   // 4. new-flake diff, fresh snapshot
@@ -163,8 +169,9 @@ export async function runAction(deps: ActionDeps): Promise<void> {
       });
       const htmlPath = path.resolve(cwd, 'flakefinder-dashboard.html');
       writeFileSync(htmlPath, html, 'utf8');
-      await deps.uploadArtifact('flakefinder-dashboard', [htmlPath], cwd);
-      dashboardArtifact = 'flakefinder-dashboard';
+      const artifactName = `flakefinder-dashboard-${leg}-${gh.runAttempt}`;
+      await deps.uploadArtifact(artifactName, [htmlPath], cwd);
+      dashboardArtifact = artifactName;
     } catch (err) {
       core.warning(`dashboard upload failed: ${(err as Error).message}`);
     }
@@ -177,7 +184,11 @@ export async function runAction(deps: ActionDeps): Promise<void> {
         inputs.githubToken,
         buildPrComment(verdicts, previous, { dashboardArtifact }),
         gh,
-        { fetchImpl: deps.fetchImpl, warn: (m) => core.warning(m) },
+        {
+          fetchImpl: deps.fetchImpl,
+          warn: (m) => core.warning(m),
+          stream: inputs.historyKey || inputs.workingDirectoryRel !== '.' ? leg : undefined,
+        },
       );
       core.info(`PR comment: ${result}`);
     } catch (err) {
@@ -188,16 +199,5 @@ export async function runAction(deps: ActionDeps): Promise<void> {
   // 9. fail gate
   if (inputs.failOnNewFlakes && newFlakes.length > 0) {
     core.setFailed(newFlakesFailure(newFlakes));
-  }
-}
-
-/** Number of runs already in the history store (0 when there is none). */
-function historyLines(storeDir: string): number {
-  try {
-    return readFileSync(path.join(storeDir, 'history.jsonl'), 'utf8')
-      .split('\n')
-      .filter((l) => l.trim().length > 0).length;
-  } catch {
-    return 0;
   }
 }

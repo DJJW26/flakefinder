@@ -1,3 +1,4 @@
+import { escapeControlChars, truncateCodePoints } from '../report/text.js';
 import type { TestVerdict } from '../types.js';
 import { redact } from '../util/redact.js';
 
@@ -13,7 +14,7 @@ export function escapeHtml(s: string): string {
 
 /** Redacted, one-line `suite :: name` label (test names are PR-author controlled). */
 function label(v: TestVerdict): string {
-  return `${redact(v.suite)} :: ${redact(v.name)}`.replace(/[\r\n]+/g, ' ');
+  return truncateCodePoints(escapeControlChars(`${redact(v.suite)} :: ${redact(v.name)}`), 500);
 }
 
 /** Rows (without header) for the job-summary table: redacted and HTML-escaped. */
@@ -61,6 +62,11 @@ export function jobSummaryHtml(
 
 /** setFailed message for the new-flakes gate — names redacted, one line per test. */
 export function newFlakesFailure(newFlakes: TestVerdict[]): string {
-  const names = newFlakes.map((v) => `  • ${label(v)} (score ${v.flakeScore})`).join('\n');
-  return `flakefinder: ${newFlakes.length} NEW flaky test(s):\n${names}`;
+  const names = newFlakes
+    .slice(0, 20)
+    .map((v) => `  • ${label(v)} (score ${v.flakeScore})`)
+    .join('\n');
+  const more =
+    newFlakes.length > 20 ? `\n  See report-json for all ${newFlakes.length} tests.` : '';
+  return `flakefinder: ${newFlakes.length} NEW flaky test(s):\n${names}${more}`;
 }

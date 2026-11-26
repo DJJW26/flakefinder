@@ -1,17 +1,18 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import {
-  appendFileSync,
   closeSync,
   existsSync,
+  fstatSync,
   linkSync,
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   rmSync,
   statSync,
   writeFileSync,
-  writeSync,
 } from 'node:fs';
+import { hostname } from 'node:os';
 import path from 'node:path';
 import type { RunRecord } from '../types.js';
 import { renameOverSync } from '../util/atomic-rename.js';
@@ -59,39 +60,60 @@ function lockAgeMs(lockPath: string, content: string | null): number | null {
   }
 }
 
+/** Check local process liveness before treating an old lock as abandoned. */
+function ownerMayBeAlive(content: string): boolean {
+  let owner: unknown;
+  try {
+    owner = JSON.parse(content);
+  } catch {
+    return false; // legacy or torn lock: use its age alone
+  }
+  if (!isJsonObject(owner)) return false;
+  if (typeof owner.host === 'string' && owner.host !== hostname()) return true;
+  if (
+    typeof owner.pid !== 'number' ||
+    !Number.isInteger(owner.pid) ||
+    owner.pid <= 0 ||
+    owner.pid > 0x7fff_ffff
+  ) {
+    return false;
+  }
+  try {
+    process.kill(owner.pid, 0);
+    return true;
+  } catch (err) {
+    return (err as NodeJS.ErrnoException).code !== 'ESRCH';
+  }
+}
+
 /**
- * Break a stale lock without ever removing a live one. The lock is moved
- * aside with an atomic rename; only if the moved file is still the stale one
- * we observed (same content AND still older than the stale threshold) is it
- * deleted. Otherwise another waiter already broke it and someone re-acquired
- * it in between: the live lock is put back with link() (which never
- * clobbers an existing file) and false is returned.
+ * Serialize stale recovery for this specific lock generation. Two waiters
+ * must never move or remove a replacement lock while checking a stale one.
+ * New writers can acquire the main lock only after the verified dead
+ * holder's file has been removed. They never touch the recovery claim.
  */
 export function breakStaleLock(lockPath: string, observed: string): boolean {
-  const aside = `${lockPath}.stale-${uniqueSuffix()}`;
+  if (ownerMayBeAlive(observed)) return false;
+  const generation = createHash('sha256').update(observed).digest('hex').slice(0, 24);
+  const claim = `${lockPath}.recover-${generation}`;
+  let fd: number;
   try {
-    renameOverSync(lockPath, aside, { attempts: 5 });
+    fd = openSync(claim, 'wx');
   } catch {
-    return false; // already broken or released by someone else
+    return false;
   }
-  let moved: string | null = null;
   try {
-    moved = readFileSync(aside, 'utf8');
-  } catch {
-    // unreadable — age falls back to mtime
-  }
-  const age = lockAgeMs(aside, moved);
-  if (moved === observed && age !== null && age > LOCK_STALE_MS) {
-    rmSync(aside, { force: true });
+    const current = readFileSync(lockPath, 'utf8');
+    const age = lockAgeMs(lockPath, current);
+    if (current !== observed || age === null || age <= LOCK_STALE_MS) return false;
+    rmSync(lockPath);
     return true;
-  }
-  try {
-    linkSync(aside, lockPath);
   } catch {
-    // the lock was re-taken meanwhile; nothing safe left to restore
+    return false; // released or already recovered
+  } finally {
+    closeSync(fd);
+    rmSync(claim, { force: true });
   }
-  rmSync(aside, { force: true });
-  return false;
 }
 
 const warningListeners = new Set<(message: string) => void>();
@@ -288,13 +310,29 @@ export class HistoryStore {
       }
       return;
     }
+    parsed.attempt ??= 1; // header-less histories can predate live retry metadata
     this.records.push(parsed as unknown as RunRecord);
   }
 
-  private ensureHeader(): void {
-    if (existsSync(this.path) && statSync(this.path).size > 0) return;
-    appendFileSync(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}\n`, 'utf8');
-    this.formatVersion = STORE_FORMAT_VERSION;
+  /** Append one complete line even if a prior write ended before its newline. */
+  private appendLine(run: RunRecord): void {
+    const line = JSON.stringify(run);
+    const fd = openSync(this.path, 'a+');
+    try {
+      const size = fstatSync(fd).size;
+      let prefix = '';
+      if (size === 0) {
+        prefix = `${JSON.stringify({ version: STORE_FORMAT_VERSION })}\n`;
+      } else {
+        const tail = Buffer.alloc(1);
+        readSync(fd, tail, 0, 1, size - 1);
+        if (tail[0] !== 0x0a) prefix = '\n';
+      }
+      writeFileSync(fd, `${prefix}${line}\n`, 'utf8');
+      if (size === 0) this.formatVersion = STORE_FORMAT_VERSION;
+    } finally {
+      closeSync(fd);
+    }
   }
 
   private get lockPath(): string {
@@ -306,14 +344,13 @@ export class HistoryStore {
    * multi-KB records can interleave in one append and corrupt a line — the
    * lock serializes them. Busy-waits in ≤50 ms slices (Atomics.wait) up to 2 s
    * before giving up with an actionable error; a lock older than 30 s is
-   * treated as abandoned by a dead process and stolen.
+   * reclaimed only when its host/process information permits recovery.
    *
    * The lock file is created atomically WITH its content (write a private
    * temp file, then link() it into place — link fails if the lock exists), so
    * competitors never see a half-written lock. Empty/unparseable locks (older
    * flakefinder versions, torn writes) are aged by mtime, and stale locks are
-   * broken by rename-then-verify (breakStaleLock), so two waiters can never
-   * delete each other's freshly acquired lock.
+   * reclaimed one waiter at a time (breakStaleLock).
    */
   private acquireLock(): void {
     const deadline = Date.now() + 2000;
@@ -323,7 +360,8 @@ export class HistoryStore {
       if (Date.now() >= deadline) {
         throw new StoreBusyError(
           `history store is busy (held by another flakefinder process for >2s): ${this.lockPath}. ` +
-            'Run ingest steps serially, or give each CI shard its own storeDir.',
+            'Run ingest steps serially, or give each CI shard its own storeDir. ' +
+            'If the writer stopped on another host or during lock recovery, verify all writers have stopped before removing the abandoned lock and its .recover-* file.',
         );
       }
       let content: string;
@@ -357,6 +395,7 @@ export class HistoryStore {
   private tryCreateLock(): boolean {
     const token = JSON.stringify({
       pid: process.pid,
+      host: hostname(),
       epoch: Date.now(),
       nonce: randomBytes(6).toString('hex'),
     });
@@ -413,8 +452,7 @@ export class HistoryStore {
 
   /**
    * Write paths must not surface raw EISDIR/EACCES: a directory (or other
-   * non-file) at the store path would otherwise slip past ensureHeader()
-   * (a directory's stat size is non-zero) and crash in appendFileSync.
+   * non-file) at the store path is a setup error that should name the file.
    */
   private assertWritableFile(): void {
     if (existsSync(this.path) && !statSync(this.path).isFile()) {
@@ -434,8 +472,7 @@ export class HistoryStore {
     this.acquireLock();
     try {
       try {
-        this.ensureHeader();
-        appendFileSync(this.path, `${JSON.stringify(run)}\n`, 'utf8');
+        this.appendLine(run);
       } catch (err) {
         const e = err as NodeJS.ErrnoException;
         throw new Error(
@@ -499,8 +536,8 @@ export class HistoryStore {
       const tmp = `${this.path}.tmp`;
       const fd = openSync(tmp, 'w');
       try {
-        writeSync(fd, `${JSON.stringify({ version })}\n`, null, 'utf8');
-        for (const r of keep) writeSync(fd, `${JSON.stringify(r)}\n`, null, 'utf8');
+        writeFileSync(fd, `${JSON.stringify({ version })}\n`, 'utf8');
+        for (const r of keep) writeFileSync(fd, `${JSON.stringify(r)}\n`, 'utf8');
       } finally {
         closeSync(fd);
       }

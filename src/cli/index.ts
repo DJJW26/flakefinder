@@ -217,6 +217,7 @@ function hasCommand(argv: string[]): boolean {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === '--config' || a === '--cwd') {
+      if (i + 1 === argv.length) return true; // let commander report the missing value
       i++;
       continue;
     }
@@ -524,6 +525,7 @@ export async function main(argv: string[]): Promise<number> {
         console.log(
           renderMarkdown(filterVerdicts(verdicts, { all: opts.all, threshold }, cfg), {
             flakesOnly: !opts.all,
+            allRows: opts.all === true,
           }),
         );
         return;
@@ -623,9 +625,7 @@ export async function main(argv: string[]): Promise<number> {
             `note: runner "${runner}" has no per-test exclusion — entries are informational only`,
           );
         } else {
-          console.log(
-            `next run will add: ${esc(exclusionArgs(runner as Exclude<RunnerKind, 'auto'>, entries).join(' '))}`,
-          );
+          console.log(`next run will add: ${esc(exclusionArgs(runner, entries, g.cwd).join(' '))}`);
         }
         return;
       }
@@ -679,8 +679,8 @@ export async function main(argv: string[]): Promise<number> {
       }
 
       if (action === 'prune') {
-        const verdicts = classifyAll(storeFor(g, cfg).runs(), cfg);
-        const removed = qm.prune(verdicts);
+        const runs = storeFor(g, cfg).runs();
+        const removed = qm.prune(classifyAll(runs, cfg), runs);
         if (removed.length === 0) {
           // no write: an empty history must not create the quarantine file
           console.log('nothing to prune');
@@ -721,6 +721,7 @@ export async function main(argv: string[]): Promise<number> {
       const store = storeFor(g, cfg);
       const runId = randomUUID();
       const commitSha = ciCommitSha(g.cwd);
+      let ingestedFiles = 0;
       for (const file of targets) {
         let content: string;
         try {
@@ -736,6 +737,10 @@ export async function main(argv: string[]): Promise<number> {
         }
         const parsed = parser.parse(content, file);
         for (const w of parsed.warnings) console.warn(`flakefinder: ${w}`);
+        if (parsed.results.length === 0) {
+          console.warn(`flakefinder: ${parser.name}: no test results in ${file}`);
+          continue;
+        }
         store.append({
           runId,
           timestamp: new Date().toISOString(),
@@ -745,8 +750,14 @@ export async function main(argv: string[]): Promise<number> {
           commitSha,
           results: parsed.results,
         });
+        ingestedFiles++;
       }
-      store.prune(cfg.maxRuns);
+      if (opts.failOnNewFlakes && ingestedFiles === 0) {
+        console.error('flakefinder ci: no usable report data for the new-flakes gate');
+        exitCode = 2;
+        return;
+      }
+      if (ingestedFiles > 0) store.prune(cfg.maxRuns);
       const verdicts = classifyAll(store.runs(), cfg);
       printStoreWarnings(store);
 

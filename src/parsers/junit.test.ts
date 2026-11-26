@@ -322,6 +322,17 @@ describe('JUnit QA findings (PAR-13, PAR-14, PAR-17)', () => {
     expect(warnings).toEqual([]);
   });
 
+  it('only infers pytest reruns inside the matching suite of an aggregate', () => {
+    const report =
+      '<testsuites><testsuite name="pytest"><testcase name="python"/></testsuite>' +
+      '<testsuite name="java"><testcase name="same"/><testcase name="same"/>' +
+      '<testcase name="rescued"><flakyFailure/></testcase></testsuite></testsuites>';
+    const { results, warnings } = junitParser.parse(report, 'aggregate.xml');
+    expect(results.filter((r) => r.name === 'same')).toHaveLength(2);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('Surefire rerun');
+  });
+
   it('PAR-14: <skipped> + <failure> (node TODO that failed) is a skip, like TAP', () => {
     const { results } = junitParser.parse(load('junit-node-test.xml'), 'node.xml');
     expect(results.find((r) => r.name === 'todo failing')!.status).toBe('skip');

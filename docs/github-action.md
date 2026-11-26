@@ -50,8 +50,10 @@ files your test runner writes, e.g.:
 
 ## How the history cache works
 
-The action stores history in `.flakefinder/` and persists it with
-`actions/cache`:
+The Action persists three files from the history directory through
+GitHub Actions cache: the JSONL history, verdict snapshot, and run baseline.
+The cache format can change when upgrading. The first run after such an
+upgrade may start with empty history.
 
 - **Save key**: `flakefinder-history-<stream>-<sha>-<run id>-<run attempt>`,
   where `<stream>` is a short hash of the job id, the `working-directory` and
@@ -60,9 +62,9 @@ The action stores history in `.flakefinder/` and persists it with
   attempt's entry, so its history is not silently dropped.
 - **Restore**: by the `flakefinder-history-<stream>-` prefix, so you get this
   stream's most recent cache on your branch, and on a new branch or PR the
-  base or default branch's. If the stream has no cache yet (its first run,
-  or caches from before this key format), any `flakefinder-history-` cache is
-  used as a warm start.
+  base or default branch's cache for the same stream. Re-runs prefer the
+  previous attempt of the same workflow run. A stream with no matching
+  cache starts with empty history.
 - No external service, no upload of your test data. Everything stays inside
   GitHub's cache for your repository.
 
@@ -72,16 +74,11 @@ The action stores history in `.flakefinder/` and persists it with
 this run's verdicts against a **baseline**: the verdict snapshot of the
 *previous workflow run* (the last run on this branch, or the base branch).
 
-Re-runs keep the same baseline. When you click "Re-run failed jobs", the
-newest cache was saved by this run's own first attempt. Its snapshot already
-lists the flakes that failed the job, so diffing against it would report
-"0 new" and let the re-run pass the gate. To prevent that, each run records
-the baseline it used, with its `GITHUB_RUN_ID`, in
-`.flakefinder/action-baseline.json`. Later attempts (and other jobs) of the
-same run reuse that recorded baseline. So a re-run fails the gate again until
-the flake is fixed or quarantined. Later runs (new pushes) compare against
-the latest snapshot as usual, so a flake that was reported once counts as
-*known* from then on.
+A re-run prefers the cache from an earlier attempt of the same workflow
+run. That cache records the original comparison in
+`.flakefinder/action-baseline.json`, so a flake flagged by the first
+attempt can still fail the gate on a later attempt. A new workflow run
+compares against the latest snapshot for its stream.
 
 ### Matrix builds and `history-key`
 
@@ -115,9 +112,8 @@ jobs:
 ```
 
 - **Rename-safe keys:** the default changes whenever you add or rename a
-  matrix dimension (each leg then starts a new stream, warm-started from
-  another flakefinder cache). An explicit key built from the dimensions
-  you care about avoids that.
+  matrix dimension, so each leg starts a new stream. An explicit key built
+  from the dimensions you care about keeps the stream stable.
 - **Never share one key across legs that run at the same time.** Only one
   of them can save per run (the others log "key taken"), so the others'
   history is lost. The same goes for two flakefinder steps in one job:
@@ -131,9 +127,9 @@ jobs:
 |---|---|---|
 | `reports` | _(from config)_ | Comma-separated report globs; overrides `flakefinder.config.json` |
 | `github-token` | `${{ github.token }}` | Token used for PR comments |
-| `fail-on-new-flakes` | `false` | Fail the job when flakes appear that were not flaky in the previous run |
+| `fail-on-new-flakes` | `false` | Fail for new flakes or when current reports yield no usable test results |
 | `comment` | `true` | Upsert a PR comment (found via a hidden marker, never duplicated) |
-| `upload-dashboard` | `true` | Upload `flakefinder-dashboard.html` as artifact `flakefinder-dashboard` |
+| `upload-dashboard` | `true` | Upload `flakefinder-dashboard.html` as artifact `flakefinder-dashboard-<stream>-<attempt>` |
 | `history-max-runs` | `300` | History retention (number of runs) |
 | `working-directory` | `.` | Directory with config + reports (monorepos) |
 | `history-key` | `${{ toJSON(matrix) }}` | Extra cache-stream key. The default gives every matrix leg its own history; outside a matrix it is empty. See [Matrix builds](#matrix-builds-and-history-key) |

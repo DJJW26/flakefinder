@@ -242,7 +242,7 @@ function dataBlock(html: string): string {
 
 /** Parse the embedded payload exactly the way the dashboard's JS does. */
 function extractData(html: string): unknown {
-  return JSON.parse(dataBlock(html).replace(/<\\!/g, '<!'));
+  return JSON.parse(dataBlock(html));
 }
 
 describe('renderDashboard', () => {
@@ -261,7 +261,7 @@ describe('renderDashboard', () => {
     expect(html).toContain('<title>');
   });
 
-  it('embeds the exact input data in #ff-data (deep-equal after unescaping)', () => {
+  it('embeds the exact input data in #ff-data (deep-equal after parsing)', () => {
     expect(html).toContain(DATA_OPEN);
     expect(extractData(html)).toEqual(data);
   });
@@ -492,4 +492,43 @@ describe('dashboard neutralises bidi/control characters (QA ACT-17)', () => {
     expect(html).toContain('idEl.textContent = visible(v.testId)');
     expect(html).toContain("'flakefinder quarantine add ' + visible(v.testId)");
   });
+});
+
+it('embeds parseable JSON and preserves the case of HTML-like report text', () => {
+  const reportText = 'literal </ScRiPt> and <!-- examples';
+  const data = fixtureData();
+  data.verdicts = [verdict({ name: reportText, lastMessage: reportText })];
+  const html = renderDashboard(data);
+  expect(dataBlock(html)).not.toContain('<');
+  expect(JSON.parse(dataBlock(html))).toEqual(data);
+});
+
+it.each([
+  [true, 'Copied!'],
+  [false, 'Copy failed'],
+])('shows the actual result of a fallback clipboard operation (%s)', (copied, label) => {
+  const html = renderDashboard(fixtureData());
+  const src = html.match(
+    / {2}\/\/ ---------- clipboard ----------[\s\S]*?(?= {2}function wireCopy)/,
+  )?.[0];
+  expect(src).toBeDefined();
+  const btn = {
+    textContent: 'Copy',
+    getAttribute: () => null,
+    setAttribute: () => {},
+    classList: { add: () => {}, remove: () => {}, toggle: () => {} },
+  };
+  const document = {
+    createElement: () => ({ setAttribute: () => {}, style: {}, select: () => {} }),
+    body: { appendChild: () => {}, removeChild: () => {} },
+    execCommand: () => copied,
+  };
+  const window = { setTimeout: () => {} };
+  new Function('document', 'window', 'navigator', 'btn', `${src}\ncopyText('test', btn);`)(
+    document,
+    window,
+    {},
+    btn,
+  );
+  expect(btn.textContent).toBe(label);
 });

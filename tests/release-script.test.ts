@@ -1,4 +1,5 @@
 import { execFileSync, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -58,8 +59,15 @@ beforeEach(() => {
   mkdirSync(path.join(root, 'src'));
   mkdirSync(path.join(root, 'scripts'));
   copyFileSync(script, path.join(root, 'scripts', 'release.mjs'));
-  write('package.json', JSON.stringify({ version }));
-  write('package-lock.json', JSON.stringify({ version, packages: { '': { version } } }));
+  write('package.json', JSON.stringify({ name: 'flakefinder', version }));
+  write(
+    'package-lock.json',
+    JSON.stringify({
+      name: 'flakefinder',
+      version,
+      packages: { '': { name: 'flakefinder', version } },
+    }),
+  );
   write('src/types.ts', `export const FLAKEFINDER_VERSION = '${version}';\r\n`);
   write('CHANGELOG.md', changelog);
 });
@@ -74,6 +82,13 @@ describe('release tag validation', () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toBe(`${notes}\n`);
     expect(result.stderr).toBe('');
+  });
+
+  it('rejects a renamed npm package even if all versions match', () => {
+    write('package.json', JSON.stringify({ name: 'wrong-package', version }));
+    const result = runRelease('--validate-tag', `v${version}`);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('npm package name flakefinder');
   });
 
   it.each(['3.1.0-rc.1', 'v03.1.0', 'v3.1.0-rc.01', 'v3.1.0+build.1', 'v3.1', 'v3.1.0\n'])(
@@ -128,6 +143,55 @@ describe('release tag validation', () => {
   });
 });
 
+describe('release recovery after a publish', () => {
+  it.each([
+    [404, {}, 'unpublished'],
+    [503, {}, 'HTTP 503'],
+    [200, { integrity: 'sha512-wrong' }, 'does not match'],
+    [200, { integrity: 'match' }, 'no provenance'],
+    [
+      200,
+      { integrity: 'match', attestations: { provenance: { predicateType: 'provenance' } } },
+      'published',
+    ],
+  ] as const)('checks registry status %i and tarball integrity (%j)', (status, dist, expected) => {
+    const data = Buffer.from('fixture package');
+    const tarball = path.join(root, 'flakefinder.tgz');
+    writeFileSync(tarball, data);
+    const integrity = `sha512-${createHash('sha512').update(data).digest('base64')}`;
+    const metadata = {
+      name: 'flakefinder',
+      version,
+      dist: {
+        ...dist,
+        ...('integrity' in dist && dist.integrity === 'match' ? { integrity } : {}),
+      },
+    };
+    write(
+      'registry.mjs',
+      `globalThis.fetch = async (url) => {
+      if (url !== 'https://registry.npmjs.org/flakefinder/${version}') throw Error('Unexpected URL');
+      return new Response(${JSON.stringify(JSON.stringify(metadata))}, {status: ${status}});
+    };`,
+    );
+    const result = spawnSync(
+      process.execPath,
+      [
+        '--import',
+        './registry.mjs',
+        './scripts/release.mjs',
+        '--publication-status',
+        `v${version}`,
+        tarball,
+      ],
+      { cwd: root, encoding: 'utf8' },
+    );
+    const ok = expected === 'published' || expected === 'unpublished';
+    expect(result.status).toBe(ok ? 0 : 1);
+    expect(ok ? result.stdout : result.stderr).toContain(expected);
+  });
+});
+
 describe('release preparation', () => {
   it('refuses to mutate a checkout with unrelated changes', () => {
     commitFixture();
@@ -154,10 +218,14 @@ describe('release preparation', () => {
     const scripts = Object.fromEntries(
       ['test', 'typecheck', 'lint', 'build', 'perf', 'e2e'].map((name) => [name, 'node --version']),
     );
-    write('package.json', JSON.stringify({ version, scripts }));
+    write('package.json', JSON.stringify({ name: 'flakefinder', version, scripts }));
     write(
       'package-lock.json',
-      JSON.stringify({ version, packages: { '': { version }, 'node_modules/x': { version } } }),
+      JSON.stringify({
+        name: 'flakefinder',
+        version,
+        packages: { '': { name: 'flakefinder', version }, 'node_modules/x': { version } },
+      }),
     );
     write('CHANGELOG.md', `# Changelog\n\n## ${next}\n\n${notes}\n`);
     commitFixture();

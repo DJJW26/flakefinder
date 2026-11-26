@@ -92,7 +92,10 @@ function flakeRows(verdicts: TestVerdict[]): Array<{ v: TestVerdict; delta: stri
 }
 
 /** Standalone markdown report (`flakefinder report --format md`). */
-export function renderMarkdown(verdicts: TestVerdict[], opts: { flakesOnly: boolean }): string {
+export function renderMarkdown(
+  verdicts: TestVerdict[],
+  opts: { flakesOnly: boolean; allRows?: boolean },
+): string {
   const flaky = flakeRows(verdicts);
   const failing = verdicts.filter(
     (v) => v.classification === 'failing' || v.classification === 'new-failure',
@@ -110,6 +113,17 @@ export function renderMarkdown(verdicts: TestVerdict[], opts: { flakesOnly: bool
       table(failing.map((v) => ({ v, delta: '' }))),
       '',
     );
+  }
+  if (opts.allRows) {
+    const other = verdicts.filter(
+      (v) =>
+        v.classification === 'passing' ||
+        v.classification === 'skipped' ||
+        v.classification === 'gone',
+    );
+    if (other.length > 0) {
+      sections.push('**Other tracked tests**', '', table(other.map((v) => ({ v, delta: '' }))), '');
+    }
   }
   if (!opts.flakesOnly) {
     const passing = verdicts.filter((v) => v.classification === 'passing').length;
@@ -168,9 +182,10 @@ export function buildPrComment(
   };
 
   const head: string[] = [PR_COMMENT_MARKER, '## 🐍 flakefinder', ''];
+  const noFlakes = failing.length === 0 ? '✅' : `**${failing.length} failing** ·`;
   const summary =
     flaky.length === 0
-      ? `✅ no flakes detected among ${verdicts.length} tracked tests`
+      ? `${noFlakes} no flakes detected among ${verdicts.length} tracked tests`
       : `**${flaky.length} flaky** (${newFlakes.length} new · ${flaky.length - newFlakes.length} known) · ${failing.length} failing · ${verdicts.length} tracked`;
   head.push(summary);
   if (previous === null && flaky.length > 0) head.push('_first run — building history_');

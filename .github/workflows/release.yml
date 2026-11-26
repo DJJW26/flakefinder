@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   validate:
+    if: github.event.created && !github.event.deleted
     name: Validate release tag and notes
     runs-on: ubuntu-latest
     steps:
@@ -64,9 +65,16 @@ jobs:
           SHA256: ${{ needs.verify.outputs.sha256 }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          : "${NODE_AUTH_TOKEN:?The repository NPM_TOKEN secret is required to publish}"
           tarball="$RUNNER_TEMP/package/flakefinder.tgz"
           echo "$SHA256  $tarball" | sha256sum --check --strict
+          if (( GITHUB_RUN_ATTEMPT > 1 )); then
+            status=$(node scripts/release.mjs --publication-status "$TAG" "$tarball")
+            if [[ "$status" == published ]]; then
+              echo "npm already has this verified tarball with provenance."
+              exit 0
+            fi
+          fi
+          : "${NODE_AUTH_TOKEN:?The repository NPM_TOKEN secret is required to publish}"
           dist_tag=latest
           if [[ "${TAG%%+*}" == *-* ]]; then dist_tag=next; fi
           npm publish "$tarball" --tag "$dist_tag" --provenance
@@ -93,4 +101,13 @@ jobs:
           node scripts/release.mjs --validate-tag "$TAG" > "$notes"
           flags=()
           if [[ "${TAG%%+*}" == *-* ]]; then flags+=(--prerelease --latest=false); fi
+          if (( GITHUB_RUN_ATTEMPT > 1 )); then
+            expected_prerelease=false
+            if (( ${#flags[@]} )); then expected_prerelease=true; fi
+            if existing=$(gh release view "$TAG" --json tagName,isDraft,isPrerelease); then
+              jq -e --arg tag "$TAG" --argjson pre "$expected_prerelease" \
+                '.tagName == $tag and .isDraft == false and .isPrerelease == $pre' <<< "$existing"
+              exit 0
+            fi
+          fi
           gh release create "$TAG" --verify-tag --generate-notes --notes-file "$notes" "${flags[@]}"

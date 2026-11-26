@@ -356,6 +356,9 @@ function renameOverSync(from, to, opts = {}) {
 var EMPTY = { version: 1, entries: [] };
 function applyOp(entries, op) {
   if (op.kind === "remove") return entries.filter((e) => e.testId !== op.testId);
+  if (op.kind === "prune") {
+    return entries.filter((e) => e.testId !== op.testId || e.quarantinedAt !== op.quarantinedAt);
+  }
   const prior = entries.find((e) => e.testId === op.entry.testId);
   const entry = prior?.quarantinedAt ? { ...op.entry, quarantinedAt: prior.quarantinedAt } : op.entry;
   return [...entries.filter((e) => e.testId !== op.entry.testId), entry];
@@ -592,19 +595,29 @@ var QuarantineManager = class {
    * quarantined and passed stably — or when the entry is older than 90 days and the test is gone from
    * history. Returns the removed entries.
    */
-  prune(verdicts, maxAgeDays = 90) {
+  prune(verdicts, runs = [], maxAgeDays = 90) {
     if (verdicts.length === 0) return [];
     const byId = new Map(verdicts.map((v) => [v.testId, v]));
+    const latestPass = /* @__PURE__ */ new Map();
+    for (const run of runs) {
+      const time = Date.parse(run.timestamp);
+      for (const test of run.results) {
+        if (test.status === "pass" && time > (latestPass.get(test.testId) ?? -Infinity)) {
+          latestPass.set(test.testId, time);
+        }
+      }
+    }
     const removed = [];
     for (const entry of this.file.entries) {
       const v = byId.get(entry.testId);
       const quarantinedMs = Date.parse(entry.quarantinedAt);
-      const seenSince = v !== void 0 && (Number.isNaN(quarantinedMs) || Date.parse(v.lastSeen) >= quarantinedMs);
-      const healthy = v !== void 0 && seenSince && v.classification === "passing" && v.runsObserved >= 10;
+      const passedAt = v?.lastStatus === "pass" ? Date.parse(v.lastSeen) : latestPass.get(entry.testId);
+      const healthy = v?.classification === "passing" && v.runsObserved >= 10 && passedAt !== void 0 && passedAt >= quarantinedMs;
       const agedOut = v?.classification === "gone" && !Number.isNaN(quarantinedMs) && Date.now() - quarantinedMs > maxAgeDays * 864e5;
       if (healthy || agedOut) removed.push(entry);
     }
-    for (const entry of removed) this.apply({ kind: "remove", testId: entry.testId });
+    for (const { testId, quarantinedAt } of removed)
+      this.apply({ kind: "prune", testId, quarantinedAt });
     return removed;
   }
   /**
@@ -734,20 +747,21 @@ function deselectedNodeIds(args) {
 }
 
 // src/store/history-store.ts
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 import {
-  appendFileSync,
   closeSync,
   existsSync as existsSync3,
+  fstatSync,
   linkSync as linkSync2,
   mkdirSync,
   openSync,
   readFileSync as readFileSync3,
+  readSync,
   rmSync as rmSync2,
   statSync as statSync3,
-  writeFileSync as writeFileSync2,
-  writeSync
+  writeFileSync as writeFileSync2
 } from "fs";
+import { hostname } from "os";
 import path3 from "path";
 function snapshotPath(storeDir) {
   return path3.join(storeDir, "verdicts-snapshot.json");
@@ -775,29 +789,47 @@ function lockAgeMs(lockPath, content) {
     return null;
   }
 }
-function breakStaleLock2(lockPath, observed) {
-  const aside = `${lockPath}.stale-${uniqueSuffix()}`;
+function ownerMayBeAlive(content) {
+  let owner;
   try {
-    renameOverSync(lockPath, aside, { attempts: 5 });
+    owner = JSON.parse(content);
   } catch {
     return false;
   }
-  let moved = null;
-  try {
-    moved = readFileSync3(aside, "utf8");
-  } catch {
+  if (!isJsonObject(owner)) return false;
+  if (typeof owner.host === "string" && owner.host !== hostname()) return true;
+  if (typeof owner.pid !== "number" || !Number.isInteger(owner.pid) || owner.pid <= 0 || owner.pid > 2147483647) {
+    return false;
   }
-  const age = lockAgeMs(aside, moved);
-  if (moved === observed && age !== null && age > LOCK_STALE_MS2) {
-    rmSync2(aside, { force: true });
+  try {
+    process.kill(owner.pid, 0);
     return true;
+  } catch (err) {
+    return err.code !== "ESRCH";
+  }
+}
+function breakStaleLock2(lockPath, observed) {
+  if (ownerMayBeAlive(observed)) return false;
+  const generation = createHash("sha256").update(observed).digest("hex").slice(0, 24);
+  const claim = `${lockPath}.recover-${generation}`;
+  let fd;
+  try {
+    fd = openSync(claim, "wx");
+  } catch {
+    return false;
   }
   try {
-    linkSync2(aside, lockPath);
+    const current = readFileSync3(lockPath, "utf8");
+    const age = lockAgeMs(lockPath, current);
+    if (current !== observed || age === null || age <= LOCK_STALE_MS2) return false;
+    rmSync2(lockPath);
+    return true;
   } catch {
+    return false;
+  } finally {
+    closeSync(fd);
+    rmSync2(claim, { force: true });
   }
-  rmSync2(aside, { force: true });
-  return false;
 }
 var warningListeners = /* @__PURE__ */ new Set();
 function subscribeStoreWarnings(listener) {
@@ -930,13 +962,30 @@ var HistoryStore = class _HistoryStore {
       }
       return;
     }
+    parsed.attempt ??= 1;
     this.records.push(parsed);
   }
-  ensureHeader() {
-    if (existsSync3(this.path) && statSync3(this.path).size > 0) return;
-    appendFileSync(this.path, `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+  /** Append one complete line even if a prior write ended before its newline. */
+  appendLine(run) {
+    const line = JSON.stringify(run);
+    const fd = openSync(this.path, "a+");
+    try {
+      const size = fstatSync(fd).size;
+      let prefix = "";
+      if (size === 0) {
+        prefix = `${JSON.stringify({ version: STORE_FORMAT_VERSION })}
+`;
+      } else {
+        const tail = Buffer.alloc(1);
+        readSync(fd, tail, 0, 1, size - 1);
+        if (tail[0] !== 10) prefix = "\n";
+      }
+      writeFileSync2(fd, `${prefix}${line}
 `, "utf8");
-    this.formatVersion = STORE_FORMAT_VERSION;
+      if (size === 0) this.formatVersion = STORE_FORMAT_VERSION;
+    } finally {
+      closeSync(fd);
+    }
   }
   get lockPath() {
     return `${this.path}.lock`;
@@ -946,14 +995,13 @@ var HistoryStore = class _HistoryStore {
    * multi-KB records can interleave in one append and corrupt a line — the
    * lock serializes them. Busy-waits in ≤50 ms slices (Atomics.wait) up to 2 s
    * before giving up with an actionable error; a lock older than 30 s is
-   * treated as abandoned by a dead process and stolen.
+   * reclaimed only when its host/process information permits recovery.
    *
    * The lock file is created atomically WITH its content (write a private
    * temp file, then link() it into place — link fails if the lock exists), so
    * competitors never see a half-written lock. Empty/unparseable locks (older
    * flakefinder versions, torn writes) are aged by mtime, and stale locks are
-   * broken by rename-then-verify (breakStaleLock), so two waiters can never
-   * delete each other's freshly acquired lock.
+   * reclaimed one waiter at a time (breakStaleLock).
    */
   acquireLock() {
     const deadline = Date.now() + 2e3;
@@ -961,7 +1009,7 @@ var HistoryStore = class _HistoryStore {
       if (this.tryCreateLock()) return;
       if (Date.now() >= deadline) {
         throw new StoreBusyError(
-          `history store is busy (held by another flakefinder process for >2s): ${this.lockPath}. Run ingest steps serially, or give each CI shard its own storeDir.`
+          `history store is busy (held by another flakefinder process for >2s): ${this.lockPath}. Run ingest steps serially, or give each CI shard its own storeDir. If the writer stopped on another host or during lock recovery, verify all writers have stopped before removing the abandoned lock and its .recover-* file.`
         );
       }
       let content;
@@ -992,6 +1040,7 @@ var HistoryStore = class _HistoryStore {
   tryCreateLock() {
     const token = JSON.stringify({
       pid: process.pid,
+      host: hostname(),
       epoch: Date.now(),
       nonce: randomBytes(6).toString("hex")
     });
@@ -1039,8 +1088,7 @@ var HistoryStore = class _HistoryStore {
   }
   /**
    * Write paths must not surface raw EISDIR/EACCES: a directory (or other
-   * non-file) at the store path would otherwise slip past ensureHeader()
-   * (a directory's stat size is non-zero) and crash in appendFileSync.
+   * non-file) at the store path is a setup error that should name the file.
    */
   assertWritableFile() {
     if (existsSync3(this.path) && !statSync3(this.path).isFile()) {
@@ -1059,9 +1107,7 @@ var HistoryStore = class _HistoryStore {
     this.acquireLock();
     try {
       try {
-        this.ensureHeader();
-        appendFileSync(this.path, `${JSON.stringify(run)}
-`, "utf8");
+        this.appendLine(run);
       } catch (err) {
         const e = err;
         throw new Error(
@@ -1115,10 +1161,10 @@ var HistoryStore = class _HistoryStore {
       const tmp = `${this.path}.tmp`;
       const fd = openSync(tmp, "w");
       try {
-        writeSync(fd, `${JSON.stringify({ version })}
-`, null, "utf8");
-        for (const r of keep) writeSync(fd, `${JSON.stringify(r)}
-`, null, "utf8");
+        writeFileSync2(fd, `${JSON.stringify({ version })}
+`, "utf8");
+        for (const r of keep) writeFileSync2(fd, `${JSON.stringify(r)}
+`, "utf8");
       } finally {
         closeSync(fd);
       }
@@ -1373,24 +1419,20 @@ function isFail(status) {
 function sortRuns(runs) {
   const groups = /* @__PURE__ */ new Map();
   for (const r of runs) {
-    const g = groups.get(r.runId);
-    if (g) g.push(r);
-    else groups.set(r.runId, [r]);
+    const parsed = Date.parse(r.timestamp);
+    const time = Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+    const group = groups.get(r.runId);
+    if (group) {
+      group.earliest = Math.min(group.earliest, time);
+      group.records.push(r);
+    } else {
+      groups.set(r.runId, { earliest: time, records: [r] });
+    }
   }
-  const minTs = (g) => {
-    let min = g[0].timestamp;
-    for (const r of g) if (r.timestamp < min) min = r.timestamp;
-    return min;
-  };
   const ordered = [];
-  for (const g of [...groups.values()].sort((a, b) => {
-    const am = minTs(a);
-    const bm = minTs(b);
-    if (am !== bm) return am < bm ? -1 : 1;
-    return 0;
-  })) {
-    g.sort((a, b) => a.attempt - b.attempt);
-    ordered.push(...g);
+  for (const group of [...groups.values()].sort((a, b) => a.earliest - b.earliest)) {
+    group.records.sort((a, b) => a.attempt - b.attempt);
+    for (const record of group.records) ordered.push(record);
   }
   return ordered;
 }
@@ -1420,6 +1462,7 @@ function collectHistories(sortedRuns) {
           status,
           attempt: run.attempt,
           sub,
+          final: sub === statuses.length - 1,
           commitSha: run.commitSha,
           message: r.message,
           // the reported duration belongs to the final execution only
@@ -1462,7 +1505,7 @@ function countRetryRescues(collapsed) {
   for (let i = 1; i < collapsed.length; i++) {
     const prev = collapsed[i - 1];
     const cur = collapsed[i];
-    const consecutive = cur.attempt === prev.attempt && cur.sub === prev.sub + 1 || cur.attempt === prev.attempt + 1 && cur.sub === 0;
+    const consecutive = cur.attempt === prev.attempt && cur.sub === prev.sub + 1 || prev.final && cur.attempt === prev.attempt + 1 && cur.sub === 0;
     if (prev.runId === cur.runId && consecutive && isFail(prev.status) && !isFail(cur.status)) {
       rescues++;
     }
@@ -1632,10 +1675,10 @@ function classifyAll(runs, cfg) {
 }
 
 // src/util/test-id.ts
-import { createHash } from "crypto";
+import { createHash as createHash2 } from "crypto";
 function makeTestId(suite, name) {
   const norm = (s) => s.trim().replace(/\s+/g, " ");
-  return createHash("sha256").update(`${norm(suite)}\0${norm(name)}`).digest("hex").slice(0, 16);
+  return createHash2("sha256").update(`${norm(suite)}\0${norm(name)}`).digest("hex").slice(0, 16);
 }
 
 // src/parsers/internal.ts
@@ -1871,7 +1914,7 @@ ${output}`;
         durationMs: reported.durationMs
       };
       let message = reported.status === "pass" ? void 0 : messageFromOutputs(reported.outputs);
-      const isFlaky2 = failed.length > 0 && failed.length < acc.runs.length;
+      const isFlaky2 = failed.length > 0 && acc.runs.some((r) => r.status === "pass");
       if (isFlaky2) {
         const note = `flaky: failed ${failed.length} of ${acc.runs.length} runs in this report`;
         message = message !== void 0 ? `${note}
@@ -1921,12 +1964,15 @@ ${message}` : note;
         `go: ${sourcePath}: build failed for ${importPath}${excerpt ? `: ${excerpt}` : ""}`
       );
     }
-    const pkgsWithTests = new Set([...tests.values()].map((a) => a.pkg));
+    const pkgsWithFailures = new Set(
+      results.filter((r) => isFailFamily(r.status)).map((r) => r.suite)
+    );
+    const pkgsWithTests = new Set(results.map((r) => r.suite));
     for (const [pkg, entry] of failedPackages) {
-      if (!entry.failed || pkgsWithTests.has(pkg)) continue;
+      if (!entry.failed || pkgsWithFailures.has(pkg)) continue;
       const build = entry.failedBuild !== void 0 ? builds.get(entry.failedBuild) : void 0;
       const output = messageFromOutputs([...build?.outputs ?? [], ...entry.outputs]);
-      const reason = build !== void 0 ? "package failed to build" : "package failed before any test completed (build or init crash?)";
+      const reason = build !== void 0 ? "package failed to build" : pkgsWithTests.has(pkg) ? "package failed outside an individual test (TestMain or teardown?)" : "package failed before any test completed (build or init crash?)";
       results.push({
         testId: makeTestId(pkg, "(package)"),
         suite: pkg,
@@ -1938,7 +1984,7 @@ ${output}` : reason
       });
       if (build === void 0 || !build.failed) {
         warnings.push(
-          `go: ${sourcePath}: package ${pkg} failed with no test results \u2014 synthesized as error`
+          `go: ${sourcePath}: package ${pkg} failed with ${pkgsWithTests.has(pkg) ? "no failing tests" : "no test results"} \u2014 synthesized as error`
         );
       }
     }
@@ -2218,7 +2264,7 @@ function collapsePytestReruns(ctx) {
     if (final.status === "pass") {
       final.message = flakyRetryMessage(earlier.length, how, void 0, MESSAGE_MAX_CHARS2);
       final.attempts = retryAttempts(earlier.length, "pass");
-      ctx.flaky.push(`${final.suite}.${final.name}`);
+      ctx.pytestFlaky.push(`${final.suite}.${final.name}`);
     } else if (final.status === "fail" || final.status === "error") {
       const note = `(failed all ${group.length} attempts)`;
       final.message = trimTo(
@@ -2245,7 +2291,13 @@ function children(el, localName) {
 function walk(el, inheritedSuite, ctx) {
   if (!isObj(el)) return;
   const ownSuite = attr(el, "@_name") ?? inheritedSuite;
-  if (ownSuite === "pytest") ctx.pytest = true;
+  if (ownSuite === "pytest" && !ctx.pytest) {
+    const local = { ...ctx, pytest: true, results: [] };
+    walk(el, ownSuite, local);
+    collapsePytestReruns(local);
+    for (const result of local.results) ctx.results.push(result);
+    return;
+  }
   for (const tc of children(el, "testcase")) mapTestCase(tc, ownSuite, ctx);
   for (const ts of children(el, "testsuite")) walk(ts, ownSuite, ctx);
 }
@@ -2256,7 +2308,14 @@ var junitParser = {
     return trimmed.startsWith("<") && /<(?:[\w.-]+:)?testsuit/.test(trimmed);
   },
   parse(content, sourcePath) {
-    const ctx = { sourcePath, results: [], warnings: [], flaky: [], pytest: false };
+    const ctx = {
+      sourcePath,
+      results: [],
+      warnings: [],
+      flaky: [],
+      pytestFlaky: [],
+      pytest: false
+    };
     const body = stripBom(content);
     if (body.trim() === "") {
       ctx.warnings.push(`junit: ${sourcePath}: file is empty`);
@@ -2289,10 +2348,13 @@ var junitParser = {
       return { results: ctx.results, warnings: ctx.warnings };
     }
     walk(root, "unknown", ctx);
-    if (ctx.pytest) collapsePytestReruns(ctx);
     if (ctx.flaky.length > 0) {
-      const how = ctx.pytest ? "pytest-rerunfailures rerun" : "Surefire rerun";
-      ctx.warnings.push(flakyRetryWarning("junit", sourcePath, how, ctx.flaky));
+      ctx.warnings.push(flakyRetryWarning("junit", sourcePath, "Surefire rerun", ctx.flaky));
+    }
+    if (ctx.pytestFlaky.length > 0) {
+      ctx.warnings.push(
+        flakyRetryWarning("junit", sourcePath, "pytest-rerunfailures rerun", ctx.pytestFlaky)
+      );
     }
     return { results: ctx.results, warnings: ctx.warnings };
   }
@@ -3124,7 +3186,7 @@ function mapResult(r, suites, ctx) {
     stack = textOf3(childList(errorInfo, "StackTrace")[0]);
   }
   const testId = attr2(r, "@_testId");
-  const known = (testId !== void 0 ? suites.byId.get(testId.toLowerCase()) : void 0) ?? suites.byName.get(testName);
+  const known = testId !== void 0 ? suites.byId.get(testId.toLowerCase()) : suites.byName.get(testName);
   if (known === void 0 && testId !== void 0) ctx.unresolvedIds++;
   const suite = known ?? "unknown";
   const result = {
@@ -3451,6 +3513,14 @@ function renderMarkdown(verdicts, opts) {
       ""
     );
   }
+  if (opts.allRows) {
+    const other = verdicts.filter(
+      (v) => v.classification === "passing" || v.classification === "skipped" || v.classification === "gone"
+    );
+    if (other.length > 0) {
+      sections.push("**Other tracked tests**", "", table(other.map((v) => ({ v, delta: "" }))), "");
+    }
+  }
   if (!opts.flakesOnly) {
     const passing = verdicts.filter((v) => v.classification === "passing").length;
     sections.push(`_tracked: ${verdicts.length} tests \xB7 ${passing} passing_`, "");
@@ -3476,7 +3546,8 @@ function buildPrComment(verdicts, previous, opts = {}) {
     return d === 0 ? "=" : d > 0 ? `\u2191${d}` : `\u2193${-d}`;
   };
   const head = [PR_COMMENT_MARKER, "## \u{1F40D} flakefinder", ""];
-  const summary = flaky.length === 0 ? `\u2705 no flakes detected among ${verdicts.length} tracked tests` : `**${flaky.length} flaky** (${newFlakes.length} new \xB7 ${flaky.length - newFlakes.length} known) \xB7 ${failing.length} failing \xB7 ${verdicts.length} tracked`;
+  const noFlakes = failing.length === 0 ? "\u2705" : `**${failing.length} failing** \xB7`;
+  const summary = flaky.length === 0 ? `${noFlakes} no flakes detected among ${verdicts.length} tracked tests` : `**${flaky.length} flaky** (${newFlakes.length} new \xB7 ${flaky.length - newFlakes.length} known) \xB7 ${failing.length} failing \xB7 ${verdicts.length} tracked`;
   head.push(summary);
   if (previous === null && flaky.length > 0) head.push("_first run \u2014 building history_");
   head.push("");
@@ -3649,7 +3720,7 @@ function redactData(data) {
   };
 }
 function embedJson(data) {
-  return JSON.stringify(data).replace(/<\/script/gi, "<\\/script").replace(/<!--/g, "<\\!--").replace(
+  return JSON.stringify(data).replace(/</g, "\\u003c").replace(
     /[\u2028\u2029\u202a-\u202e\u2066-\u2069]/g,
     (c) => `\\u${c.charCodeAt(0).toString(16)}`
   );
@@ -4392,9 +4463,7 @@ ${lightTokens}    }
   function readData() {
     var node = document.getElementById('ff-data');
     var text = node ? (node.textContent || '') : '{}';
-    // Undo the safety escape applied by renderDashboard before parsing.
-    // The escaped end-tag form is already valid JSON and needs no reversal.
-    return JSON.parse(text.replace(/<\\!/g, '<!'));
+    return JSON.parse(text);
   }
 
   var data = readData();
@@ -4954,12 +5023,12 @@ ${lightTokens}    }
   });
 
   // ---------- clipboard ----------
-  function flashCopied(btn) {
+  function flashCopyStatus(btn, copied) {
     if (!btn) return;
     var original = btn.getAttribute('data-label') || btn.textContent;
     btn.setAttribute('data-label', original);
-    btn.textContent = 'Copied!';
-    btn.classList.add('copied');
+    btn.textContent = copied ? 'Copied!' : 'Copy failed';
+    btn.classList.toggle('copied', copied);
     window.setTimeout(function () {
       btn.textContent = original;
       btn.classList.remove('copied');
@@ -4974,12 +5043,13 @@ ${lightTokens}    }
       ta.style.opacity = '0';
       document.body.appendChild(ta);
       ta.select();
-      try { document.execCommand('copy'); } catch (err) { /* ignore */ }
+      var copied = false;
+      try { copied = document.execCommand('copy'); } catch (err) { /* copy unavailable */ }
       document.body.removeChild(ta);
-      flashCopied(btn);
+      flashCopyStatus(btn, copied);
     }
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(function () { flashCopied(btn); }, fallback);
+      navigator.clipboard.writeText(text).then(function () { flashCopyStatus(btn, true); }, fallback);
     } else {
       fallback();
     }
@@ -5202,7 +5272,7 @@ function renderTerminal(allVerdicts, opts) {
 
 // src/runner/wrap.ts
 import { spawn, spawnSync as spawnSync3 } from "child_process";
-import { createHash as createHash3, randomUUID } from "crypto";
+import { createHash as createHash4, randomUUID } from "crypto";
 import { existsSync as existsSync5, mkdtempSync, readFileSync as readFileSync6, rmSync as rmSync3, statSync as statSync6, writeFileSync as writeFileSync3 } from "fs";
 import { tmpdir } from "os";
 import path7 from "path";
@@ -5251,7 +5321,7 @@ function readTextFile(file) {
 
 // src/runner/git-state.ts
 import { spawnSync as spawnSync2 } from "child_process";
-import { createHash as createHash2 } from "crypto";
+import { createHash as createHash3 } from "crypto";
 import { readFileSync as readFileSync5, realpathSync, statSync as statSync5 } from "fs";
 import path6 from "path";
 var MAX_HASHED_BYTES = 8 * 1024 * 1024;
@@ -5296,7 +5366,7 @@ function detectCodeState(cwd, exclude = []) {
   const isExcluded = (abs) => excluded.some((e) => abs === e || abs.startsWith(e + path6.sep));
   const dirtyFiles = parsePorcelainZ(status).filter((rel) => !isExcluded(path6.join(root, rel))).sort();
   if (dirtyFiles.length === 0) return { commitSha: head, dirtyFiles };
-  const h = createHash2("sha256");
+  const h = createHash3("sha256");
   for (const rel of dirtyFiles) {
     const abs = path6.join(root, rel);
     h.update(rel).update("\0");
@@ -5324,7 +5394,7 @@ function statOf(file) {
 }
 function shaOf(file) {
   try {
-    return createHash3("sha256").update(readFileSync6(file)).digest("hex");
+    return createHash4("sha256").update(readFileSync6(file)).digest("hex");
   } catch {
     return null;
   }
@@ -5344,7 +5414,7 @@ function snapshotReports(cwd, cfg, previous) {
   return snapshot;
 }
 function needsShell(command) {
-  return command.some((t) => /[<>|&]/.test(t) || isShellOperator(t));
+  return command.some(isShellOperator);
 }
 function isShellOperator(token) {
   return /^(?:\|\|?|\|&|&&?|;|&>>?|\d*(?:<<?|>>?|>\||<>)(?:&(?:\d+|-))?)$/.test(token);
@@ -5423,8 +5493,8 @@ function insertRunnerArgs(command, args) {
   if (args.length === 0) return [...command];
   const seg = runnerSegment(command);
   const hasSeparator = command.slice(seg.cmd + 1, seg.end).includes("--");
-  const wrapper = isPackageManagerWrapper(command.slice(seg.cmd));
-  const separator = wrapper && !hasSeparator ? ["--"] : [];
+  const runnerCommand = command.slice(seg.cmd);
+  const separator = isPackageManagerWrapper(runnerCommand) && commandBase(runnerCommand[0]) !== "pnpm" && !hasSeparator ? ["--"] : [];
   return [...command.slice(0, seg.end), ...separator, ...args, ...command.slice(seg.end)];
 }
 var USE_PROCESS_GROUP = process.platform !== "win32";
@@ -5788,10 +5858,10 @@ async function runLive(command, cfg, opts) {
     return (v.classification === "failing" || v.classification === "new-failure") && (last === "fail" || last === "error");
   });
   let finalExitCode = deterministicFail || lastExit !== 0 ? 1 : 0;
-  if (interrupted) finalExitCode = 130;
   if (cfg.failOnFlakes && (gated.some((v) => v.classification.startsWith("flaky-")) || suiteFlake)) {
     finalExitCode = 1;
   }
+  if (interrupted) finalExitCode = 130;
   return {
     attempts,
     finalExitCode,
@@ -5950,7 +6020,7 @@ function dim(s) {
   return process.stdout.isTTY ? `\x1B[2m${s}\x1B[0m` : s;
 }
 function isPackageManagerWrapper(command) {
-  const first = command[0]?.toLowerCase().replace(/\.(cmd|exe)$/, "");
+  const first = commandBase(command[0] ?? "");
   return first === "npm" || first === "yarn" || first === "pnpm" || first === "bun";
 }
 var POSIX_SAFE = /^[A-Za-z0-9_\-+=.,/:@%]+$/;
@@ -6181,6 +6251,7 @@ function hasCommand(argv) {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--config" || a === "--cwd") {
+      if (i + 1 === argv.length) return true;
       i++;
       continue;
     }
@@ -6420,7 +6491,8 @@ async function main(argv) {
     if (opts.format === "md") {
       console.log(
         renderMarkdown(filterVerdicts(verdicts, { all: opts.all, threshold }, cfg), {
-          flakesOnly: !opts.all
+          flakesOnly: !opts.all,
+          allRows: opts.all === true
         })
       );
       return;
@@ -6502,9 +6574,7 @@ async function main(argv) {
           `note: runner "${runner}" has no per-test exclusion \u2014 entries are informational only`
         );
       } else {
-        console.log(
-          `next run will add: ${esc(exclusionArgs(runner, entries).join(" "))}`
-        );
+        console.log(`next run will add: ${esc(exclusionArgs(runner, entries, g.cwd).join(" "))}`);
       }
       return;
     }
@@ -6554,8 +6624,8 @@ async function main(argv) {
       return;
     }
     if (action === "prune") {
-      const verdicts = classifyAll(storeFor(g, cfg).runs(), cfg);
-      const removed = qm.prune(verdicts);
+      const runs = storeFor(g, cfg).runs();
+      const removed = qm.prune(classifyAll(runs, cfg), runs);
       if (removed.length === 0) {
         console.log("nothing to prune");
         return;
@@ -6589,6 +6659,7 @@ async function main(argv) {
     const store = storeFor(g, cfg);
     const runId = randomUUID2();
     const commitSha = ciCommitSha(g.cwd);
+    let ingestedFiles = 0;
     for (const file of targets) {
       let content;
       try {
@@ -6604,6 +6675,10 @@ async function main(argv) {
       }
       const parsed = parser.parse(content, file);
       for (const w of parsed.warnings) console.warn(`flakefinder: ${w}`);
+      if (parsed.results.length === 0) {
+        console.warn(`flakefinder: ${parser.name}: no test results in ${file}`);
+        continue;
+      }
       store.append({
         runId,
         timestamp: (/* @__PURE__ */ new Date()).toISOString(),
@@ -6613,8 +6688,14 @@ async function main(argv) {
         commitSha,
         results: parsed.results
       });
+      ingestedFiles++;
     }
-    store.prune(cfg.maxRuns);
+    if (opts.failOnNewFlakes && ingestedFiles === 0) {
+      console.error("flakefinder ci: no usable report data for the new-flakes gate");
+      exitCode = 2;
+      return;
+    }
+    if (ingestedFiles > 0) store.prune(cfg.maxRuns);
     const verdicts = classifyAll(store.runs(), cfg);
     printStoreWarnings(store);
     console.log(renderTerminal(verdicts, { color: false, flakesOnly: false }));

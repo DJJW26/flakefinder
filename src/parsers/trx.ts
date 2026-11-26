@@ -161,8 +161,7 @@ function mapResult(r: unknown, suites: Suites, ctx: Ctx): void {
 
   const testId = attr(r, '@_testId');
   const known =
-    (testId !== undefined ? suites.byId.get(testId.toLowerCase()) : undefined) ??
-    suites.byName.get(testName);
+    testId !== undefined ? suites.byId.get(testId.toLowerCase()) : suites.byName.get(testName);
   if (known === undefined && testId !== undefined) ctx.unresolvedIds++;
   const suite = known ?? 'unknown';
   const result: TestCaseResult = {

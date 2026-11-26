@@ -57,6 +57,8 @@ interface GhComment {
 
 export interface UpsertDeps {
   fetchImpl?: typeof fetch;
+  /** Keep shard and package reports in separate comments on the same PR. */
+  stream?: string;
   warn?: (message: string) => void;
   /** Per-request timeout; a hung API must not block the job (default 15 s). */
   timeoutMs?: number;
@@ -109,8 +111,8 @@ async function tokenLogin(apiUrl: string, token: string, call: Call): Promise<st
  * App tokens), by a Bot account. Anyone can paste the marker into a comment
  * of their own; matching on the marker alone let them redirect our update.
  */
-function isOurComment(c: GhComment, login: string | null): boolean {
-  if (!(c.body ?? '').includes(PR_COMMENT_MARKER)) return false;
+function isOurComment(c: GhComment, login: string | null, marker: string): boolean {
+  if (c.body?.split('\n', 1)[0]?.trimEnd() !== marker) return false;
   if (login !== null) return c.user?.login === login;
   return c.user?.type === 'Bot';
 }
@@ -135,7 +137,8 @@ export async function upsertPrComment(
   const call: Call = (url, init = {}) =>
     fetchImpl(url, { ...init, redirect: 'manual', signal: AbortSignal.timeout(timeoutMs) });
   try {
-    return await upsert(call, warn, token, body, ctx);
+    const marker = deps.stream ? `<!-- flakefinder:report:${deps.stream} -->` : PR_COMMENT_MARKER;
+    return await upsert(call, warn, token, body.replace(PR_COMMENT_MARKER, marker), ctx, marker);
   } catch (err) {
     const e = err as Error;
     warn(`PR comment request failed (${e.name}: ${e.message})`);
@@ -149,6 +152,7 @@ async function upsert(
   token: string,
   body: string,
   ctx: GithubContext,
+  marker: string,
 ): Promise<'created' | 'updated' | 'failed'> {
   const repoPath = `${ctx.apiUrl}/repos/${ctx.owner}/${ctx.repo}`;
 
@@ -178,7 +182,7 @@ async function upsert(
   }
 
   const login = await tokenLogin(ctx.apiUrl, token, call);
-  const existing = comments.find((c) => isOurComment(c, login));
+  const existing = comments.find((c) => isOurComment(c, login, marker));
   if (existing) {
     const res = await call(`${repoPath}/issues/comments/${existing.id}`, {
       method: 'PATCH',

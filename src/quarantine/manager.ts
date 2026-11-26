@@ -1,7 +1,7 @@
 import { existsSync, linkSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { titleAlternation } from '../runner/adapters.js';
-import type { QuarantineEntry, RunnerKind, TestVerdict } from '../types.js';
+import type { QuarantineEntry, RunnerKind, RunRecord, TestVerdict } from '../types.js';
 import { renameOverSync } from '../util/atomic-rename.js';
 
 interface QuarantineFile {
@@ -14,10 +14,17 @@ interface QuarantineFile {
 const EMPTY: QuarantineFile = { version: 1, entries: [] };
 
 /** A mutation made through this manager, replayed onto the fresh file at save time. */
-type QuarantineOp = { kind: 'add'; entry: QuarantineEntry } | { kind: 'remove'; testId: string };
+type QuarantineOp =
+  | { kind: 'add'; entry: QuarantineEntry }
+  | { kind: 'remove'; testId: string }
+  | { kind: 'prune'; testId: string; quarantinedAt: string };
 
 function applyOp(entries: QuarantineEntry[], op: QuarantineOp): QuarantineEntry[] {
   if (op.kind === 'remove') return entries.filter((e) => e.testId !== op.testId);
+  if (op.kind === 'prune') {
+    // A different process may have removed and re-quarantined this test.
+    return entries.filter((e) => e.testId !== op.testId || e.quarantinedAt !== op.quarantinedAt);
+  }
   // re-adding refreshes reason/score but keeps the ORIGINAL quarantine date:
   // the 90-day age-out and "since quarantine" logic must not be reset
   const prior = entries.find((e) => e.testId === op.entry.testId);
@@ -363,26 +370,41 @@ export class QuarantineManager {
    * quarantined and passed stably — or when the entry is older than 90 days and the test is gone from
    * history. Returns the removed entries.
    */
-  prune(verdicts: TestVerdict[], maxAgeDays = 90): QuarantineEntry[] {
+  prune(verdicts: TestVerdict[], runs: RunRecord[] = [], maxAgeDays = 90): QuarantineEntry[] {
     if (verdicts.length === 0) return [];
     const byId = new Map(verdicts.map((v) => [v.testId, v]));
+    // A runner may report a quarantined test as skipped. Its verdict's lastSeen
+    // then dates the skip, even when all ten real passes predate quarantine.
+    const latestPass = new Map<string, number>();
+    for (const run of runs) {
+      const time = Date.parse(run.timestamp);
+      for (const test of run.results) {
+        if (test.status === 'pass' && time > (latestPass.get(test.testId) ?? -Infinity)) {
+          latestPass.set(test.testId, time);
+        }
+      }
+    }
     const removed: QuarantineEntry[] = [];
     for (const entry of this.file.entries) {
       const v = byId.get(entry.testId);
       const quarantinedMs = Date.parse(entry.quarantinedAt);
       // health evidence must include a run AFTER the quarantine: passes from
       // before it are exactly the history that got the test quarantined
-      const seenSince =
-        v !== undefined && (Number.isNaN(quarantinedMs) || Date.parse(v.lastSeen) >= quarantinedMs);
+      const passedAt =
+        v?.lastStatus === 'pass' ? Date.parse(v.lastSeen) : latestPass.get(entry.testId);
       const healthy =
-        v !== undefined && seenSince && v.classification === 'passing' && v.runsObserved >= 10;
+        v?.classification === 'passing' &&
+        v.runsObserved >= 10 &&
+        passedAt !== undefined &&
+        passedAt >= quarantinedMs;
       const agedOut =
         v?.classification === 'gone' &&
         !Number.isNaN(quarantinedMs) &&
         Date.now() - quarantinedMs > maxAgeDays * 86_400_000;
       if (healthy || agedOut) removed.push(entry);
     }
-    for (const entry of removed) this.apply({ kind: 'remove', testId: entry.testId });
+    for (const { testId, quarantinedAt } of removed)
+      this.apply({ kind: 'prune', testId, quarantinedAt });
     return removed;
   }
 

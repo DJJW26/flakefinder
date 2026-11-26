@@ -31,6 +31,7 @@ interface Recorder {
   outputs: Record<string, string | number>;
   summaries: string[];
   uploads: string[][];
+  artifactNames: string[];
   requests: Array<{ url: string; method: string; body?: string }>;
 }
 
@@ -63,6 +64,7 @@ function deps(
     outputs: {},
     summaries: [],
     uploads: [],
+    artifactNames: [],
     requests: [],
   };
   return {
@@ -89,7 +91,8 @@ function deps(
         },
       },
       cache: opts.cache ?? noCache,
-      uploadArtifact: async (_name, files) => {
+      uploadArtifact: async (name, files) => {
+        rec.artifactNames.push(name);
         rec.uploads.push(files);
       },
       // literal file names only — enough for these tests
@@ -187,6 +190,27 @@ describe('runAction (QA ACT-14)', () => {
     expect(rec.infos).toContain('PR comment: updated');
   });
 
+  it('keeps other shards PR comments when publishing and updating its results', async () => {
+    const ws = workspace();
+    writeFileSync(path.join(ws, 'junit.xml'), junit('pass'));
+    const env = {
+      INPUT_REPORTS: 'junit.xml',
+      GITHUB_EVENT_PATH: prEvent(ws),
+      'INPUT_HISTORY-KEY': 'linux',
+    };
+    const first = deps(ws, env);
+    await runAction(first.deps);
+    const linux = JSON.parse(first.rec.requests.find((r) => r.method === 'POST')!.body!).body;
+    const saved = [{ id: 42, body: linux, user: { type: 'Bot' } }];
+    const windows = deps(ws, { ...env, 'INPUT_HISTORY-KEY': 'windows' }, { comments: saved });
+    await runAction(windows.deps);
+    expect(windows.rec.requests.some((r) => r.method === 'POST')).toBe(true);
+    expect(windows.rec.requests.some((r) => r.method === 'PATCH')).toBe(false);
+    const rerun = deps(ws, env, { comments: saved });
+    await runAction(rerun.deps);
+    expect(rerun.rec.requests.find((r) => r.method === 'PATCH')?.url).toMatch(/comments\/42$/);
+  });
+
   it('comment: false skips the API entirely on a PR', async () => {
     const ws = workspace();
     writeFileSync(path.join(ws, 'junit.xml'), junit('pass'), 'utf8');
@@ -216,6 +240,51 @@ describe('runAction (QA ACT-14)', () => {
     await runAction(d);
     expect(rec.failed[0]).toContain('no files matched missing.xml');
     expect(rec.outputs).toEqual({});
+  });
+
+  it.each(['missing.xml', 'empty.xml', 'bad.xml'])(
+    'requires usable current evidence when gating: %s',
+    async (report) => {
+      const ws = workspace();
+      writeFileSync(path.join(ws, 'good.xml'), junit('pass'));
+      await runAction(deps(ws, { INPUT_REPORTS: 'good.xml', GITHUB_RUN_ID: '1' }).deps);
+      writeFileSync(path.join(ws, 'empty.xml'), '<testsuites></testsuites>');
+      writeFileSync(path.join(ws, 'bad.xml'), 'unrecognized');
+      const { deps: d, rec } = deps(ws, {
+        INPUT_REPORTS: report,
+        GITHUB_RUN_ID: '2',
+        'INPUT_FAIL-ON-NEW-FLAKES': 'true',
+      });
+      await runAction(d);
+      expect(rec.failed).toHaveLength(1);
+      expect(rec.outputs).toEqual({});
+      expect(rec.uploads).toEqual([]);
+      expect(
+        JSON.parse(readFileSync(path.join(ws, '.flakefinder', 'action-baseline.json'), 'utf8'))
+          .runId,
+      ).toBe('1');
+    },
+  );
+
+  it('uploads independent dashboard artifacts across shards and reruns', async () => {
+    const ws = workspace();
+    writeFileSync(path.join(ws, 'good.xml'), junit('pass'));
+    const names = [];
+    for (const [shard, attempt] of [
+      ['one', '1'],
+      ['two', '1'],
+      ['one', '2'],
+    ]) {
+      const { deps: d, rec } = deps(ws, {
+        INPUT_REPORTS: 'good.xml',
+        'INPUT_HISTORY-KEY': shard,
+        GITHUB_RUN_ATTEMPT: attempt,
+      });
+      await runAction(d);
+      names.push(...rec.artifactNames);
+    }
+    expect(names).toHaveLength(3);
+    expect(new Set(names).size).toBe(3);
   });
 
   it('invalid inputs fail before any side effect', async () => {

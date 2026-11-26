@@ -935,48 +935,8 @@ through three QA rounds:
 - **Abandoned-spawn guard:** when the direct spawn fails and falls back to
   shell, the first spawn's events are ignored so its exit code can't race
   the real run.
-- **npm/yarn/pnpm wrappers get a `--` separator** before injected flags —
-  package managers swallow flags themselves and only forward what follows
-  `--` to the actual test runner. (Before this fix, quarantine *announced*
-  it was active while the flags never reached jest. A silent lie — the worst
-  kind.)
-
-### Targeted re-runs (`src/runner/adapters.ts`)
-
-Retrying a failing 20-minute suite three times costs an hour. Targeted
-re-runs make attempts 2+ execute **only the failed tests**:
-
-| runner | selector | notes |
-|---|---|---|
-| jest / vitest | `-t "^(?:.* )?(?:name1\|name2)$"` | boundary-anchored: `update` doesn't drag in `math re-update`; works for both jest and vitest |
-| mocha | `--grep` (same pattern shape) | |
-| go | `-run "^(TestA\|TestB)$"` | subtests (`TestX/sub`) rerun via their top-level parent |
-| pytest | `--lf` | pytest's own last-failed cache |
-
-Selected names are space-delimited-final-segment matched, regex-escaped,
-deduped, and quarantined names are excluded from the selector (a suffix
-collision can't pull a benched test back in). Falls back to a full re-run
-when the runner has no adapter or attempt 1 recorded no per-test failures.
-Controlled by `--retry-mode auto|failed|full` (default `auto`). Documented
-caveat: order-dependent flakes may not reproduce in a targeted run —
-`full` restores whole-suite retries. Correctness is unaffected either way:
-a test only counts as flaky when it explicitly *passes* on a re-run, so an
-empty or partial re-run can never fake a rescue.
-
-### Timeouts and signals (C2)
-
-`--timeout <seconds>` / `timeoutSeconds` config: an attempt exceeding the
-limit gets its **whole process tree** killed (Windows: `taskkill /T /F` —
-`child.kill()` only reaches the direct process, and cmd.exe chains survive
-it; POSIX: SIGTERM with a 3 s SIGKILL escalation) and resolves exit 124,
-the GNU-timeout convention. SIGINT/SIGTERM (Ctrl-C): kill the current tree,
-stop the retry loop, keep everything ingested so far, exit 130.
-
-## 6.8 Quarantine — `src/quarantine/manager.ts`
-
-Quarantine = benching a flaky test: excluded from runs while someone fixes
-it properly, without ever editing test source.
-
+- **Package-manager wrappers use their own argument rules.** npm uses `--`
+  and pnpm forwards the flags directly.
 - **The list:** `flakefinder.quarantine.json` —
   `{ "version": 1, "entries": [ { testId, suite, name, reason,
   quarantinedAt, flakeScore } ] }`. Human-readable, git-committable,
@@ -1131,8 +1091,8 @@ The Action is the same pipeline, wired into GitHub's machinery:
    entries are immutable, so every run *attempt* needs its own key or a
    re-run's history would be dropped. Restores go by the prefix
    `flakefinder-history-<stream>-` (newest on this branch, then the base or
-   default branch), falling back to any `flakefinder-history-` entry as a
-   warm start for a brand-new stream. No external service holds your data.
+   default branch). Re-runs first look for a previous attempt of the
+   same run within that stream.
 3. **Ingest + classify** (same engine).
 4. **New-vs-known diff:** the previous run's verdicts were snapshotted to
    `verdicts-snapshot.json` in the cache; `computeNewFlakes(current,
@@ -1148,9 +1108,8 @@ The Action is the same pipeline, wired into GitHub's machinery:
 6. **Step summary + PR comment** (upsert via marker, plain fetch, token
    from `github-token` input).
 7. **Dashboard artifact** uploaded via the official artifact client.
-8. **Fail gate:** `fail-on-new-flakes: true` fails the job only when a flake
-   that was *not flaky in the previous run* appears — known flakes never
-   block anyone.
+8. **Fail gate:** `fail-on-new-flakes: true` requires usable results from
+   the current reports and fails if they introduce new flakes.
 
 Inputs (`reports`, `github-token`, `comment`, `upload-dashboard`,
 `fail-on-new-flakes`, `history-max-runs`, `working-directory`,

@@ -55,7 +55,8 @@ describe('cache keys (R5 #11)', () => {
     const a2 = cacheKeys({ sha: 'abc', runId: '100', runAttempt: '2', job: 'test' });
     expect(a1.saveKey).toMatch(/^flakefinder-history-[0-9a-f]{8}-abc-100-1$/);
     expect(a2.saveKey).not.toBe(a1.saveKey);
-    expect(a1.restoreKeys).toEqual([a1.saveKey.slice(0, 29), 'flakefinder-history-']);
+    expect(a2.restoreKeys).toEqual([a1.saveKey.slice(0, -1), ...a1.restoreKeys]);
+    expect(a1.restoreKeys).toEqual([a1.saveKey.slice(0, 29)]);
     expect(a1.saveKey.startsWith(a1.restoreKeys[0]!)).toBe(true);
   });
 });
@@ -67,7 +68,7 @@ describe('cache key scope (QA ACT-4)', () => {
     const b = cacheKeys(gh, { workingDirectory: '.', historyKey: 'node20' });
     expect(a.saveKey).not.toBe(b.saveKey);
     expect(a.restoreKeys[0]).not.toBe(b.restoreKeys[0]);
-    expect(b.saveKey.startsWith(a.restoreKeys[0]!)).toBe(false); // A never restores B first
+    expect(a.restoreKeys.some((prefix) => b.saveKey.startsWith(prefix))).toBe(false);
   });
   it('two steps on different working directories do not collide', () => {
     const a = cacheKeys(gh, { workingDirectory: 'packages/a', historyKey: '' });
@@ -78,7 +79,7 @@ describe('cache key scope (QA ACT-4)', () => {
     const s = { workingDirectory: '.', historyKey: '' };
     const k1 = cacheKeys(gh, s);
     const k2 = cacheKeys({ ...gh, sha: 'def', runId: '200', runAttempt: '3' }, s);
-    expect(k1.restoreKeys).toEqual(k2.restoreKeys);
+    expect(k2.restoreKeys.at(-1)).toBe(k1.restoreKeys[0]);
     expect(k2.saveKey.startsWith(k1.restoreKeys[0]!)).toBe(true);
   });
 });
@@ -114,6 +115,19 @@ describe('re-running a failed job does not bypass fail-on-new-flakes (R5 #11)', 
     mkdirSync(dir, { recursive: true });
     writeFileSync(snapshotPath(dir), '{nope', 'utf8');
     expect(resolveBaseline(dir, '1').warnings[0]).toContain('unreadable');
+  });
+
+  it('rejects malformed snapshot entries and never substitutes the current run for a broken baseline', () => {
+    const dir = storeDir();
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(snapshotPath(dir), '[null]');
+    expect(resolveBaseline(dir, '7').warnings[0]).toContain('unreadable');
+    writeFileSync(snapshotPath(dir), JSON.stringify([v('a', 'flaky-retry')]));
+    writeFileSync(baselinePath(dir), JSON.stringify({ runId: '7', previous: [{}] }));
+    expect(resolveBaseline(dir, '7').previous).toBeNull();
+    expect(resolveBaseline(dir, '7').warnings[0]).toContain('unreadable');
+    writeFileSync(baselinePath(dir), '{');
+    expect(resolveBaseline(dir, '7').previous).toBeNull();
   });
 
   it('a first-run baseline (null) is reused on re-run: everything flaky stays new', () => {

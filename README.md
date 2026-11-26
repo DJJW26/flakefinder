@@ -164,9 +164,8 @@ $ npx flakefinder quarantine prune    # releases entries with positive evidence 
 Exclusion is done with runner flags — `pytest --deselect`, `jest -t`,
 `mocha --grep` — computed from the quarantine list at run time. flakefinder
 **never edits your test files**; remove the entry and the test is back.
-Package-manager wrappers (`npm test`, `yarn test`, `pnpm test`) are handled
-automatically — the flags are forwarded after `--` so the runner actually
-receives them. For `go` there is no per-test exclusion flag: entries are
+Package-manager wrappers forward the flags using the package manager's
+argument rules. For example, npm uses `--` and pnpm forwards the flags directly. For `go` there is no per-test exclusion flag: entries are
 tracked and reported, but not auto-excluded.
 
 ## Design principles
@@ -230,7 +229,7 @@ pipeline: run → retries → classify → report → dashboard → quarantine.
 
 - [Usage guide](docs/USAGE.md) for CLI commands, configuration, and report formats.
 - [Project context](docs/PROJECT_CONTEXT.md) for the codebase and build map.
-- [Release runbook](docs/RELEASING.md) for preparing releases and verifying Windows and Linux builds.
+- [Release runbook](docs/RELEASING.md) for preparing releases and verifying Windows, Ubuntu, and macOS builds.
 
 ## Contributing
 

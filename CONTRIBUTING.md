@@ -7,7 +7,7 @@ dependency-light — please keep it that way.
 
 Use Node 24 for development. CI also runs the source tests on Ubuntu with Node
 22 and 26. The published CLI supports Node 18+, and CI installs and exercises
-the npm tarball on Windows and Ubuntu with Node 18 and 24.
+the npm tarball on Windows, Ubuntu, and macOS with Node 18 and 24.
 
 ```bash
 git clone https://github.com/DJJW26/flakefinder.git
@@ -51,14 +51,14 @@ npm run e2e
 Use `node:path` for filesystem operations and pass arguments as an array
 when spawning commands. Keep platform-specific quoting and process handling
 in the runner helpers. Cover changes there with behavior tests that run on
-both hosts, using fixture paths relative to the test project.
+all CI hosts, using fixture paths relative to the test project.
 
 For changes to spawning, quoting, or filesystem behavior, test from a checkout
 whose absolute path contains a space. On Windows, use PowerShell and
 `cmd.exe` to exercise the npm-installed CLI shim. The invoking shell parses
 your command line first. Quote spaced arguments, and use the shell's own
 builtins and quoting rules when passing pipelines or redirects. CI uses
-Ubuntu for the POSIX side of this check. The original failing Linux distro
+Ubuntu and macOS for the POSIX side of this check. The original failing Linux distro
 and command are unknown. The reference fork is `arahe-dev/flakefinder`.
 
 The E2E runner uses real Jest, pytest, and Go fixtures. Use the strict
@@ -75,7 +75,7 @@ Python fixture requirements with
 
 The `ci` workflow runs the source and fixture checks and ends with the
 `Release parity` check. Each workflow run packs the npm CLI once and verifies
-its SHA-256 in all four Windows and Ubuntu runtime jobs. The packed checks
+its SHA-256 in all six Windows, Ubuntu, and macOS runtime jobs. The packed checks
 cover the executable users install from npm. The Action bundle and
 runner-specific report identity are outside that packed CLI contract.
 

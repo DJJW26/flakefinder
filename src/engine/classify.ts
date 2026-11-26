@@ -31,26 +31,23 @@ function isFail(status: TestStatus): boolean {
  * retryRescue detection.
  */
 function sortRuns(runs: RunRecord[]): RunRecord[] {
-  const groups = new Map<string, RunRecord[]>();
+  const groups = new Map<string, { earliest: number; records: RunRecord[] }>();
   for (const r of runs) {
-    const g = groups.get(r.runId);
-    if (g) g.push(r);
-    else groups.set(r.runId, [r]);
+    const parsed = Date.parse(r.timestamp);
+    // Keep undated legacy groups in file order, before dated history.
+    const time = Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+    const group = groups.get(r.runId);
+    if (group) {
+      group.earliest = Math.min(group.earliest, time);
+      group.records.push(r);
+    } else {
+      groups.set(r.runId, { earliest: time, records: [r] });
+    }
   }
-  const minTs = (g: RunRecord[]): string => {
-    let min = g[0]!.timestamp;
-    for (const r of g) if (r.timestamp < min) min = r.timestamp;
-    return min;
-  };
   const ordered: RunRecord[] = [];
-  for (const g of [...groups.values()].sort((a, b) => {
-    const am = minTs(a);
-    const bm = minTs(b);
-    if (am !== bm) return am < bm ? -1 : 1;
-    return 0; // simultaneous groups: relative order is not observable
-  })) {
-    g.sort((a, b) => a.attempt - b.attempt);
-    ordered.push(...g);
+  for (const group of [...groups.values()].sort((a, b) => a.earliest - b.earliest)) {
+    group.records.sort((a, b) => a.attempt - b.attempt);
+    for (const record of group.records) ordered.push(record);
   }
   return ordered;
 }
@@ -63,6 +60,7 @@ function sortRuns(runs: RunRecord[]): RunRecord[] {
  */
 interface Execution extends Observation {
   sub: number;
+  final: boolean;
 }
 
 interface ExecutionHistory {
@@ -106,6 +104,7 @@ function collectHistories(sortedRuns: RunRecord[]): ExecutionHistory[] {
           status,
           attempt: run.attempt,
           sub,
+          final: sub === statuses.length - 1,
           commitSha: run.commitSha,
           message: r.message,
           // the reported duration belongs to the final execution only
@@ -125,7 +124,7 @@ function collectHistories(sortedRuns: RunRecord[]): ExecutionHistory[] {
 export function buildHistories(runs: RunRecord[]): TestHistory[] {
   return collectHistories(sortRuns(runs)).map((h) => ({
     ...h,
-    observations: h.observations.map(({ sub: _sub, ...o }) => o),
+    observations: h.observations.map(({ sub: _sub, final: _final, ...o }) => o),
   }));
 }
 
@@ -182,7 +181,7 @@ function countRetryRescues(collapsed: Execution[]): number {
     const cur = collapsed[i]!;
     const consecutive =
       (cur.attempt === prev.attempt && cur.sub === prev.sub + 1) ||
-      (cur.attempt === prev.attempt + 1 && cur.sub === 0);
+      (prev.final && cur.attempt === prev.attempt + 1 && cur.sub === 0);
     if (prev.runId === cur.runId && consecutive && isFail(prev.status) && !isFail(cur.status)) {
       rescues++;
     }

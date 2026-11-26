@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { type CacheApi, cacheUsable, restoreHistory, saveHistory } from './history-cache.js';
 
@@ -45,6 +46,28 @@ describe('history cache without a cache service (QA ACT-12)', () => {
       },
     };
     expect(cacheUsable(api, log().sink)).toBe(false);
+  });
+
+  it('restores and saves only the owned files in a custom store, treating brackets literally', async () => {
+    const dir = path.resolve('example [workspace]');
+    const requested: string[][] = [];
+    const cache: CacheApi = {
+      isFeatureAvailable: () => true,
+      restoreCache: async (paths) => {
+        requested.push(paths);
+        return undefined;
+      },
+      saveCache: async (paths) => {
+        requested.push(paths);
+        return 1;
+      },
+    };
+    await restoreHistory(cache, log().sink, dir, 'k', []);
+    await saveHistory(cache, log().sink, dir, 'k');
+    const expected = ['history.jsonl', 'verdicts-snapshot.json', 'action-baseline.json'].map(
+      (name) => path.join(dir.replace('[workspace]', '[[]workspace]'), name),
+    );
+    expect(requested).toEqual([expected, expected]);
   });
 
   it('available service: restore + save run; a -1 save is a warning', async () => {

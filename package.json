@@ -50,7 +50,7 @@
   "homepage": "https://github.com/DJJW26/flakefinder#readme",
   "dependencies": {
     "commander": "^13.1.0",
-    "fast-xml-parser": "^5.11.2"
+    "fast-xml-parser": "^5.12.1"
   },
   "devDependencies": {
     "@actions/artifact": "^6.3.1",

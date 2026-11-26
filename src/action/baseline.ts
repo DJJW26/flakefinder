@@ -34,22 +34,28 @@ export function cacheLeg(job: string, scope: CacheScope): string {
  * Saves are keyed per stream and run ATTEMPT: cache entries are immutable,
  * so a re-run that reused the first attempt's key could never save, and its
  * history was silently dropped. Restores go by prefix — this stream's most
- * recent entry on this branch (falling back to the base/default branch),
- * then, for a stream's very first run or caches from before 1.2, any
- * flakefinder history (warm start).
+ * recent entry on this branch (falling back to the base/default branch).
+ * Prefer the run's own previous attempt even if another run finished later.
  */
 export function cacheKeys(
   gh: Pick<GithubContext, 'sha' | 'runId' | 'runAttempt' | 'job'>,
   scope: CacheScope = { workingDirectory: '.', historyKey: '' },
 ): {
+  leg: string;
   saveKey: string;
   restoreKeys: string[];
 } {
   const leg = cacheLeg(gh.job, scope);
   const parts = [gh.sha, gh.runId, gh.runAttempt].filter((p) => p !== '');
   return {
+    leg,
     saveKey: `${CACHE_KEY_PREFIX}${leg}-${parts.join('-')}`,
-    restoreKeys: [`${CACHE_KEY_PREFIX}${leg}-`, CACHE_KEY_PREFIX],
+    restoreKeys: [
+      ...(gh.runId && Number(gh.runAttempt) > 1
+        ? [`${CACHE_KEY_PREFIX}${leg}-${gh.sha}-${gh.runId}-`]
+        : []),
+      `${CACHE_KEY_PREFIX}${leg}-`,
+    ],
   };
 }
 
@@ -80,6 +86,21 @@ function readJson(file: string): { ok: true; value: unknown } | { ok: false } | 
   }
 }
 
+// Only these three snapshot fields are consumed by the diff and PR comment.
+function usableVerdicts(value: unknown): value is TestVerdict[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (v) =>
+        v !== null &&
+        typeof v === 'object' &&
+        typeof v.testId === 'string' &&
+        typeof v.classification === 'string' &&
+        Number.isFinite(v.flakeScore),
+    )
+  );
+}
+
 /**
  * Pick the "previous verdicts" baseline for this run (record it with recordBaseline).
  *
@@ -100,19 +121,21 @@ export function resolveBaseline(storeDir: string, runId: string): Baseline {
 
   const recorded = readJson(baselinePath(storeDir));
   const rec = recorded?.ok ? (recorded.value as Partial<BaselineFile> | null) : null;
-  if (
-    runId !== '' &&
-    rec !== null &&
-    typeof rec === 'object' &&
-    rec.runId === runId &&
-    (rec.previous === null || Array.isArray(rec.previous))
-  ) {
-    previous = rec.previous ?? null;
-    source = 'earlier-attempt';
+  if (recorded && (!rec || typeof rec !== 'object' || typeof rec.runId !== 'string')) {
+    // A damaged record might belong to the current attempt. Its snapshot
+    // already includes the new flakes and cannot safely establish a baseline.
+    warnings.push('recorded baseline unreadable; treating this as a first run');
+  } else if (runId !== '' && rec !== null && typeof rec === 'object' && rec.runId === runId) {
+    if (rec.previous === null || usableVerdicts(rec.previous)) {
+      previous = rec.previous;
+      source = 'earlier-attempt';
+    } else {
+      warnings.push('recorded baseline unreadable; treating this as a first run');
+    }
   } else {
     const snap = readJson(snapshotPath(storeDir));
-    if (snap?.ok && Array.isArray(snap.value)) {
-      previous = snap.value as TestVerdict[];
+    if (snap?.ok && usableVerdicts(snap.value)) {
+      previous = snap.value;
       source = 'snapshot';
     } else if (snap !== null) {
       warnings.push('previous verdict snapshot unreadable — treating this as a first run');

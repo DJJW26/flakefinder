@@ -56,14 +56,17 @@ compares the tag string to all four version fields and prints the exact
 changelog section. The tag push starts the `release` workflow. It requires the
 tagged commit to be on the default branch history and runs the same checks as
 PR CI. It computes a SHA-256 when it packs the CLI. Every runtime job verifies
-and installs that artifact on Windows or Ubuntu with Node 18 or 24. The publish
+and installs that artifact on Windows, Ubuntu, or macOS with Node 18 or 24. The publish
 job verifies the digest again and passes the tested tarball to npm. Stable
 releases use the `latest` npm dist-tag. Prereleases use `next` and are marked as
 prereleases on GitHub.
 
 After the workflow succeeds, confirm the GitHub Release notes and npm version.
-If the workflow fails, inspect the failed job and check whether the npm package
-version already exists before retrying. npm versions are immutable.
+If the workflow fails, inspect the failed job before re-running it. A re-run
+can resume an npm publication if the existing version has the same SHA-512
+integrity and a provenance attestation. A mismatch stops the workflow.
+The GitHub Release step also accepts an existing published release of the
+same kind for the tag.
 
 ## Require the CI check on main
 

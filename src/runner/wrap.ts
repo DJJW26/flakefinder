@@ -90,7 +90,7 @@ function snapshotReports(
 
 /** Tokens that only a shell can interpret (redirects, pipes, command chaining). */
 function needsShell(command: string[]): boolean {
-  return command.some((t) => /[<>|&]/.test(t) || isShellOperator(t));
+  return command.some(isShellOperator);
 }
 
 /**
@@ -227,8 +227,13 @@ export function insertRunnerArgs(command: string[], args: string[]): string[] {
   // `npm test -- --ci` already forwards everything after its `--`: a second
   // separator would reach the runner as a literal `--` argument
   const hasSeparator = command.slice(seg.cmd + 1, seg.end).includes('--');
-  const wrapper = isPackageManagerWrapper(command.slice(seg.cmd));
-  const separator = wrapper && !hasSeparator ? ['--'] : [];
+  const runnerCommand = command.slice(seg.cmd);
+  const separator =
+    isPackageManagerWrapper(runnerCommand) &&
+    commandBase(runnerCommand[0]!) !== 'pnpm' &&
+    !hasSeparator
+      ? ['--']
+      : [];
   return [...command.slice(0, seg.end), ...separator, ...args, ...command.slice(seg.end)];
 }
 
@@ -762,13 +767,13 @@ export async function runLive(
     );
   });
   let finalExitCode = deterministicFail || lastExit !== 0 ? 1 : 0;
-  if (interrupted) finalExitCode = 130; // SIGINT/SIGTERM: convention for user interrupts
   if (
     cfg.failOnFlakes &&
     (gated.some((v) => v.classification.startsWith('flaky-')) || suiteFlake)
   ) {
     finalExitCode = 1;
   }
+  if (interrupted) finalExitCode = 130; // an interrupt takes precedence over the flake gate
 
   return {
     attempts,
@@ -1002,7 +1007,7 @@ function dim(s: string): string {
 
 /** Package-manager commands consume flags themselves; only `--` forwards args to the underlying test runner. */
 export function isPackageManagerWrapper(command: string[]): boolean {
-  const first = command[0]?.toLowerCase().replace(/\.(cmd|exe)$/, '');
+  const first = commandBase(command[0] ?? '');
   return first === 'npm' || first === 'yarn' || first === 'pnpm' || first === 'bun';
 }
 

@@ -63,6 +63,24 @@ function run(
 }
 
 describe('QA probes: engine edge cases', () => {
+  it('orders runs by their ISO instants across UTC offsets', () => {
+    const v = classifyAll(
+      [
+        run('pass', { timestamp: '2026-10-26T00:05:00+02:00' }),
+        run('fail', { timestamp: '2026-10-25T23:30:00Z' }),
+      ],
+      cfg,
+    )[0];
+    expect(v).toMatchObject({ classification: 'new-failure', lastStatus: 'fail' });
+  });
+
+  it('a skipped final in-report attempt breaks a rescue across live attempts', () => {
+    const first = run('skip', { runId: 'r' });
+    first.results[0]!.attempts = ['fail', 'skip'];
+    const next = { ...run('pass', { runId: 'r' }), attempt: 2 };
+    expect(classifyAll([first, next], cfg)[0]).toMatchObject({ retryRescues: 0, passRate: 0.5 });
+  });
+
   it('future timestamps do not produce NaN or negative-age weirdness', () => {
     const runs = [
       run('fail', { sha: 'a', timestamp: '2030-01-01T00:00:00.000Z' }),

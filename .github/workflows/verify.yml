@@ -74,6 +74,9 @@ jobs:
           - os: windows-latest
             node: '24'
             e2e: true
+          - os: macos-latest
+            node: '24'
+            e2e: true
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -82,6 +85,22 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
           cache: npm
+      - name: Run the committed Action against a JUnit report
+        if: matrix.e2e
+        uses: ./
+        id: action-smoke
+        with:
+          working-directory: tests/parsers-fixtures
+          reports: junit-node-test.xml
+          comment: 'false'
+          upload-dashboard: 'false'
+          fail-on-new-flakes: 'true'
+      - name: Check the Action outputs
+        if: matrix.e2e
+        env:
+          REPORT: ${{ steps.action-smoke.outputs.report-json }}
+          FAILING: ${{ steps.action-smoke.outputs.failing-count }}
+        run: node -e "const r = JSON.parse(require('node:fs').readFileSync(process.env.REPORT, 'utf8')); require('node:assert/strict').ok(Number(process.env.FAILING) > 0 && r.verdicts.some(v => v.name === 'fails'))"
       - run: npm ci
       - run: npm test
       - if: matrix.e2e
@@ -109,7 +128,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node: ['18', '24']
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -124,10 +143,10 @@ jobs:
           path: ${{ runner.temp }}/package
           merge-multiple: true
       - name: Install and exercise the verified tarball
-        shell: pwsh
+        shell: bash
         env:
           SHA256: ${{ needs.build.outputs.sha256 }}
-        run: node scripts/packed-smoke.mjs (Join-Path $env:RUNNER_TEMP 'package/flakefinder.tgz') $env:SHA256
+        run: node scripts/packed-smoke.mjs "$RUNNER_TEMP/package/flakefinder.tgz" "$SHA256"
 
   result:
     name: Verification result

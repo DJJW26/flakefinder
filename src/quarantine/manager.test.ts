@@ -116,7 +116,7 @@ describe('QuarantineManager', () => {
     qm.add(entry('healthy'));
     qm.add(entry('still-flaky'));
     const removed = qm.prune([
-      verdict('healthy', { classification: 'passing', runsObserved: 12 }),
+      verdict('healthy', { classification: 'passing', lastStatus: 'pass', runsObserved: 12 }),
       verdict('still-flaky', { classification: 'flaky-confirmed' }),
     ]);
     expect(removed.map((e) => e.testId)).toEqual(['healthy']);
@@ -129,6 +129,7 @@ describe('QuarantineManager', () => {
     const removed = qm.prune([
       verdict('just-quarantined', {
         classification: 'passing',
+        lastStatus: 'pass',
         runsObserved: 12,
         lastSeen: new Date(Date.now() - 3_600_000).toISOString(), // last ran an hour BEFORE
       }),
@@ -143,6 +144,22 @@ describe('QuarantineManager', () => {
     const removed = qm.prune([verdict('other')]);
     expect(removed).toEqual([]);
     expect(qm.list()).toHaveLength(1);
+  });
+
+  it('saving a prune preserves a test that another writer has re-quarantined', () => {
+    const file = tmpFile();
+    const first = new QuarantineManager(file);
+    first.add(entry('a', 'A', { quarantinedAt: '2020-01-01T00:00:00Z' }));
+    first.save();
+    first.prune([
+      verdict('a', { classification: 'passing', lastStatus: 'pass', runsObserved: 10 }),
+    ]);
+    const second = new QuarantineManager(file);
+    second.remove('a');
+    second.add(entry('a', 'A', { quarantinedAt: '2026-01-01T00:00:00Z' }));
+    second.save();
+    first.save();
+    expect(new QuarantineManager(file).list()).toEqual(second.list());
   });
 
   it('prune removes gone entries older than 90 days, keeps fresh ones', () => {

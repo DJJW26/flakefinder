@@ -348,7 +348,8 @@ flaky test — also understood by GitLab, Buildkite, and others), writes
   the previous snapshot. Known flakes never fail the build; new ones do.
   With no snapshot (first run) every current flake is new. A corrupt or
   wrongly-shaped snapshot is treated the same way, with a warning naming the
-  file, and is overwritten by this run's snapshot.
+  file. The gate exits `2` if the current reports contain no usable test
+  results, leaving the previous snapshot in place.
 
 The commit sha recorded with each run comes from the CI system when it
 provides one — `GITHUB_SHA` (GitHub Actions), then `CI_COMMIT_SHA`
@@ -555,9 +556,9 @@ prints a notice.
 arrive as one intact argument. If your command itself needs a shell
 (redirects like `>`, pipes), it runs through the shell with the exclusion
 values quoted. When the command goes through a package-manager wrapper
-(`npm test`, `yarn test`, `pnpm test`, `bun test`), a `--` separator is
-inserted automatically — npm & friends swallow flags themselves and only
-forward what follows `--` to the underlying runner.
+(`npm test`, `yarn test`, `pnpm test`, `bun test`), Flakefinder uses the
+package manager's forwarding rules. npm uses a `--` separator and pnpm
+forwards injected flags directly.
 
 Per runner:
 
@@ -665,9 +666,8 @@ dimensions you care about if you want it stable when the matrix changes:
 History is cached under `.flakefinder/` in one stream per job, working
 directory and `history-key`: saved as
 `flakefinder-history-<stream>-<sha>-<run id>-<attempt>` (an immutable key
-per run attempt) and restored by the `flakefinder-history-<stream>-` prefix,
-falling back to any flakefinder cache as a warm start on a stream's first
-run. Details: [docs/github-action.md](github-action.md#how-the-history-cache-works).
+per run attempt) and restored from the same stream. A re-run first looks
+for a cache from an earlier attempt of its own workflow run. Details: [docs/github-action.md](github-action.md#how-the-history-cache-works).
 
 ## Other CI systems
 
